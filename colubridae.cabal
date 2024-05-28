@@ -1,5 +1,5 @@
 cabal-version:   3.0
-name:            biglang
+name:            colubridae
 version:         0.1.0.0
 
 -- synopsis:
@@ -14,8 +14,6 @@ category:        Language
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
 
--- extra-source-files:
-
 common warnings
   ghc-options: -Wall
 
@@ -29,36 +27,32 @@ library
     Parse
 
   build-depends:
-    , megaparsec
-    , relude
-    , syb
-    , parser-combinators
+    , base                
+    , containers          
+    , megaparsec          
+    , parser-combinators  
+    , relude              
+    , syb                 
 
   hs-source-dirs:   src
   default-language: GHC2021
 
-executable biglang
+executable colubridae
   import:           warnings, extensions
   main-is:          Main.hs
-
-  -- other-modules:
-  -- other-extensions:
   build-depends:
-    , biglang
+    , colubridae
     , relude
 
   hs-source-dirs:   app
   default-language: GHC2021
 
-test-suite biglang-test
+test-suite colubridae-test
   import:           warnings
   default-language: GHC2021
-
-  -- other-modules:
-  -- other-extensions:
   type:             exitcode-stdio-1.0
   hs-source-dirs:   test
   main-is:          Main.hs
   build-depends:
-    , base     ^>=4.18.2.1
-    , biglang
+    , base
+    , colubridae

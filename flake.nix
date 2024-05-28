@@ -1,5 +1,5 @@
 {
-  description = "Brainlette the Javalette compiler";
+  description = "Colubridae programming language";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -16,15 +16,20 @@
           default = haskell-packages.${ghcVersion}.developPackage {
             root = ./.;
             withHoogle = true;
-            # Look into managing specific versions of dependencies
           };
         };
         devShells = {
           default = pkgs.mkShell {
             nativeBuildInputs = with pkgs; [
-              haskell.compiler.ghc982
-              (haskell-language-server.override
-              { supportedGhcVersions = [ "982" ]; })
+              haskell.compiler.ghc98
+              (haskell-language-server.override {
+                supportedGhcVersions = [ "98" ];
+              })
+              haskellPackages.containers
+              haskellPackages.relude
+              haskellPackages.megaparsec
+              haskellPackages.syb
+              haskellPackages.parser-combinators
             ];
           };
         };
