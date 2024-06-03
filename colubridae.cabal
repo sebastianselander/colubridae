@@ -23,16 +23,18 @@ common extensions
 library
   import:           warnings, extensions
   exposed-modules:
-    Language
-    Parse
+    Types
+    Parser.Parse
+    Parser.Types
+    Parser.Utils
 
   build-depends:
-    , base                
-    , containers          
-    , megaparsec          
-    , parser-combinators  
-    , relude              
-    , syb                 
+    , base
+    , containers
+    , megaparsec
+    , parser-combinators
+    , relude
+    , syb
 
   hs-source-dirs:   src
   default-language: GHC2021
