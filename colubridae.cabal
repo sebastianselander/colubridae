@@ -15,7 +15,7 @@ build-type:      Simple
 extra-doc-files: CHANGELOG.md
 
 common warnings
-  ghc-options: -Wall
+  ghc-options: -Wall -Wno-name-shadowing
 
 common extensions
   default-extensions: NoImplicitPrelude

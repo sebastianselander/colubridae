@@ -17,7 +17,25 @@ data SourceInfo = SourceInfo
   deriving (Show, Eq, Ord)
 
 keywords :: [String]
-keywords = [ "def" ]
+keywords =
+  [ "def"
+  , "="
+  , "let"
+  , "mut"
+  , "while"
+  , "break"
+  , "return"
+  , "if"
+  , "{"
+  , "}"
+  , "true"
+  , "false"
+  , "int"
+  , "bool"
+  , "double"
+  , "string"
+  , "char"
+  ]
 
 keyword :: Text -> Parser ()
 keyword = void . lexeme . P.string
@@ -25,11 +43,14 @@ keyword = void . lexeme . P.string
 parens :: Parser a -> Parser a
 parens = lexeme . P.between (char '(') (char ')')
 
+semicolon :: Parser Char
+semicolon = char ';'
+
 curlyBrackets :: Parser a -> Parser a
 curlyBrackets = lexeme . P.between (char '{') (char '}')
 
 lexeme :: Parser a -> Parser a
-lexeme = L.lexeme P.space
+lexeme = L.lexeme (P.hidden P.space)
 
 char :: Char -> Parser Char
 char c = lexeme (P.char c)
@@ -43,13 +64,17 @@ commaSep p = P.sepBy p (lexeme $ char ',')
 stringLiteral :: Parser Text
 stringLiteral = char '"' >> pack <$> P.manyTill L.charLiteral (char '"')
 
+charLiteral :: Parser Char
+charLiteral = P.between (char '\'') (char '\'') L.charLiteral
+
 identifier :: Parser Ident
-identifier = do
+identifier = lexeme $ do
+  before <- P.getSourcePos
   headLet <- P.char '_' <|> P.letterChar
   tailLets <- many (P.char '_' <|> P.alphaNumChar)
   let name = headLet : tailLets
   if name `elem` keywords
-    then fail $ "can't parse keyword '" <> name <> "' as identifer"
+    then fail $ "'" <> name <> "' is a keyword, you can not use it as an identifer"
     else pure (Ident (pack (headLet : tailLets)))
 
 posLexeme :: Parser a -> Parser (SourceInfo, a)
