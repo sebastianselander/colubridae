@@ -1,3 +1,19 @@
 def main() {
-    false * true;
+    let x = 0;
+    return x + 1 + 2;
 }
+
+def fun1() {
+}
+
+def fun2() {
+}
+
+def fun3() {
+}
+
+def foo() {}
+
+def bar() {}
+
+def baz () {}

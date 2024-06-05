@@ -23,10 +23,16 @@ common extensions
 library
   import:           warnings, extensions
   exposed-modules:
-    Types
     Parser.Parse
     Parser.Types
     Parser.Utils
+    Renamer.Monad
+    Renamer.Rn
+    Renamer.Types
+    Renamer.Error
+    Renamer.TH
+    Types
+    Utils
 
   build-depends:
     , base
@@ -35,6 +41,9 @@ library
     , parser-combinators
     , relude
     , syb
+    , mtl
+    , template-haskell
+    , extra
 
   hs-source-dirs:   src
   default-language: GHC2021
@@ -44,6 +53,7 @@ executable colubridae
   main-is:          Main.hs
   build-depends:
     , colubridae
+    , pretty-simple
     , relude
 
   hs-source-dirs:   app

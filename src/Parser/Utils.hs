@@ -1,20 +1,17 @@
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Parser.Utils where
 
 import Data.Text (pack)
-import Relude
+import Relude hiding (span)
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
-import Text.Megaparsec.Pos (SourcePos)
 import Types
+import Text.Megaparsec (Pos)
 
-type Parser a = P.Parsec Void Text a
-
-data SourceInfo = SourceInfo
-  { before :: SourcePos
-  , after :: SourcePos
-  }
-  deriving (Show, Eq, Ord)
+type Parser = P.Parsec Void Text
 
 keywords :: [String]
 keywords =
@@ -38,38 +35,34 @@ keywords =
   ]
 
 keyword :: Text -> Parser ()
-keyword = void . lexeme . P.string
+keyword = void . P.string
 
 parens :: Parser a -> Parser a
-parens = lexeme . P.between (char '(') (char ')')
+parens = lexeme . P.between (P.char '(') (P.char ')')
 
 semicolon :: Parser Char
-semicolon = char ';'
+semicolon = P.char ';'
 
 curlyBrackets :: Parser a -> Parser a
-curlyBrackets = lexeme . P.between (char '{') (char '}')
+curlyBrackets = P.between (lexeme $ P.char '{') (P.char '}')
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme (P.hidden P.space)
-
-char :: Char -> Parser Char
-char c = lexeme (P.char c)
 
 string :: Text -> Parser Text
 string txt = lexeme (P.string txt)
 
 commaSep :: Parser a -> Parser [a]
-commaSep p = P.sepBy p (lexeme $ char ',')
+commaSep p = P.sepBy p (lexeme $ P.char ',')
 
 stringLiteral :: Parser Text
-stringLiteral = char '"' >> pack <$> P.manyTill L.charLiteral (char '"')
+stringLiteral = P.char '"' >> pack <$> P.manyTill L.charLiteral (P.char '"')
 
 charLiteral :: Parser Char
-charLiteral = P.between (char '\'') (char '\'') L.charLiteral
+charLiteral = P.between (P.char '\'') (P.char '\'') L.charLiteral
 
 identifier :: Parser Ident
-identifier = lexeme $ do
-  before <- P.getSourcePos
+identifier = do
   headLet <- P.char '_' <|> P.letterChar
   tailLets <- many (P.char '_' <|> P.alphaNumChar)
   let name = headLet : tailLets
@@ -77,12 +70,28 @@ identifier = lexeme $ do
     then fail $ "'" <> name <> "' is a keyword, you can not use it as an identifer"
     else pure (Ident (pack (headLet : tailLets)))
 
-posLexeme :: Parser a -> Parser (SourceInfo, a)
-posLexeme p = lexeme (pos p)
+data Before
 
-pos :: Parser a -> Parser (SourceInfo, a)
-pos p = do
-  before <- P.getSourcePos
-  res <- p
-  after <- P.getSourcePos
-  pure (SourceInfo {before, after}, res)
+newtype GhostSpan a = GS (Pos, Pos)
+
+spanStart :: Parser (GhostSpan Before)
+spanStart = do
+    pos <- P.getSourcePos
+    pure $ GS (pos.sourceLine, pos.sourceColumn)
+
+spanEnd :: GhostSpan Before -> Parser SourceInfo
+spanEnd (GS before) = do
+    after <- P.getSourcePos
+    let span = Span {start = before, end = (after.sourceLine, after.sourceColumn)}
+    let info = SourceInfo {sourceFile = after.sourceName, spanInfo = Just span}
+    lexeme (return ())
+    pure info
+
+span :: GhostSpan Before -> Parser a -> Parser (a, SourceInfo)
+span gs p = do
+    res <- p
+    info <- spanEnd gs
+    pure (res, info)
+
+emptyInfo :: SourceInfo
+emptyInfo = SourceInfo {sourceFile = "", spanInfo = Nothing}
