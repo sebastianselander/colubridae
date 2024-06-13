@@ -25,13 +25,10 @@
               (haskell-language-server.override {
                 supportedGhcVersions = [ "98" ];
               })
-              haskellPackages.containers
-              haskellPackages.relude
-              haskellPackages.megaparsec
-              haskellPackages.syb
-              haskellPackages.parser-combinators
+              typst
+              typstfmt
+              typst-lsp
             ];
-          };
-        };
+          }; };
       });
 }
