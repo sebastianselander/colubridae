@@ -21,5 +21,6 @@ main = do
     putTextLn (pPretty res)
     pPrint res
 
-    _ <- ok $ rename res
+    res <- ok $ rename res
     putStrLn "done"
+    pPrint res

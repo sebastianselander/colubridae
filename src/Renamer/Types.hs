@@ -1,11 +1,13 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Renamer.Types where
 
 import Relude
 import Data.Data (Data)
 import Types
+import Parser.Types
 
 
 data Boundedness = Free | Bound
@@ -22,42 +24,43 @@ type TypeRn = TypeX Rn
 type LitRn = LitX Rn
 type StmtRn = StmtX Rn
 
-type instance XProgram Rn = ()
+type instance XProgram Rn = XProgram Par
 
-type instance XArg Rn = SourceInfo
+type instance XArg Rn = XArg Par
 
-type instance XDef Rn = SourceInfo
+type instance XDef Rn = XDef Par
 
-type instance XStmt Rn = ()
+type instance XStmt Rn = XStmt Par
 
-type instance XRet Rn = ()
-type instance XBlock Rn = ()
-type instance XBreak Rn = ()
-type instance XIf Rn = ()
-type instance XWhile Rn = ()
-type instance XLet Rn = Mutability
-type instance XSExp Rn = ()
+type instance XRet Rn = XRet Par
+type instance XBlock Rn = XBlock Par
+type instance XBreak Rn = XBreak Par
+type instance XIf Rn = XIf Par
+type instance XWhile Rn = XWhile Par
+type instance XLet Rn = XLet Par
+type instance XSExp Rn = XSExp Par
 
-type instance XLit Rn = SourceInfo
-type instance XVar Rn = (SourceInfo, Boundedness)
-type instance XBinOp Rn = SourceInfo
-type instance XExprStmt Rn = SourceInfo
-type instance XApp Rn = SourceInfo
+type instance XLit Rn = XLit Par
+type instance XVar Rn = (XVar Par, Boundedness)
+type instance XBinOp Rn = XBinOp Par
+type instance XExprStmt Rn = XExprStmt Par
+type instance XApp Rn = XApp Par
+type instance XExpr Rn = XExpr Par
 
-type instance XIntLit Rn = ()
-type instance XDoubleLit Rn = ()
-type instance XStringLit Rn = ()
-type instance XCharLit Rn = ()
-type instance XBoolLit Rn = ()
+type instance XIntLit Rn = XIntLit Par
+type instance XDoubleLit Rn = XDoubleLit Par 
+type instance XStringLit Rn = XStringLit Par 
+type instance XCharLit Rn = XCharLit Par 
+type instance XBoolLit Rn = XBoolLit Par 
 
-type instance XInt Rn = ()
-type instance XDouble Rn = ()
-type instance XString Rn = ()
-type instance XChar Rn = ()
-type instance XBool Rn = ()
-type instance XUnit Rn = ()
-type instance XTyVar Rn = ()
-type instance XTyFun Rn = ()
+type instance XInt Rn = XInt Par
+type instance XDouble Rn = XDouble Par
+type instance XString Rn = XString Par
+type instance XChar Rn = XChar Par
+type instance XBool Rn = XBool Par
+type instance XUnit Rn = XUnit Par
+type instance XTyVar Rn = XTyVar Par
+type instance XTyFun Rn = XTyFun Par
 
 pattern FreeVar :: SourceInfo -> Ident -> ExprRn
 pattern FreeVar pos name <- VarX (pos, Free) name
