@@ -34,7 +34,7 @@ techniques for the future, e.g
 To be considered a useful language I would argue that Colubridae needs a garbage collector, but unfortunately that is out of the scope of this project.
 
 = Experiences
-I'm just finished my fourth year studying computer science at Gothenburg
+I just finished my fourth year studying computer science at Gothenburg
 university. No previous programming experience prior to starting my university
 studies. This is not the first compiler I make, however, all previous attempts
 have resulted in compilers that I am not confident in whatsoever, thus this is something I would like to avoid this time.
