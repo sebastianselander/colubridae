@@ -35,7 +35,6 @@ library
     Frontend.Mut.Mut
     Frontend.Error
     Frontend.TH
-    Equality
     Types
     Utils
 

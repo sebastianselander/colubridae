@@ -6,7 +6,6 @@ import Control.Arrow (left)
 import Control.Monad (foldM)
 import Control.Monad.Except
 import Data.Set qualified as Set
-import Equality (eqAlphaArg)
 import Frontend.Parser.Types
 import Relude
 import Frontend.Error (Report (..), RnError (..))
@@ -118,6 +117,9 @@ uniqueArgs = foldM f mempty
     ty <- rnType ty
     pure (ArgX (info, mut) name ty : seen)
 
+eqAlphaArg :: forall a b. ArgX a -> ArgX b -> Bool
+eqAlphaArg (ArgX _ name1 _) (ArgX _ name2 _) = name1 == name2
+
 rnType :: Monad m => TypePar -> m TypeRn
 rnType = \case
   UnitX a -> return $ UnitX a
@@ -131,3 +133,4 @@ rnType = \case
     b <- rnType b
     c <- rnType c
     pure $ TyFunX a b c
+  TypeX a -> pure $ TypeX a
