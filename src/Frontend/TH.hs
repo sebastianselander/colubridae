@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Renamer.TH (gen) where
+module Frontend.TH (gen) where
 
 import Control.Monad.Extra (concatMapM)
 import Relude hiding (Type)
@@ -15,13 +15,13 @@ gen str = do
     name <- maybe (error $ "Data type not found " <> toText str) return name'
     reify name >>= \case
         TyConI (DataD _ _ _ _ cons _) -> do
-            concatMapM genCon cons
+            concatMapM (genCon str) cons
         _ -> error "Not a type constructor"
 
-genCon :: Con -> Q [Dec]
-genCon con@(NormalC nm _) = do
+genCon :: String -> Con -> Q [Dec]
+genCon errName con@(NormalC nm _) = do
     ty <- reifyType nm
-    let constraint = ForallT [] [AppT (AppT (ConT (mkName "MonadError" )) (ConT (mkName "RnError"))) (VarT (mkName "m"))]
+    let constraint = ForallT [] [AppT (AppT (ConT (mkName "MonadError" )) (ConT (mkName errName))) (VarT (mkName "m"))]
     let ty' = delinearize (genLast ty)
     let args = nArgs ty'
         name = getName con
@@ -36,7 +36,7 @@ genCon con@(NormalC nm _) = do
         [ SigD (mkName (small name)) (constraint ty')
         , FunD (mkName (small name)) [Clause pats (NormalB exp) []]
         ]
-genCon _ = error "Not a normal constructor"
+genCon _ _ = error "Not a normal constructor"
 
 small :: String -> String
 small [] = []
@@ -50,7 +50,7 @@ getName _ = error "Can not generate function for non-normal constructor"
 genLast :: Type -> Type
 genLast = \case
     AppT t1 t2 -> AppT t1 (genLast t2)
-    ConT {} -> (AppT (VarT . mkName $ "m") (TupleT 0))
+    ConT {} -> (AppT (VarT . mkName $ "m") (VarT . mkName $ "a"))
     x -> delinearize x
 
 delinearize :: Type -> Type

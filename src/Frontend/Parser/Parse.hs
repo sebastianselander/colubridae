@@ -2,13 +2,13 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
 
-module Parser.Parse where
+module Frontend.Parser.Parse where
 
 import Control.Monad.Combinators.Expr (Operator (..))
 import Control.Monad.Combinators.Expr qualified as P
 import Data.Text (pack)
-import Parser.Types
-import Parser.Utils
+import Frontend.Parser.Types
+import Frontend.Parser.Utils
 import Relude hiding (span)
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
@@ -43,10 +43,11 @@ pDef = do
 pArg :: Parser ArgPar
 pArg = do
   gs <- spanStart
+  mut <- P.option Immutable $ lexeme (keyword "mut") $> Mutable
   name <- identifier
   lexeme (keyword ":")
   (ty, info) <- span gs pType
-  pure (ArgX info name ty)
+  pure (ArgX (info, mut) name ty)
 
 pType :: Parser TypePar
 pType = P.choice [pAtom, pFunTy, parens pType]
@@ -76,7 +77,7 @@ pType = P.choice [pAtom, pFunTy, parens pType]
   pTyVar = TyVarX () <$> identifier
 
 pStmtColon :: Parser StmtPar
-pStmtColon =
+pStmtColon = lexeme $
   P.choice
     [ fst <$> pIf
     , fst <$> pWhile
@@ -84,6 +85,7 @@ pStmtColon =
     , fst <$> pBreak <* semicolon
     , fst <$> pLet <* semicolon
     , fst <$> pBlock
+    , fst <$> pAss <* semicolon
     , fst <$> pSExp <* semicolon
     , pEmpty <* semicolon
     ]
@@ -97,6 +99,7 @@ pStmt =
     , pBreak
     , pLet
     , pBlock
+    , pAss
     ]
 
 pEmpty :: Parser StmtPar
@@ -143,10 +146,20 @@ pLet = do
   lexeme (keyword "let")
   mut <- maybe Immutable (const Mutable) <$> P.optional (lexeme (keyword "mut"))
   name <- lexeme identifier
+  ty <- P.optional $ lexeme (keyword ":") *> pType
   lexeme (keyword "=")
   expr <- pExpr
   info <- spanEnd gs
-  pure (LetX mut name expr, info)
+  pure (LetX (mut, ty) name expr, info)
+
+
+pAss :: Parser (StmtPar, SourceInfo)
+pAss = do
+  gs <- spanStart
+  name <- P.try $ lexeme identifier <* lexeme (keyword "=")
+  expr <- pExpr
+  info <- spanEnd gs
+  pure (AssX info name expr, info)
 
 pBlock :: Parser (StmtPar, SourceInfo)
 pBlock = do
@@ -270,4 +283,4 @@ putInfo p = do
     BinOpX _ l op r -> BinOpX pos l op r
     EStmtX _ s -> EStmtX pos s
     AppX _ l rs -> AppX pos l rs
-    ExprX _ -> impossible
+    ExprX v -> impossible v

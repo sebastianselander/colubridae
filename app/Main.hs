@@ -1,11 +1,11 @@
 module Main where
 
-import Parser.Parse
+import Frontend.Parser.Parse
 import Relude
 import Data.Text.IO (hPutStrLn)
 import Types (pPretty)
 import Text.Pretty.Simple
-import Renamer.Rn (rename)
+import Frontend.Renamer.Rn (rename)
 
 ok :: Either Text a -> IO a
 ok (Left err) = hPutStrLn stderr err *> exitFailure
@@ -17,10 +17,12 @@ main = do
     [file] <- getArgs
     input <- readFileBS file
 
+    putStrLn "\n=== Parse output ===\n"
     res <- ok $ pProgram file (decodeUtf8 input)
     putTextLn (pPretty res)
     pPrint res
 
+    putStrLn "\n=== Rename output ===\n"
     res <- ok $ rename res
-    putStrLn "done"
+    putTextLn (pPretty res)
     pPrint res

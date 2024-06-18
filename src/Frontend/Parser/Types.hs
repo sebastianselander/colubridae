@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
 
-module Parser.Types where
+module Frontend.Parser.Types where
 
 import Data.Data (Data)
 import Relude hiding (Type, intercalate, replicate)
@@ -27,7 +27,7 @@ deriving instance Data StmtPar
 
 type instance XProgram Par = ()
 
-type instance XArg Par = SourceInfo
+type instance XArg Par = (SourceInfo, Mutability) 
 
 type instance XDef Par = SourceInfo
 
@@ -38,7 +38,8 @@ type instance XBlock Par = ()
 type instance XBreak Par = ()
 type instance XIf Par = ()
 type instance XWhile Par = ()
-type instance XLet Par = Mutability
+type instance XLet Par = (Mutability, Maybe TypePar)
+type instance XAss Par = SourceInfo
 type instance XSExp Par = ()
 
 type instance XLit Par = SourceInfo
@@ -62,3 +63,4 @@ type instance XBool Par = ()
 type instance XUnit Par = ()
 type instance XTyVar Par = ()
 type instance XTyFun Par = ()
+type instance XType Par = ()

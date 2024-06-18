@@ -23,14 +23,18 @@ common extensions
 library
   import:           warnings, extensions
   exposed-modules:
-    Parser.Parse
-    Parser.Types
-    Parser.Utils
-    Renamer.Monad
-    Renamer.Rn
-    Renamer.Types
-    Renamer.Error
-    Renamer.TH
+    Frontend.Parser.Parse
+    Frontend.Parser.Types
+    Frontend.Parser.Utils
+    Frontend.Renamer.Monad
+    Frontend.Renamer.Rn
+    Frontend.Renamer.Types
+    Frontend.Typechecker.Types
+    Frontend.Typechecker.Tc
+    Frontend.Mut.Types
+    Frontend.Mut.Mut
+    Frontend.Error
+    Frontend.TH
     Equality
     Types
     Utils

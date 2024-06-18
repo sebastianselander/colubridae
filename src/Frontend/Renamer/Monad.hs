@@ -1,14 +1,17 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
-module Renamer.Monad where
+module Frontend.Renamer.Monad where
 
 import Control.Monad.Except (Except, MonadError, runExcept, throwError)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
 import Relude hiding (Map)
-import Renamer.Error (RnError(..))
+import Frontend.Error (RnError(..))
 import Types (Ident (..))
-import Renamer.TH
+import Frontend.TH
+import Data.List.NonEmpty ((<|))
+import Frontend.Renamer.Types (Boundedness(..))
 
 data Env = Env
   { conversionKV :: Map Ident Ident -- Just for remembering
@@ -17,7 +20,7 @@ data Env = Env
   }
   deriving (Show)
 
-data Ctx = Ctx {definitions :: Set Ident, closestScope :: Set Ident}
+newtype Ctx = Ctx {definitions :: Set Ident}
   deriving (Show)
 
 newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Except RnError)) a}
@@ -34,7 +37,7 @@ emptyEnv :: Env
 emptyEnv = Env mempty mempty (return mempty)
 
 emptyCtx :: Ctx
-emptyCtx = Ctx mempty mempty
+emptyCtx = Ctx mempty
 
 runGen :: Env -> Ctx -> Gen a -> Either RnError a
 runGen env ctx =
@@ -63,27 +66,38 @@ fresh name = do
 {-| Checks if a variable is bound in the closest scope
 | It does *not* check if a variable is completely unbound
 -}
-bound :: Ident -> Gen Bool
-bound name = asks (Set.member name . closestScope)
 
-context :: Gen a -> Gen a
-context rn = do
+bound :: MonadState Env m => Ident -> m (Maybe (Boundedness, Ident))
+bound name = do
+    (close :| rest) <- gets scope
+    case Map.lookup name close of
+        Just name' -> pure $ Just (Bound, name')
+        Nothing -> pure ((Free,) <$> findVar name rest)
+  where
+    findVar :: Ident -> [Map Ident Ident] -> Maybe Ident
+    findVar _ [] = Nothing
+    findVar name (x:xs) = case Map.lookup name x of
+        Just name' -> pure name'
+        Nothing -> findVar name xs
+
+-- | Insert and rename a variable into the outermost scope
+insertVar :: Ident -> Gen Ident
+insertVar name@(Ident nm) = do
+    state <- get
+    let (outer :| rest) = state.scope
+    let n = Map.findWithDefault 0 name state.numbering + 1
+    let numbering' = Map.insert name n state.numbering
+    let name' = Ident $ nm <> "#" <> show n
+    let outer' = Map.insert name name' outer
+    put (state { scope = outer' :| rest, numbering = numbering'})
+    pure name'
+
+newContext :: Gen a -> Gen a
+newContext rn = do
   before <- get
+  modify $ \s -> s { scope = mempty <| s.scope }
   res <- rn
   put before
   pure res
-
-findIdent :: Ident -> Gen (Maybe Ident)
-findIdent name = find <$> gets (toList . scope)
- where
-  find :: [Map Ident Ident] -> Maybe Ident
-  find [] = Nothing
-  find (x : xs) = Map.lookup name x <|> find xs
-
-isVariable :: Ident -> Gen Bool
-isVariable name = isJust <$> findIdent name
-
-isDefinition :: Ident -> Gen Bool
-isDefinition name = asks (Set.member name . definitions)
 
 $(gen "RnError")

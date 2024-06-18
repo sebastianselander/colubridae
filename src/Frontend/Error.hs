@@ -1,18 +1,16 @@
-{-# LANGUAGE TemplateHaskell #-}
-module Renamer.Error where
+module Frontend.Error where
 
-import GHC.Show (Show)
 import Types (Ident, SourceInfo)
-import Renamer.TH
 import Relude
-import Data.Either.Extra (mapLeft)
 
 data RnError
   = UnboundVariable SourceInfo Ident
   | ConflictingDefinitionArgument SourceInfo Ident
+  | DuplicateToplevels SourceInfo Ident
   deriving (Show)
 
-pure []
+data TcError
+  deriving (Show)
 
 class Report a where
   report :: a -> Text
@@ -20,5 +18,5 @@ class Report a where
 instance Report RnError where
     report = show
 
-onErr :: Either RnError a -> Either Text a
-onErr = mapLeft report
+instance Report TcError where
+    report = show

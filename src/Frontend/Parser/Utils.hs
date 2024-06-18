@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Parser.Utils where
+module Frontend.Parser.Utils where
 
 import Data.Text (pack)
 import Relude hiding (span)

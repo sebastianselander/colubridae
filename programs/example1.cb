@@ -1,19 +1,10 @@
 def main() {
-    let x = 0;
+    let x: int = 0;
+    let y: int = 1;
+    x = y + 3;
+    {
+        let x = 3;
+        x + y;
+    }
     return x + 1 + 2;
 }
-
-def fun1() {
-}
-
-def fun2() {
-}
-
-def fun3() {
-}
-
-def foo() {}
-
-def bar() {}
-
-def baz () {}

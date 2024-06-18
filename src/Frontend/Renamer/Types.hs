@@ -1,17 +1,23 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Renamer.Types where
+module Frontend.Renamer.Types where
 
 import Relude
 import Data.Data (Data)
 import Types
-import Parser.Types
+import Frontend.Parser.Types
 
 
 data Boundedness = Free | Bound
   deriving (Show, Eq, Ord, Data)
+
+instance Pretty Boundedness where
+  pPretty Free = "Free"
+  pPretty Bound = "Bound"
+    
 
 data Rn
     deriving (Data)
@@ -38,6 +44,7 @@ type instance XBreak Rn = XBreak Par
 type instance XIf Rn = XIf Par
 type instance XWhile Rn = XWhile Par
 type instance XLet Rn = XLet Par
+type instance XAss Rn = Boundedness
 type instance XSExp Rn = XSExp Par
 
 type instance XLit Rn = XLit Par
@@ -61,6 +68,7 @@ type instance XBool Rn = XBool Par
 type instance XUnit Rn = XUnit Par
 type instance XTyVar Rn = XTyVar Par
 type instance XTyFun Rn = XTyFun Par
+type instance XType Rn = XType Par
 
 pattern FreeVar :: SourceInfo -> Ident -> ExprRn
 pattern FreeVar pos name <- VarX (pos, Free) name

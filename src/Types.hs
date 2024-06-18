@@ -15,7 +15,6 @@ import GHC.Show (show)
 import Data.Tuple.Extra (both)
 import Text.Megaparsec.Pos (unPos)
 import qualified Data.Text as Text
-import Utils (impossible)
 
 data Mutability = Mutable | Immutable
   deriving (Show, Eq, Ord, Data, Typeable)
@@ -72,6 +71,7 @@ data TypeX a
   | BoolX (XBool a)
   | TyVarX (XTyVar a) Ident
   | TyFunX (XTyFun a) (TypeX a) (TypeX a)
+  | TypeX (XType a)
 type family XUnit a
 type family XString a
 type family XInt a
@@ -80,6 +80,7 @@ type family XChar a
 type family XBool a
 type family XTyVar a
 type family XTyFun a
+type family XType a
 
 deriving instance ForallX Show a => Show (TypeX a)
 deriving instance ForallX Typeable a => Typeable (TypeX a)
@@ -92,6 +93,7 @@ data StmtX a
   | IfX (XIf a) (ExprX a) [StmtX a] (Maybe [StmtX a])
   | WhileX (XWhile a) (ExprX a) [StmtX a]
   | LetX (XLet a) Ident (ExprX a)
+  | AssX (XAss a) Ident (ExprX a)
   | SExprX (XSExp a) (ExprX a)
   | StmtX (XStmt a)
 type family XRet a
@@ -100,6 +102,7 @@ type family XBreak a
 type family XIf a
 type family XWhile a
 type family XLet a
+type family XAss a
 type family XSExp a
 type family XStmt a
 
@@ -184,6 +187,7 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
   , c (XInt a)
   , c (XIntLit a)
   , c (XLet a)
+  , c (XAss a)
   , c (XLit a)
   , c (XProgram a)
   , c (XRet a)
@@ -197,17 +201,24 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
   , c (XVar a)
   , c (XWhile a)
   , c (XExpr a)
+  , c (XType a)
   )
 
 class Pretty a where
   pPretty :: a -> Text
 
-instance (Pretty a, Pretty b) => Pretty (a,b) where
-  pPretty (_,_) = ""
+instance {-# OVERLAPPABLE #-} (Pretty a, Pretty b) => Pretty (a,b) where
+  pPretty (a,b) = case (pPretty a, pPretty b) of
+      ("", b) -> b
+      (a, "") -> a
+      (a, b) -> "(" <> a <> ", " <> b <> ")"
 
 instance Pretty Mutability where
     pPretty Mutable = "mut"
     pPretty Immutable = ""
+
+instance  Pretty (SourceInfo, Mutability) where
+   pPretty (_, mut) = pPretty mut
 
 instance Pretty SourceInfo where
     pPretty = Relude.show
@@ -218,6 +229,10 @@ instance Pretty Void where
 instance Pretty () where
   pPretty _ = ""
 
+instance Pretty a => Pretty (Maybe a) where
+  pPretty Nothing = ""
+  pPretty (Just a) = pPretty a
+    
 instance ForallX Pretty a => Pretty (ProgramX a) where
   pPretty = prettyProgram
 
@@ -251,7 +266,7 @@ prettyDef (Fn _ (Ident name) args ty stmts) =
     ]
 
 prettyArg :: ForallX Pretty a => ArgX a -> Text
-prettyArg (ArgX _ (Ident name) ty) = unwords [name, ":", prettyType1 ty]
+prettyArg (ArgX a (Ident name) ty) = unwords [pPretty a, name, ":", prettyType1 ty]
 
 prettyType1 :: ForallX Pretty a => TypeX a -> Text
 prettyType1 (TyFunX _ l r) = unwords [prettyType1 l, "->", prettyType1 r]
@@ -267,6 +282,7 @@ prettyType2 = \case
   BoolX _ -> "bool"
   TyVarX _ (Ident name) -> name
   ty@TyFunX {} -> Text.concat ["(", prettyType1 ty, ")"]
+  TypeX a -> pPretty a
 
 prettyExpr1 :: ForallX Pretty a => ExprX a -> Text
 prettyExpr1 (BinOpX _ l Or r) = unwords [prettyExpr2 l, "||", prettyExpr1 r]
@@ -305,7 +321,7 @@ prettyExpr7 (LitX _ lit) = prettyLit lit
 prettyExpr7 (VarX _ (Ident name)) = name
 prettyExpr7 (EStmtX _ s) = prettyStmt s
 prettyExpr7 (AppX _ l rs) = Text.concat [prettyExpr1 l, "(", Text.intercalate ", " $ fmap prettyExpr1 rs, ")"]
-prettyExpr7 (ExprX _) = impossible
+prettyExpr7 (ExprX a) = pPretty a
 
 prettyStmt :: ForallX Pretty a => StmtX a -> Text
 prettyStmt (RetX _ Nothing) = "return"
@@ -337,6 +353,7 @@ prettyStmt (WhileX _ cond block) =
 prettyStmt (LetX m (Ident name) e) =
   let mut = "let " <> pPretty m
    in unwords [mut, name, "=", prettyExpr1 e]
+prettyStmt (AssX _ (Ident name) e) = unwords [name, "=", prettyExpr1 e]
 prettyStmt (SExprX _ e) = prettyExpr1 e
 prettyStmt (StmtX a) = pPretty a
 
