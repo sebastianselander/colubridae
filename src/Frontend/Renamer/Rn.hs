@@ -3,14 +3,15 @@
 module Frontend.Renamer.Rn (rename) where
 
 import Control.Arrow (left)
+import Control.Lens (locally)
 import Control.Monad (foldM)
 import Control.Monad.Except
 import Data.Set qualified as Set
+import Frontend.Error 
 import Frontend.Parser.Types
-import Relude
-import Frontend.Error (Report (..), RnError (..))
 import Frontend.Renamer.Monad
 import Frontend.Renamer.Types
+import Relude
 import Types
 import Utils (impossible, listify')
 
@@ -21,7 +22,9 @@ rnProgram :: ProgramPar -> Gen ProgramRn
 rnProgram program@(ProgramX a defs) = do
   let toplevels = getDefinitions program
   uniqueDefs toplevels
-  ProgramX a <$> mapM rnDef defs
+  let toplevelSet = Set.fromList $ fmap snd toplevels
+  defs <- locally definitions (const toplevelSet) (mapM rnDef defs)
+  pure $ ProgramX a defs
 
 uniqueDefs :: (MonadError RnError m) => [(SourceInfo, Ident)] -> m ()
 uniqueDefs = go mempty
@@ -65,13 +68,15 @@ rnStatement = \case
   AssX info variable expr -> do
     (bind, name) <-
       maybe (unboundVariable info variable) pure
-        =<< bound variable
+        =<< boundVar variable
     expr <- rnExpr expr
-    pure $ AssX bind name expr
+    case bind of
+      Bound -> pure $ StmtX (AssRn info (BoundVar name) expr)
+      Free -> pure $ StmtX (AssRn info (FreeVar name) expr)
   SExprX a b -> do
     b <- rnExpr b
     pure $ SExprX a b
-  StmtX a -> pure $ StmtX a
+  StmtX a -> impossible a
 
 rnExpr :: ExprPar -> Gen ExprRn
 rnExpr = \case
@@ -79,10 +84,11 @@ rnExpr = \case
   VarX info variable -> do
     (bind, name) <-
       maybe (unboundVariable info variable) pure
-        =<< bound variable
+        =<< maybe (fmap (Bound,) <$> boundFun variable) (pure . Just)
+        =<< boundVar variable
     pure $ case bind of
-      Bound -> BoundVar info name
-      Free -> FreeVar info name
+      Bound -> ExprX (info, BoundVar name)
+      Free -> ExprX (info, FreeVar name)
   BinOpX info l op r -> do
     l <- rnExpr l
     r <- rnExpr r
@@ -120,14 +126,9 @@ uniqueArgs = foldM f mempty
 eqAlphaArg :: forall a b. ArgX a -> ArgX b -> Bool
 eqAlphaArg (ArgX _ name1 _) (ArgX _ name2 _) = name1 == name2
 
-rnType :: Monad m => TypePar -> m TypeRn
+rnType :: (Monad m) => TypePar -> m TypeRn
 rnType = \case
-  UnitX a -> return $ UnitX a
-  IntX a -> pure $ IntX a
-  StringX a -> pure $ StringX a
-  DoubleX a -> pure $ DoubleX a
-  CharX a -> pure $ CharX a
-  BoolX a -> pure $ BoolX a
+  TyLitX a lit -> pure $ TyLitX a lit
   TyVarX a name -> pure $ TyVarX a name
   TyFunX a b c -> do
     b <- rnType b

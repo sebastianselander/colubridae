@@ -1,7 +1,13 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Frontend.Error where
 
-import Types (Ident, SourceInfo)
-import Relude
+import Types (Ident, SourceInfo, TypeX (..))
+import Relude hiding (First, All)
+import Frontend.Typechecker.Types (TypeTc, MetaTy (..))
+import Frontend.TH
+import Control.Monad.Except (MonadError, throwError)
+import Control.Monad.Validate
 
 data RnError
   = UnboundVariable SourceInfo Ident
@@ -9,7 +15,8 @@ data RnError
   | DuplicateToplevels SourceInfo Ident
   deriving (Show)
 
-data TcError
+data TcError 
+  = TyExpectedGot SourceInfo [TypeTc] TypeTc
   deriving (Show)
 
 class Report a where
@@ -20,3 +27,9 @@ instance Report RnError where
 
 instance Report TcError where
     report = show
+
+doneTcError :: MonadValidate [TcError] m => m a
+doneTcError = refute []
+
+$(gen All "TcError")
+$(gen First "RnError")

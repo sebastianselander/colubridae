@@ -31,7 +31,7 @@ type instance XArg Par = (SourceInfo, Mutability)
 
 type instance XDef Par = SourceInfo
 
-type instance XStmt Par = ()
+type instance XStmt Par = Void
 
 type instance XRet Par = ()
 type instance XBlock Par = ()
@@ -55,12 +55,7 @@ type instance XStringLit Par = ()
 type instance XCharLit Par = ()
 type instance XBoolLit Par = ()
 
-type instance XInt Par = ()
-type instance XDouble Par = ()
-type instance XString Par = ()
-type instance XChar Par = ()
-type instance XBool Par = ()
-type instance XUnit Par = ()
+type instance XTyLit Par = ()
 type instance XTyVar Par = ()
 type instance XTyFun Par = ()
 type instance XType Par = ()

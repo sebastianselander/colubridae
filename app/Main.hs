@@ -6,6 +6,7 @@ import Data.Text.IO (hPutStrLn)
 import Types (pPretty)
 import Text.Pretty.Simple
 import Frontend.Renamer.Rn (rename)
+import Frontend.Typechecker.Tc (tc)
 
 ok :: Either Text a -> IO a
 ok (Left err) = hPutStrLn stderr err *> exitFailure
@@ -24,5 +25,10 @@ main = do
 
     putStrLn "\n=== Rename output ===\n"
     res <- ok $ rename res
+    putTextLn (pPretty res)
+    pPrint res
+
+    putStrLn "\n=== Tc output ===\n"
+    res <- ok $ tc res
     putTextLn (pPretty res)
     pPrint res

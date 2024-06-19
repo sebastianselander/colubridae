@@ -31,6 +31,7 @@ library
     Frontend.Renamer.Types
     Frontend.Typechecker.Types
     Frontend.Typechecker.Tc
+    Frontend.Typechecker.Subst
     Frontend.Mut.Types
     Frontend.Mut.Mut
     Frontend.Error
@@ -49,6 +50,7 @@ library
     , template-haskell
     , extra
     , lens
+    , monad-validate
 
   hs-source-dirs:   src
   default-language: GHC2021

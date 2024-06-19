@@ -35,8 +35,8 @@ pDef = do
   lexeme (keyword "def")
   name <- lexeme identifier
   args <- parens (commaSep pArg)
-  ty <- P.option (UnitX ()) (lexeme (keyword "->") *> pType)
-  expressions <- curlyBrackets (P.many (lexeme pStmtColon))
+  ty <- P.option (TyLitX () UnitX) (lexeme (keyword "->") *> pType)
+  expressions <- catMaybes <$> curlyBrackets (P.many (lexeme pStmtColon))
   info <- spanEnd gs
   pure (Fn info name args ty expressions)
 
@@ -59,34 +59,34 @@ pType = P.choice [pAtom, pFunTy, parens pType]
   pAtom = P.choice [pInt, pDouble, pChar, pString, pUnit, pTyVar]
 
   pInt :: Parser TypePar
-  pInt = IntX () <$ lexeme (keyword "int")
+  pInt = TyLitX () IntX <$ lexeme (keyword "int")
 
   pDouble :: Parser TypePar
-  pDouble = DoubleX () <$ lexeme (keyword "double")
+  pDouble = TyLitX () DoubleX <$ lexeme (keyword "double")
 
   pChar :: Parser TypePar
-  pChar = CharX () <$ lexeme (keyword "char")
+  pChar = TyLitX () CharX <$ lexeme (keyword "char")
 
   pString :: Parser TypePar
-  pString = StringX () <$ lexeme (keyword "string")
+  pString = TyLitX () StringX <$ lexeme (keyword "string")
 
   pUnit :: Parser TypePar
-  pUnit = UnitX () <$ lexeme (keyword "()")
+  pUnit = TyLitX () UnitX <$ lexeme (keyword "()")
 
   pTyVar :: Parser TypePar
   pTyVar = TyVarX () <$> identifier
 
-pStmtColon :: Parser StmtPar
+pStmtColon :: Parser (Maybe StmtPar)
 pStmtColon = lexeme $
   P.choice
-    [ fst <$> pIf
-    , fst <$> pWhile
-    , fst <$> pRet <* semicolon
-    , fst <$> pBreak <* semicolon
-    , fst <$> pLet <* semicolon
-    , fst <$> pBlock
-    , fst <$> pAss <* semicolon
-    , fst <$> pSExp <* semicolon
+    [ Just . fst <$> pIf
+    , Just . fst <$> pWhile
+    , Just . fst <$> pRet <* semicolon
+    , Just . fst <$> pBreak <* semicolon
+    , Just . fst <$> pLet <* semicolon
+    , Just . fst <$> pBlock
+    , Just . fst <$> pAss <* semicolon
+    , Just . fst <$> pSExp <* semicolon
     , pEmpty <* semicolon
     ]
 
@@ -102,16 +102,16 @@ pStmt =
     , pAss
     ]
 
-pEmpty :: Parser StmtPar
-pEmpty = return (StmtX ())
+pEmpty :: Parser (Maybe StmtPar)
+pEmpty = return Nothing
 
 pIf :: Parser (StmtPar, SourceInfo)
 pIf = do
   gs <- spanStart
   lexeme (keyword "if")
   cond <- pExpr
-  thenB <- curlyBrackets (P.many pStmtColon)
-  elseB <- P.optional (lexeme (keyword "else") *> curlyBrackets (P.many pStmtColon))
+  thenB <- catMaybes <$> curlyBrackets (P.many pStmtColon)
+  elseB <- P.optional (lexeme (keyword "else") *> curlyBrackets (catMaybes <$> P.many pStmtColon))
   info <- spanEnd gs
   pure (IfX () cond thenB elseB, info)
 
@@ -120,7 +120,7 @@ pWhile = do
   gs <- spanStart
   lexeme (keyword "while")
   cond <- pExpr
-  loopBody <- curlyBrackets (P.many pStmtColon)
+  loopBody <- catMaybes <$> curlyBrackets (P.many pStmtColon)
   info <- spanEnd gs
   pure (WhileX () cond loopBody, info)
 
@@ -164,7 +164,7 @@ pAss = do
 pBlock :: Parser (StmtPar, SourceInfo)
 pBlock = do
   gs <- spanStart
-  stmts <- curlyBrackets (P.many pStmtColon)
+  stmts <- catMaybes <$> curlyBrackets (P.many pStmtColon)
   info <- spanEnd gs
   pure (BlockX () stmts, info)
 

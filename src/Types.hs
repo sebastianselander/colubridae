@@ -63,25 +63,18 @@ deriving instance ForallX Typeable a => Typeable (ArgX a)
 
 -- Type
 data TypeX a
-  = UnitX (XUnit a)
-  | StringX (XString a)
-  | IntX (XInt a)
-  | DoubleX (XDouble a)
-  | CharX (XChar a)
-  | BoolX (XBool a)
+  = TyLitX (XTyLit a) TyLit
   | TyVarX (XTyVar a) Ident
   | TyFunX (XTyFun a) (TypeX a) (TypeX a)
   | TypeX (XType a)
-type family XUnit a
-type family XString a
-type family XInt a
-type family XDouble a
-type family XChar a
-type family XBool a
+type family XTyLit a
 type family XTyVar a
 type family XTyFun a
 type family XType a
 
+data TyLit = UnitX | StringX | IntX | DoubleX | CharX | BoolX
+    deriving (Show, Eq, Ord, Enum, Data)
+ 
 deriving instance ForallX Show a => Show (TypeX a)
 deriving instance ForallX Typeable a => Typeable (TypeX a)
 
@@ -174,17 +167,13 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
   , c (XArg a)
   , c (XBinOp a)
   , c (XBlock a)
-  , c (XBool a)
   , c (XBoolLit a)
   , c (XBreak a)
-  , c (XChar a)
   , c (XCharLit a)
   , c (XDef a)
-  , c (XDouble a)
   , c (XDoubleLit a)
   , c (XExprStmt a)
   , c (XIf a)
-  , c (XInt a)
   , c (XIntLit a)
   , c (XLet a)
   , c (XAss a)
@@ -193,11 +182,10 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
   , c (XRet a)
   , c (XSExp a)
   , c (XStmt a)
-  , c (XString a)
   , c (XStringLit a)
+  , c (XTyLit a)
   , c (XTyFun a)
   , c (XTyVar a)
-  , c (XUnit a)
   , c (XVar a)
   , c (XWhile a)
   , c (XExpr a)
@@ -212,6 +200,9 @@ instance {-# OVERLAPPABLE #-} (Pretty a, Pretty b) => Pretty (a,b) where
       ("", b) -> b
       (a, "") -> a
       (a, b) -> "(" <> a <> ", " <> b <> ")"
+
+instance Pretty Ident where
+  pPretty (Ident name) = name
 
 instance Pretty Mutability where
     pPretty Mutable = "mut"
@@ -274,12 +265,13 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: ForallX Pretty a => TypeX a -> Text
 prettyType2 = \case
-  UnitX _ -> "()"
-  StringX _ -> "string"
-  IntX _ -> "int"
-  DoubleX _ -> "double"
-  CharX _ -> "char"
-  BoolX _ -> "bool"
+  TyLitX _ tylit -> case tylit of
+      UnitX -> "()"
+      StringX -> "string"
+      IntX -> "int"
+      DoubleX -> "double"
+      CharX -> "char"
+      BoolX -> "bool"
   TyVarX _ (Ident name) -> name
   ty@TyFunX {} -> Text.concat ["(", prettyType1 ty, ")"]
   TypeX a -> pPretty a

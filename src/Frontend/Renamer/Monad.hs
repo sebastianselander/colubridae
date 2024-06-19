@@ -3,25 +3,29 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Frontend.Renamer.Monad where
 
-import Control.Monad.Except (Except, MonadError, runExcept, throwError)
+import Control.Monad.Except (Except, MonadError, runExcept)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Relude hiding (Map)
-import Frontend.Error (RnError(..))
 import Types (Ident (..))
-import Frontend.TH
-import Data.List.NonEmpty ((<|))
-import Frontend.Renamer.Types (Boundedness(..))
+import Data.List.NonEmpty
+import Frontend.Renamer.Types (Boundedness (..))
+import Control.Lens hiding ((<|))
+import qualified Data.Set as Set
+import Frontend.Error
 
 data Env = Env
-  { conversionKV :: Map Ident Ident -- Just for remembering
-  , numbering :: Map Ident Int
-  , scope :: NonEmpty (Map Ident Ident)
+  { _conversionKV :: Map Ident Ident -- Just for remembering
+  , _numbering :: Map Ident Int
+  , _scope :: NonEmpty (Map Ident Ident)
   }
   deriving (Show)
 
-newtype Ctx = Ctx {definitions :: Set Ident}
+newtype Ctx = Ctx {_definitions :: Set Ident}
   deriving (Show)
+
+$(makeLenses ''Env)
+$(makeLenses ''Ctx)
 
 newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Except RnError)) a}
   deriving
@@ -47,29 +51,32 @@ runGen env ctx =
     . runGen'
 
 names :: Gen (Map Ident Ident)
-names = gets conversionKV
+names = use conversionKV
 
 conversions :: Gen (Map Ident Ident)
-conversions = gets conversionKV
+conversions = use conversionKV
 
 fresh :: Ident -> Gen Ident
 fresh name = do
-  Env {conversionKV, numbering, scope} <- get
-  let (n, name') = case Map.lookup name numbering of
+  Env {_conversionKV, _numbering, _scope} <- get
+  let (n, name') = case Map.lookup name _numbering of
         Nothing -> (1, name <> Ident (show (1 :: Int)))
         Just n -> (n + 1, name <> Ident (show (n + 1)))
-  let names' = Map.insert name' name conversionKV
+  let names' = Map.insert name' name _conversionKV
   let nameCounter = Map.insert name n nameCounter
-  put Env {conversionKV = names', numbering = nameCounter, scope}
+  put Env {_conversionKV = names', _numbering = nameCounter, _scope}
   pure name'
 
 {-| Checks if a variable is bound in the closest scope
 | It does *not* check if a variable is completely unbound
 -}
 
-bound :: MonadState Env m => Ident -> m (Maybe (Boundedness, Ident))
-bound name = do
-    (close :| rest) <- gets scope
+boundFun :: MonadReader Ctx m => Ident -> m (Maybe Ident)
+boundFun name = views definitions (bool Nothing (Just name) . Set.member name)
+
+boundVar :: MonadState Env m => Ident -> m (Maybe (Boundedness, Ident))
+boundVar name = do
+    (close :| rest) <- use scope
     case Map.lookup name close of
         Just name' -> pure $ Just (Bound, name')
         Nothing -> pure ((Free,) <$> findVar name rest)
@@ -81,23 +88,22 @@ bound name = do
         Nothing -> findVar name xs
 
 -- | Insert and rename a variable into the outermost scope
-insertVar :: Ident -> Gen Ident
+insertVar :: MonadState Env m => Ident -> m Ident
 insertVar name@(Ident nm) = do
-    state <- get
-    let (outer :| rest) = state.scope
-    let n = Map.findWithDefault 0 name state.numbering + 1
-    let numbering' = Map.insert name n state.numbering
+    (outer :| rest) <- use scope
+    numb <- use numbering
+    let n = Map.findWithDefault 0 name numb + 1
+    let numbering' = Map.insert name n numb
     let name' = Ident $ nm <> "#" <> show n
     let outer' = Map.insert name name' outer
-    put (state { scope = outer' :| rest, numbering = numbering'})
+    assign scope (outer' :| rest)
+    assign numbering numbering'
     pure name'
 
 newContext :: Gen a -> Gen a
 newContext rn = do
   before <- get
-  modify $ \s -> s { scope = mempty <| s.scope }
+  modifying scope (Map.empty <|)
   res <- rn
   put before
   pure res
-
-$(gen "RnError")
