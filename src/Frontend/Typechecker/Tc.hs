@@ -45,7 +45,7 @@ tcDefs :: DefRn -> TcM (DefX Tc)
 tcDefs (Fn info name args returnType statements) = undefined
 
 infStmt :: StmtRn -> TcM StmtTc
-infStmt = \case
+infStmt = undefined
 
 infExpr :: ExprRn -> TcM ExprTc
 infExpr = \case
