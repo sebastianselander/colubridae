@@ -1,7 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Renamer.Types where
 
@@ -11,14 +11,14 @@ import Relude
 import Types
 
 data Boundedness = Free | Bound
-  deriving (Show, Eq, Ord, Data)
+    deriving (Show, Eq, Ord, Data)
 
 instance Pretty Boundedness where
-  pPretty Free = "Free"
-  pPretty Bound = "Bound"
-    
+    pPretty Free = "Free"
+    pPretty Bound = "Bound"
+
 data Rn
-  deriving (Data)
+    deriving (Data)
 
 type ProgramRn = ProgramX Rn
 type DefRn = DefX Rn
@@ -27,6 +27,7 @@ type ExprRn = ExprX Rn
 type TypeRn = TypeX Rn
 type LitRn = LitX Rn
 type StmtRn = StmtX Rn
+type BlockRn = BlockX Rn
 
 type instance XProgram Rn = XProgram Par
 
@@ -34,10 +35,11 @@ type instance XArg Rn = XArg Par
 
 type instance XDef Rn = XDef Par
 
+type instance XBlock Rn = XBlock Par
 
 type instance XRet Rn = XRet Par
-type instance XBlock Rn = XBlock Par
 type instance XBreak Rn = XBreak Par
+type instance XSBlock Rn = ()
 type instance XIf Rn = XIf Par
 type instance XWhile Rn = XWhile Par
 type instance XLet Rn = XLet Par
@@ -49,7 +51,7 @@ data AssRn = AssRn SourceInfo VarRn ExprRn
     deriving (Show)
 
 instance Pretty AssRn where
-  pPretty (AssRn _ var expr) = unwords [pPretty var, "=", pPretty expr]
+    pPretty (AssRn _ var expr) = unwords [pPretty var, "=", pPretty expr]
 
 type instance XLit Rn = XLit Par
 type instance XVar Rn = Void
@@ -59,28 +61,29 @@ type instance XApp Rn = XApp Par
 type instance XExpr Rn = (SourceInfo, VarRn)
 
 data VarRn
-  = BoundVar Ident
-  | FreeVar Ident
-  | ToplevelVar Ident
-  | LambdaVar Ident
+    = BoundVar Ident
+    | FreeVar Ident
+    | ToplevelVar Ident
+    | LambdaVar Ident
     deriving (Show)
 instance Pretty (SourceInfo, VarRn) where
-  pPretty (_, var) = pPretty var
+    pPretty (_, var) = pPretty var
 
 instance Pretty VarRn where
-  pPretty = \case
-    BoundVar ident -> pPretty ident
-    FreeVar ident -> pPretty ident
-    ToplevelVar ident -> pPretty ident
-    LambdaVar ident -> pPretty ident
+    pPretty = \case
+        BoundVar ident -> pPretty ident
+        FreeVar ident -> pPretty ident
+        ToplevelVar ident -> pPretty ident
+        LambdaVar ident -> pPretty ident
 
-type instance XIntLit Rn = XIntLit Par
-type instance XDoubleLit Rn = XDoubleLit Par
-type instance XStringLit Rn = XStringLit Par
-type instance XCharLit Rn = XCharLit Par
-type instance XBoolLit Rn = XBoolLit Par
+type instance XIntLit Rn = ()
+type instance XDoubleLit Rn = ()
+type instance XStringLit Rn = ()
+type instance XCharLit Rn = ()
+type instance XBoolLit Rn = ()
+type instance XUnitLit Rn = ()
 
-type instance XTyLit Rn = XTyLit Par
-type instance XTyVar Rn = XTyVar Par
-type instance XTyFun Rn = XTyFun Par
-type instance XType Rn = XType Par
+type instance XTyLit Rn = ()
+type instance XTyVar Rn = ()
+type instance XTyFun Rn = ()
+type instance XType Rn = Void

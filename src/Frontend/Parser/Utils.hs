@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
@@ -5,34 +6,43 @@ module Frontend.Parser.Utils where
 
 import Data.Text (pack)
 import Relude hiding (span)
+import Text.Megaparsec (Pos)
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 import Types
-import Text.Megaparsec (Pos)
 
-type Parser = P.Parsec Void Text
+type Parser = P.ParsecT CustomParseError Text (Reader Bool)
+
+{-| The order of the errors matters here, the one with the 'greatest' ord
+takes priority if more than one error is thrown
+-}
+data CustomParseError = BreakNotInLoop
+    deriving (Eq, Ord, Show)
+
+instance P.ShowErrorComponent CustomParseError where
+    showErrorComponent = show
 
 keywords :: [String]
 keywords =
-  [ "def"
-  , "="
-  , "let"
-  , "mut"
-  , "while"
-  , "break"
-  , "return"
-  , "if"
-  , "{"
-  , "}"
-  , "true"
-  , "false"
-  , "int"
-  , "bool"
-  , "double"
-  , "string"
-  , "char"
-  ]
+    [ "def"
+    , "="
+    , "let"
+    , "mut"
+    , "while"
+    , "break"
+    , "return"
+    , "if"
+    , "{"
+    , "}"
+    , "true"
+    , "false"
+    , "int"
+    , "bool"
+    , "double"
+    , "string"
+    , "char"
+    ]
 
 keyword :: Text -> Parser ()
 keyword = void . P.string
@@ -42,6 +52,15 @@ parens = lexeme . P.between (P.char '(') (P.char ')')
 
 semicolon :: Parser Char
 semicolon = P.char ';'
+
+optionallyEndedBy :: (P.MonadParsec e s m) => m a -> m end -> m ([a], Maybe end)
+optionallyEndedBy aP endP = do
+    P.optional (P.try endP) >>= \case
+        Nothing -> do
+            a <- aP
+            first (a :) <$> (optionallyEndedBy aP endP <|> pure ([], Nothing))
+        Just res -> do
+            pure ([], Just res)
 
 curlyBrackets :: Parser a -> Parser a
 curlyBrackets = P.between (lexeme $ P.char '{') (P.char '}')
@@ -63,12 +82,12 @@ charLiteral = P.between (P.char '\'') (P.char '\'') L.charLiteral
 
 identifier :: Parser Ident
 identifier = do
-  headLet <- P.char '_' <|> P.letterChar
-  tailLets <- many (P.char '_' <|> P.alphaNumChar)
-  let name = headLet : tailLets
-  if name `elem` keywords
-    then fail $ "'" <> name <> "' is a keyword, you can not use it as an identifer"
-    else pure (Ident (pack (headLet : tailLets)))
+    headLet <- P.char '_' <|> P.letterChar
+    tailLets <- many (P.char '_' <|> P.alphaNumChar)
+    let name = headLet : tailLets
+    if name `elem` keywords
+        then fail $ "'" <> name <> "' is a keyword, you can not use it as an identifer"
+        else pure (Ident (pack (headLet : tailLets)))
 
 data Before
 

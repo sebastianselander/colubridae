@@ -1,5 +1,5 @@
 # Number of spaces per indentation step
-indentation: 2
+indentation: 4
 
 # Max line length for automatic line breaking
 column-limit: none
