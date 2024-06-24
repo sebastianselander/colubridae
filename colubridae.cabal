@@ -32,8 +32,6 @@ library
     Frontend.Typechecker.Types
     Frontend.Typechecker.Tc
     Frontend.Typechecker.Subst
-    Frontend.Mut.Types
-    Frontend.Mut.Mut
     Frontend.Error
     Frontend.TH
     Types

@@ -1,3 +1,9 @@
-def main() -> string {
-    break;
+def main() -> int {
+    let y = 0;
+    let x = if y == 0 { y } else { 0 };
+    x = x + 1;
+}
+
+def add(mut x:int, y:int) -> int {
+    return x + y;
 }

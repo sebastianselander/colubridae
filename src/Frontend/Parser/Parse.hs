@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
@@ -7,6 +6,7 @@ module Frontend.Parser.Parse where
 
 import Control.Monad.Combinators.Expr (Operator (..))
 import Control.Monad.Combinators.Expr qualified as P
+import Data.List (foldr1)
 import Data.Text (pack)
 import Data.Tuple.Extra (uncurry3)
 import Frontend.Parser.Types
@@ -54,10 +54,14 @@ pType :: Parser TypePar
 pType = P.choice [pAtom, pFunTy, parens pType]
   where
     pFunTy :: Parser TypePar
-    pFunTy = TyFunX () <$> pAtom <*> pType
+    pFunTy = do
+        lexeme $ keyword "fn"
+        argTys <- parens (commaSep pType)
+        lexeme $ keyword "->"
+        TyFunX () argTys <$> pType
 
     pAtom :: Parser TypePar
-    pAtom = P.choice [pInt, pDouble, pChar, pString, pUnit, pTyVar]
+    pAtom = P.choice [pInt, pDouble, pChar, pString, pUnit, pBool, pTyVar]
 
     pInt :: Parser TypePar
     pInt = TyLitX () IntX <$ lexeme (keyword "int")
@@ -74,8 +78,11 @@ pType = P.choice [pAtom, pFunTy, parens pType]
     pUnit :: Parser TypePar
     pUnit = TyLitX () UnitX <$ lexeme (keyword "()")
 
+    pBool :: Parser TypePar
+    pBool = TyLitX () BoolX <$ lexeme (keyword "bool")
+
     pTyVar :: Parser TypePar
-    pTyVar = TyVarX () <$> identifier
+    pTyVar = TyVarX () <$> angles identifier
 
 pStmtColon :: Parser (Maybe StmtPar)
 pStmtColon = do
@@ -85,9 +92,7 @@ pStmtColon = do
             , Just <$> pWhile
             , Just <$> pRet <* semicolon
             , Just <$> pBreak <* semicolon
-            , Just <$> pLet <* semicolon
             , Just . SBlockX () <$> pBlock
-            , Just <$> pAss <* semicolon
             , Just <$> pSExp <* semicolon
             , Nothing <$ (pEmpty <* semicolon)
             ]
@@ -97,9 +102,8 @@ pStmt =
     P.choice
         [ pIf
         , pWhile
-        , pLet
+        , pLoop
         , SBlockX () <$> pBlock
-        , pAss
         ]
 
 pEmpty :: Parser ()
@@ -124,6 +128,14 @@ pWhile = do
     info <- spanEnd gs
     pure (WhileX info cond loopBody)
 
+pLoop :: Parser StmtPar
+pLoop = do
+    gs <- spanStart
+    lexeme (keyword "loop")
+    body <- local (const True) pBlock
+    info <- spanEnd gs
+    pure $ Loop info body
+
 pRet :: Parser StmtPar
 pRet = do
     gs <- spanStart
@@ -141,7 +153,7 @@ pBreak = do
     info <- spanEnd gs
     pure $ BreakX info expr
 
-pLet :: Parser StmtPar
+pLet :: Parser ExprPar
 pLet = do
     gs <- spanStart
     lexeme (keyword "let")
@@ -153,13 +165,26 @@ pLet = do
     info <- spanEnd gs
     pure (LetX (info, mut, ty) name expr)
 
-pAss :: Parser StmtPar
+pAss :: Parser (ExprPar -> ExprPar)
 pAss = do
     gs <- spanStart
-    name <- P.try $ lexeme identifier <* lexeme (keyword "=")
-    expr <- pExpr
+    (name, op) <- P.try $ do
+        name <- lexeme identifier
+        assignOp <- lexeme pAssignOp
+        pure (name, assignOp)
     info <- spanEnd gs
-    pure (AssX info name expr)
+    pure $ \l -> AssX info name op l
+
+pAssignOp :: Parser AssignOp
+pAssignOp =
+    P.choice
+        [ keyword "=" <* P.notFollowedBy (keyword "=") $> Assign
+        , keyword "+=" $> AddAssign
+        , keyword "-=" $> SubAssign
+        , keyword "*=" $> MulAssign
+        , keyword "/=" $> DivAssign
+        , keyword "%=" $> ModAssign
+        ]
 
 pBlock :: Parser BlockPar
 pBlock = uncurry3 BlockX <$> pBlock'
@@ -167,19 +192,30 @@ pBlock = uncurry3 BlockX <$> pBlock'
 pBlock' :: Parser (SourceInfo, [StmtPar], Maybe ExprPar)
 pBlock' = do
     gs <- spanStart
-    -- TODO: Only allow non-statement expressions
-    (stmts, tail) <- curlyBrackets (P.optionallyEndedBy pStmtColon (pExpr <* P.notFollowedBy semicolon))
+    (stmts, tail) <-
+        curlyBrackets
+            (P.optionallyEndedBy pStmtColon (pExpr <* P.notFollowedBy semicolon) <|> return ([], Nothing))
     info <- spanEnd gs
     pure (info, catMaybes stmts, tail)
 
 pSExp :: Parser StmtPar
 pSExp = SExprX () <$> pExpr
 
+pApp :: Parser (ExprPar -> ExprPar)
+pApp = do
+    gs <- spanStart
+    args <- parens $ commaSep pExpr
+    info <- spanEnd gs
+    pure $ \l -> AppX info l args
+
 pExpr :: Parser ExprPar
 pExpr = putInfo (P.makeExprParser pExprAtom table)
   where
     table =
         [
+            [ Postfix $ foldr1 (>>>) <$> P.some pApp
+            ]
+        ,
             [ binaryL "*" (binOp Mul)
             , binaryL "/" (binOp Div)
             , binaryL "%" (binOp Mod)
@@ -205,12 +241,7 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
             [ binaryL "||" (binOp Or)
             ]
         ,
-            [ binaryL "=" (binOp Assign)
-            , binaryL "+=" (binOp AddAssign)
-            , binaryL "*=" (binOp MulAssign)
-            , binaryL "/=" (binOp DivAssign)
-            , binaryL "%=" (binOp ModAssign)
-            ]
+            [ Prefix pAss ]
         ]
 
     binaryL :: Text -> (a -> a -> a) -> Operator Parser a
@@ -222,8 +253,13 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
 pExprAtom :: Parser ExprPar
 pExprAtom =
     P.choice
-        [ pLit
-        , EStmtX () <$> pStmt
+        [ do
+            gs <- spanStart
+            stmt <- pStmt
+            info <- spanEnd gs
+            pure $ EStmtX info stmt
+        , pLit
+        , pLet
         , pVar
         , parens pExpr
         ]
@@ -288,6 +324,8 @@ putInfo p = do
         LitX _ l -> LitX pos l
         VarX _ v -> VarX pos v
         BinOpX _ l op r -> BinOpX pos l op r
-        EStmtX _ s -> EStmtX () s
+        EStmtX _ s -> EStmtX pos s
         AppX _ l rs -> AppX pos l rs
+        LetX (_, mut, ty) name expr -> LetX (pos, mut, ty) name expr
+        AssX _ name op expr -> AssX pos name op expr
         ExprX v -> impossible v

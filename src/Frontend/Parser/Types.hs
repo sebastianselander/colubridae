@@ -1,4 +1,6 @@
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Frontend.Parser.Types where
 
@@ -35,7 +37,7 @@ type instance XDef Par = SourceInfo
 
 type instance XBlock Par = SourceInfo
 
-type instance XStmt Par = Void
+type instance XStmt Par = SugarStmtX Par
 type instance XRet Par = SourceInfo
 type instance XSBlock Par = ()
 type instance XBreak Par = SourceInfo
@@ -48,7 +50,7 @@ type instance XSExp Par = ()
 type instance XLit Par = SourceInfo
 type instance XVar Par = SourceInfo
 type instance XBinOp Par = SourceInfo
-type instance XExprStmt Par = ()
+type instance XExprStmt Par = SourceInfo
 type instance XApp Par = SourceInfo
 type instance XExpr Par = Void
 
@@ -63,3 +65,7 @@ type instance XTyLit Par = ()
 type instance XTyVar Par = ()
 type instance XTyFun Par = ()
 type instance XType Par = Void
+
+type instance XLoop Par = SourceInfo
+
+deriving instance Data (SugarStmtX Par)

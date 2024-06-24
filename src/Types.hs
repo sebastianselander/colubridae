@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Types where
 
@@ -15,6 +16,7 @@ import Relude hiding (Type, concat, intercalate, replicate)
 import Relude qualified
 import Text.Megaparsec (Pos)
 import Text.Megaparsec.Pos (unPos)
+import Data.Text (intercalate)
 
 data Mutability = Mutable | Immutable
     deriving (Show, Eq, Ord, Data, Typeable)
@@ -65,7 +67,7 @@ deriving instance (ForallX Typeable a) => Typeable (ArgX a)
 data TypeX a
     = TyLitX (XTyLit a) TyLit
     | TyVarX (XTyVar a) Ident
-    | TyFunX (XTyFun a) (TypeX a) (TypeX a)
+    | TyFunX (XTyFun a) [TypeX a] (TypeX a)
     | TypeX (XType a)
 type family XTyLit a
 type family XTyVar a
@@ -91,8 +93,6 @@ data StmtX a
     | BreakX (XBreak a) (Maybe (ExprX a))
     | IfX (XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
     | WhileX (XWhile a) (ExprX a) (BlockX a)
-    | LetX (XLet a) Ident (ExprX a)
-    | AssX (XAss a) Ident (ExprX a)
     | SExprX (XSExp a) (ExprX a)
     | StmtX (XStmt a)
 type family XRet a
@@ -100,10 +100,17 @@ type family XSBlock a
 type family XBreak a
 type family XIf a
 type family XWhile a
-type family XLet a
-type family XAss a
 type family XSExp a
 type family XStmt a
+
+data AssignOp
+    = AddAssign
+    | SubAssign
+    | MulAssign
+    | DivAssign
+    | ModAssign
+    | Assign
+    deriving (Show, Eq, Ord, Data)
 
 deriving instance (ForallX Show a) => Show (StmtX a)
 deriving instance (ForallX Typeable a) => Typeable (StmtX a)
@@ -115,12 +122,16 @@ data ExprX a
     | BinOpX (XBinOp a) (ExprX a) BinOp (ExprX a)
     | AppX (XApp a) (ExprX a) [ExprX a]
     | EStmtX (XExprStmt a) (StmtX a)
+    | LetX (XLet a) Ident (ExprX a)
+    | AssX (XAss a) Ident AssignOp (ExprX a)
     | ExprX (XExpr a)
 type family XExprStmt a
 type family XLit a
 type family XVar a
 type family XBinOp a
 type family XApp a
+type family XLet a
+type family XAss a
 type family XExpr a
 
 deriving instance (ForallX Show a) => Show (ExprX a)
@@ -140,12 +151,6 @@ data BinOp
     | Gte
     | Eq
     | Neq
-    | AddAssign
-    | SubAssign
-    | MulAssign
-    | DivAssign
-    | ModAssign
-    | Assign
     deriving (Show, Eq, Ord, Data)
 
 -- Literal
@@ -162,6 +167,15 @@ type family XStringLit a
 type family XCharLit a
 type family XBoolLit a
 type family XUnitLit a
+
+data SugarStmtX a = LoopX (XLoop a) (BlockX a)
+type family XLoop a
+deriving instance (ForallX Show a) => Show (SugarStmtX a)
+deriving instance (ForallX Typeable a) => Typeable (SugarStmtX a)
+
+pattern Loop :: (XStmt a1 ~ SugarStmtX a2) => XLoop a2 -> BlockX a2 -> StmtX a1
+pattern Loop info block <- StmtX (LoopX info block)
+  where Loop info block = StmtX (LoopX info block)
 
 deriving instance (ForallX Show a) => Show (LitX a)
 deriving instance (ForallX Typeable a) => Typeable (LitX a)
@@ -200,6 +214,7 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XSBlock a)
     , c (XExpr a)
     , c (XType a)
+    , c (XLoop a)
     )
 
 class Pretty a where
@@ -255,6 +270,12 @@ instance (ForallX Pretty a) => Pretty (TypeX a) where
 instance (ForallX Pretty a) => Pretty (LitX a) where
     pPretty = prettyLit
 
+instance (ForallX Pretty a) => Pretty (BlockX a) where
+  pPretty = prettyBlock
+
+instance (ForallX Pretty a) => Pretty (SugarStmtX a) where
+  pPretty (LoopX _ block) = "loop \n" <> pPretty block
+
 prettyProgram :: (ForallX Pretty a) => ProgramX a -> Text
 prettyProgram (ProgramX _ defs) = Text.intercalate "\n\n" (fmap prettyDef defs)
 
@@ -271,13 +292,13 @@ prettyDef (Fn _ (Ident name) args ty block) =
 
 prettyBlock :: (ForallX Pretty a) => BlockX a -> Text
 prettyBlock (BlockX _ stmts tail) =
-    "{\n" <> unlines (fmap (indent 4 . prettyStmt) stmts <> maybe [] (return . prettyExpr1) tail) <> "}"
+    "{\n" <> unlines (fmap (indent 4 . prettyStmt) stmts <> maybe [] (return . indent 4 . prettyExpr1) tail) <> "}"
 
 prettyArg :: (ForallX Pretty a) => ArgX a -> Text
 prettyArg (ArgX a (Ident name) ty) = unwords [pPretty a, name, ":", prettyType1 ty]
 
 prettyType1 :: (ForallX Pretty a) => TypeX a -> Text
-prettyType1 (TyFunX _ l r) = unwords [prettyType1 l, "->", prettyType1 r]
+prettyType1 (TyFunX _ l r) = unwords ["(" <> intercalate ", " (fmap prettyType1 l) <> ")", "->", prettyType1 r]
 prettyType1 ty = prettyType2 ty
 
 prettyType2 :: (ForallX Pretty a) => TypeX a -> Text
@@ -330,6 +351,10 @@ prettyExpr7 (LitX _ lit) = prettyLit lit
 prettyExpr7 (VarX _ (Ident name)) = name
 prettyExpr7 (EStmtX _ s) = prettyStmt s
 prettyExpr7 (AppX _ l rs) = Text.concat [prettyExpr1 l, "(", Text.intercalate ", " $ fmap prettyExpr1 rs, ")"]
+prettyExpr7 (LetX m (Ident name) e) =
+    let mut = "let " <> pPretty m
+     in unwords [mut, name, "=", prettyExpr1 e]
+prettyExpr7 (AssX _ (Ident name) op e) = unwords [name, prettyAssignOp op, prettyExpr1 e]
 prettyExpr7 (ExprX a) = pPretty a
 
 prettyStmt :: (ForallX Pretty a) => StmtX a -> Text
@@ -358,12 +383,17 @@ prettyStmt (WhileX _ cond block) =
         , prettyExpr1 cond
         , prettyBlock block
         ]
-prettyStmt (LetX m (Ident name) e) =
-    let mut = "let " <> pPretty m
-     in unwords [mut, name, "=", prettyExpr1 e]
-prettyStmt (AssX _ (Ident name) e) = unwords [name, "=", prettyExpr1 e]
 prettyStmt (SExprX _ e) = prettyExpr1 e
 prettyStmt (StmtX a) = pPretty a
+
+prettyAssignOp :: AssignOp -> Text
+prettyAssignOp = \case
+    AddAssign -> "+="
+    SubAssign -> "-="
+    MulAssign -> "*="
+    DivAssign -> "/="
+    ModAssign -> "%="
+    Assign -> "="
 
 prettyLit :: (ForallX Pretty a) => LitX a -> Text
 prettyLit l = case l of

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -11,6 +12,7 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 import Types
+import Text.Megaparsec.Byte.Lexer (skipLineComment)
 
 type Parser = P.ParsecT CustomParseError Text (Reader Bool)
 
@@ -33,8 +35,6 @@ keywords =
     , "break"
     , "return"
     , "if"
-    , "{"
-    , "}"
     , "true"
     , "false"
     , "int"
@@ -42,6 +42,13 @@ keywords =
     , "double"
     , "string"
     , "char"
+    , "fn"
+    , "{"
+    , "}"
+    , "("
+    , ")"
+    , "["
+    , "]"
     ]
 
 keyword :: Text -> Parser ()
@@ -49,6 +56,9 @@ keyword = void . P.string
 
 parens :: Parser a -> Parser a
 parens = lexeme . P.between (P.char '(') (P.char ')')
+
+angles :: Parser a -> Parser a
+angles = lexeme . P.between (P.char '<') (P.char '>')
 
 semicolon :: Parser Char
 semicolon = P.char ';'
@@ -66,7 +76,7 @@ curlyBrackets :: Parser a -> Parser a
 curlyBrackets = P.between (lexeme $ P.char '{') (P.char '}')
 
 lexeme :: Parser a -> Parser a
-lexeme = L.lexeme (P.hidden P.space)
+lexeme = L.lexeme (P.hidden P.space) --L.lexeme (void $ P.many $ P.hidden (P.space <|> L.skipLineComment "//" <|> L.skipBlockCommentNested "/*" "*/"))
 
 string :: Text -> Parser Text
 string txt = lexeme (P.string txt)

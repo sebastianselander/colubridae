@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -10,12 +8,11 @@ import Frontend.Parser.Types
 import Relude
 import Types
 
-data Boundedness = Free | Bound
+data Boundedness = Free | Bound | Toplevel | Lambda
     deriving (Show, Eq, Ord, Data)
 
 instance Pretty Boundedness where
-    pPretty Free = "Free"
-    pPretty Bound = "Bound"
+    pPretty = show
 
 data Rn
     deriving (Data)
@@ -28,6 +25,17 @@ type TypeRn = TypeX Rn
 type LitRn = LitX Rn
 type StmtRn = StmtX Rn
 type BlockRn = BlockX Rn
+type SugarStmtRn = SugarStmtX Rn
+
+deriving instance Data ExprRn
+deriving instance Data ProgramRn
+deriving instance Data LitRn
+deriving instance Data ArgRn
+deriving instance Data DefRn
+deriving instance Data TypeRn
+deriving instance Data BlockRn
+deriving instance Data StmtRn
+deriving instance Data SugarStmtRn
 
 type instance XProgram Rn = XProgram Par
 
@@ -42,39 +50,17 @@ type instance XBreak Rn = XBreak Par
 type instance XSBlock Rn = ()
 type instance XIf Rn = XIf Par
 type instance XWhile Rn = XWhile Par
-type instance XLet Rn = XLet Par
-type instance XAss Rn = Void
+type instance XLet Rn = (SourceInfo, Mutability, Maybe TypeRn)
+type instance XAss Rn = (SourceInfo, Boundedness)
 type instance XSExp Rn = XSExp Par
-type instance XStmt Rn = AssRn
-
-data AssRn = AssRn SourceInfo VarRn ExprRn
-    deriving (Show)
-
-instance Pretty AssRn where
-    pPretty (AssRn _ var expr) = unwords [pPretty var, "=", pPretty expr]
+type instance XStmt Rn = SugarStmtX Rn
 
 type instance XLit Rn = XLit Par
-type instance XVar Rn = Void
+type instance XVar Rn = (SourceInfo, Boundedness)
 type instance XBinOp Rn = XBinOp Par
 type instance XExprStmt Rn = XExprStmt Par
 type instance XApp Rn = XApp Par
-type instance XExpr Rn = (SourceInfo, VarRn)
-
-data VarRn
-    = BoundVar Ident
-    | FreeVar Ident
-    | ToplevelVar Ident
-    | LambdaVar Ident
-    deriving (Show)
-instance Pretty (SourceInfo, VarRn) where
-    pPretty (_, var) = pPretty var
-
-instance Pretty VarRn where
-    pPretty = \case
-        BoundVar ident -> pPretty ident
-        FreeVar ident -> pPretty ident
-        ToplevelVar ident -> pPretty ident
-        LambdaVar ident -> pPretty ident
+type instance XExpr Rn = Void
 
 type instance XIntLit Rn = ()
 type instance XDoubleLit Rn = ()
@@ -87,3 +73,5 @@ type instance XTyLit Rn = ()
 type instance XTyVar Rn = ()
 type instance XTyFun Rn = ()
 type instance XType Rn = Void
+
+type instance XLoop Rn = SourceInfo

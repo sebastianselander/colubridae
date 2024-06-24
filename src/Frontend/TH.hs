@@ -52,7 +52,7 @@ validateCon errName con@(NormalC nm _) = do
         vars = map (VarE . mkName . return) $ take args ['a' ..]
         refute = InfixE (Just $ VarE (mkName "refute")) (VarE $ mkName "$") (Just $ InfixE (Just $ VarE (mkName "return")) (VarE $ mkName "$") (Just $ foldl' AppE (ConE (mkName name)) vars))
         dispute = InfixE (Just $ VarE (mkName "dispute")) (VarE $ mkName "$") (Just $ InfixE (Just $ VarE (mkName "return")) (VarE $ mkName "$") (Just $ foldl' AppE (ConE (mkName name)) vars))
-        dispute' = InfixE (Just dispute) (VarE $ mkName ">>") (Just $ AppE (VarE $ mkName "pure") (AppE (ConE (mkName "TypeX")) (ConE (mkName "Unsolvable"))))
+        dispute' = InfixE (Just dispute) (VarE $ mkName ">>") (Just $ AppE (VarE $ mkName "pure") (AppE (ConE (mkName "TypeX")) (ConE (mkName "UnsolvableX"))))
     return
         [ SigD (mkName (small nameRefute)) (constraint ty')
         , FunD (mkName (small nameRefute)) [Clause pats (NormalB refute) []]

@@ -25,20 +25,20 @@ type BlockTc = BlockX Tc
 
 type instance XProgram Tc = ()
 
-type instance XArg Tc = Mutability
+type instance XArg Tc = ()
 
 type instance XDef Tc = ()
 
 type instance XBlock Tc = TypeTc
 
-type instance XStmt Tc = Void
+type instance XStmt Tc = SugarStmtX Tc
 type instance XRet Tc = TypeTc
 type instance XSBlock Tc = ()
 type instance XBreak Tc = TypeTc
 type instance XIf Tc = TypeTc
 type instance XWhile Tc = TypeTc
-type instance XLet Tc = (Mutability, TypeTc)
-type instance XAss Tc = TypeTc
+type instance XLet Tc = (TypeTc, TypeTc)
+type instance XAss Tc = (TypeTc, TypeTc)
 type instance XSExp Tc = ()
 
 type instance XLit Tc = TypeTc
@@ -60,15 +60,34 @@ type instance XTyVar Tc = ()
 type instance XTyFun Tc = ()
 type instance XType Tc = MetaTy
 
-deriving instance Eq TypeTc
+type instance XLoop Tc = TypeTc
 
-data MetaTy = Meta Int | Unsolvable
-    deriving (Show, Ord, Eq)
+deriving instance Eq TypeTc
+deriving instance Ord TypeTc
+
+pattern Meta :: (XType a ~ MetaTy) => Int -> TypeX a
+pattern Meta n <- TypeX (MetaX n)
+    where
+        Meta n = TypeX $ MetaX n
+
+pattern Unsolvable :: (XType a ~ MetaTy) => TypeX a
+pattern Unsolvable <- TypeX UnsolvableX
+    where
+        Unsolvable = TypeX UnsolvableX
+
+pattern Mut :: (XType a ~ MetaTy) => TypeTc -> TypeX a
+pattern Mut ty <- TypeX (MutableX ty)
+  where
+    Mut ty = TypeX (MutableX ty)
+
+data MetaTy = MutableX TypeTc | MetaX Int | UnsolvableX
+    deriving (Show, Eq, Ord)
 
 instance Pretty MetaTy where
     pPretty = \case
-        Meta n -> "#" <> (letters !! n) <> "#"
-        Unsolvable -> "#Unsolvable#"
+        MetaX n -> "#" <> (letters !! n) <> "#"
+        UnsolvableX -> "#Unsolvable#"
+        MutableX ty -> pPretty ty <> "?"
 
 letters :: [Text]
 letters = fmap pack $ [1 ..] >>= flip replicateM ['a' .. 'z']

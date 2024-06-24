@@ -64,22 +64,12 @@ rnStatement = \case
         b <- rnExpr b
         stmts <- newContext $ rnBlock block
         pure $ WhileX a b stmts
-    LetX a name expr -> do
-        expr <- rnExpr expr
-        name' <- insertVar name
-        pure $ LetX a name' expr
-    AssX info variable expr -> do
-        (bind, name) <-
-            maybe (unboundVariable info variable) pure
-                =<< boundVar variable
-        expr <- rnExpr expr
-        case bind of
-            Bound -> pure $ StmtX (AssRn info (BoundVar name) expr)
-            Free -> pure $ StmtX (AssRn info (FreeVar name) expr)
     SExprX a b -> do
         b <- rnExpr b
         pure $ SExprX a b
-    StmtX a -> impossible a
+    StmtX (LoopX info block) -> do
+        block <- rnBlock block
+        pure $ StmtX $ LoopX info block
 
 rnExpr :: ExprPar -> Gen ExprRn
 rnExpr = \case
@@ -87,11 +77,9 @@ rnExpr = \case
     VarX info variable -> do
         (bind, name) <-
             maybe (unboundVariable info variable) pure
-                =<< maybe (fmap (Bound,) <$> boundFun variable) (pure . Just)
+                =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
                 =<< boundVar variable
-        pure $ case bind of
-            Bound -> ExprX (info, BoundVar name)
-            Free -> ExprX (info, FreeVar name)
+        pure $ VarX (info, bind) name
     BinOpX info l op r -> do
         l <- rnExpr l
         r <- rnExpr r
@@ -100,6 +88,17 @@ rnExpr = \case
         l <- rnExpr l
         args <- mapM rnExpr args
         pure $ AppX info l args
+    LetX (info, mut, ty) name expr -> do
+        expr <- rnExpr expr
+        name' <- insertVar name
+        ty <- mapM rnType ty
+        pure $ LetX (info, mut, ty) name' expr
+    AssX info variable op expr -> do
+        (bind, name) <-
+            maybe (unboundVariable info variable) pure
+                =<< boundVar variable
+        expr <- rnExpr expr
+        pure (AssX (info, bind) name op expr)
     EStmtX info stmt -> EStmtX info <$> rnStatement stmt
     ExprX v -> impossible v
 
@@ -118,12 +117,13 @@ getDefinitions = listify' fnName
     fnName :: DefPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _) = Just (info, name)
 
-uniqueArgs :: (MonadError RnError m) => [ArgPar] -> m [ArgRn]
+uniqueArgs :: (MonadState Env m, MonadError RnError m) => [ArgPar] -> m [ArgRn]
 uniqueArgs = foldM f mempty
   where
-    f :: (MonadError RnError m) => [ArgRn] -> ArgPar -> m [ArgRn]
+    f :: (MonadState Env m, MonadError RnError m) => [ArgRn] -> ArgPar -> m [ArgRn]
     f seen arg@(ArgX (info, mut) name ty) = do
         when (any (eqAlphaArg arg) seen) (conflictingDefinitionArgument info name)
+        name <- insertVar name
         ty <- rnType ty
         pure (ArgX (info, mut) name ty : seen)
 
@@ -135,7 +135,7 @@ rnType = \case
     TyLitX a lit -> pure $ TyLitX a lit
     TyVarX a name -> pure $ TyVarX a name
     TyFunX a b c -> do
-        b <- rnType b
+        b <- mapM rnType b
         c <- rnType c
         pure $ TyFunX a b c
-    TypeX a -> pure $ TypeX a
+    TypeX absurd -> impossible absurd
