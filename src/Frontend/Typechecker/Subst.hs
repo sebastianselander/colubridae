@@ -4,7 +4,6 @@ import Data.Map qualified as Map
 import Frontend.Typechecker.Types
 import Relude
 import Types (BlockX (..), ExprX (..), StmtX (..), TypeX (..), SugarStmtX (..))
-import Utils (impossible)
 
 newtype Subst = Subst {unSubst :: Map MetaTy TypeTc}
     deriving (Show)
@@ -30,7 +29,6 @@ instance Substitution ExprTc where
         LetX (ty1, ty2) name expr -> LetX (apply sub ty1, apply sub ty2) name (apply sub expr)
         AssX (ty1, ty2) name op expr -> AssX (apply sub ty1, apply sub ty2) name op (apply sub expr)
         EStmtX () stmt -> EStmtX () (apply sub stmt)
-        ExprX a -> impossible a
 
 instance Substitution StmtTc where
     apply sub stmt = case stmt of

@@ -21,10 +21,9 @@ import Frontend.Typechecker.Types
 import Relude hiding (intercalate)
 import Relude.Unsafe (fromJust)
 import Types
-import Utils (impossible, listify')
+import Utils (listify')
 
 -- TODO: Wrap each checking result in maybe and explicitly decide to continue or not to gather all errors
-
 data Env = Env {_variables :: Map Ident (TypeTc, Mutability), _freshCounter :: Int, _subst :: Subst}
     deriving (Show)
 
@@ -204,7 +203,6 @@ infExpr = \case
             ModAssign -> unless (ty `elem` [Int, Double]) (void $ tyExpectedGot info [Int, Double] ty)
             Assign -> pure ()
         pure $ AssX (Unit, ty) name op expr
-    ExprX absurd -> impossible absurd
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
 tcExpr expectedTy = \case
@@ -238,7 +236,6 @@ tcExpr expectedTy = \case
         expr <- infExpr (EStmtX info stmt)
         unify info expectedTy (typeOf expr)
         applySt expr
-    ExprX absurd -> impossible absurd
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
@@ -333,7 +330,6 @@ instance TypeOf ExprTc where
         LetX (ty, _) _ _ -> ty
         AssX (ty,_) _ _ _ -> ty
         EStmtX _ stmt -> typeOf stmt
-        ExprX absurd -> impossible absurd
 
 instance TypeOf BlockTc where
     typeOf (BlockX ty _ _) = ty
@@ -343,7 +339,6 @@ instance TypeOf TypeRn where
         TyLitX a b -> TyLitX a b
         TyVarX a b -> TyVarX a b
         TyFunX a b c -> TyFunX a (fmap typeOf b) (typeOf c)
-        TypeX absurd -> impossible absurd
 
 -- | Unify two types. The first argument type *must* the expected one!
 unify :: (MonadState Env m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> TypeTc -> m ()

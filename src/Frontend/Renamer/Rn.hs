@@ -13,7 +13,7 @@ import Frontend.Renamer.Monad
 import Frontend.Renamer.Types
 import Relude
 import Types
-import Utils (impossible, listify')
+import Utils (listify')
 
 rename :: ProgramPar -> Either Text ProgramRn
 rename = left report . runGen emptyEnv emptyCtx . rnProgram
@@ -100,7 +100,6 @@ rnExpr = \case
         expr <- rnExpr expr
         pure (AssX (info, bind) name op expr)
     EStmtX info stmt -> EStmtX info <$> rnStatement stmt
-    ExprX v -> impossible v
 
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
@@ -138,4 +137,3 @@ rnType = \case
         b <- mapM rnType b
         c <- rnType c
         pure $ TyFunX a b c
-    TypeX absurd -> impossible absurd

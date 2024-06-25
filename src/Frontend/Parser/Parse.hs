@@ -17,7 +17,6 @@ import Text.Megaparsec (customFailure)
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
 import Types
-import Utils (impossible)
 
 pProgram :: String -> Text -> Either Text ProgramPar
 pProgram file source =
@@ -328,4 +327,3 @@ putInfo p = do
         AppX _ l rs -> AppX pos l rs
         LetX (_, mut, ty) name expr -> LetX (pos, mut, ty) name expr
         AssX _ name op expr -> AssX pos name op expr
-        ExprX v -> impossible v

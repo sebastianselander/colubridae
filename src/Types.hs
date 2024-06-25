@@ -68,7 +68,7 @@ data TypeX a
     = TyLitX (XTyLit a) TyLit
     | TyVarX (XTyVar a) Ident
     | TyFunX (XTyFun a) [TypeX a] (TypeX a)
-    | TypeX (XType a)
+    | TypeX !(XType a)
 type family XTyLit a
 type family XTyVar a
 type family XTyFun a
@@ -94,7 +94,7 @@ data StmtX a
     | IfX (XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
     | WhileX (XWhile a) (ExprX a) (BlockX a)
     | SExprX (XSExp a) (ExprX a)
-    | StmtX (XStmt a)
+    | StmtX !(XStmt a)
 type family XRet a
 type family XSBlock a
 type family XBreak a
@@ -124,7 +124,7 @@ data ExprX a
     | EStmtX (XExprStmt a) (StmtX a)
     | LetX (XLet a) Ident (ExprX a)
     | AssX (XAss a) Ident AssignOp (ExprX a)
-    | ExprX (XExpr a)
+    | ExprX !(XExpr a)
 type family XExprStmt a
 type family XLit a
 type family XVar a
