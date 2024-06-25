@@ -43,7 +43,7 @@ validateCon errName con@(NormalC nm _) = do
     ty <- reifyType nm
     let constraint = ForallT [] [AppT (AppT (ConT (mkName "MonadValidate")) (AppT ListT (ConT (mkName errName)))) (VarT (mkName "m"))]
     let ty' = delinearize (genLast ty)
-    let ty'' = delinearize (unsolLast ty)
+    let ty'' = delinearize (unitLast ty)
     let args = nArgs ty'
         name = getName con
         nameRefute = name <> "'"
@@ -57,7 +57,7 @@ validateCon errName con@(NormalC nm _) = do
         [ SigD (mkName (small nameRefute)) (constraint ty')
         , FunD (mkName (small nameRefute)) [Clause pats (NormalB refute) []]
         , SigD (mkName (small nameDispute)) (constraint ty'')
-        , FunD (mkName (small nameDispute)) [Clause pats (NormalB dispute') []]
+        , FunD (mkName (small nameDispute)) [Clause pats (NormalB dispute) []]
         ]
 validateCon _ _ = error "Not a normal constructor"
 
@@ -76,10 +76,10 @@ genLast = \case
     ConT {} -> (AppT (VarT . mkName $ "m") (VarT . mkName $ "a"))
     x -> delinearize x
 
-unsolLast :: Type -> Type
-unsolLast = \case
-    AppT t1 t2 -> AppT t1 (unsolLast t2)
-    ConT {} -> (AppT (VarT . mkName $ "m") (ConT . mkName $ "TypeTc"))
+unitLast :: Type -> Type
+unitLast = \case
+    AppT t1 t2 -> AppT t1 (unitLast t2)
+    ConT {} -> (AppT (VarT . mkName $ "m") (TupleT 0))
     x -> delinearize x
 
 delinearize :: Type -> Type

@@ -7,23 +7,28 @@ module Frontend.Parser.Utils where
 
 import Data.Text (pack)
 import Relude hiding (span)
-import Text.Megaparsec (Pos)
+import Text.Megaparsec (Pos, ParseErrorBundle, customFailure, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 import Types
-import Text.Megaparsec.Byte.Lexer (skipLineComment)
+import Frontend.Error (Report, report)
+import Text.Megaparsec.Error (errorBundlePretty)
 
-type Parser = P.ParsecT CustomParseError Text (Reader Bool)
+type Parser = P.Parsec CustomParseError Text
 
 {-| The order of the errors matters here, the one with the 'greatest' ord
-takes priority if more than one error is thrown
+takes priority if more than one error is thrown *I think*
 -}
-data CustomParseError = BreakNotInLoop
+data CustomParseError = UppercaseLetter | Keyword Text
     deriving (Eq, Ord, Show)
 
 instance P.ShowErrorComponent CustomParseError where
     showErrorComponent = show
+
+instance Report (ParseErrorBundle Text CustomParseError) where
+    report = pack . errorBundlePretty
+
 
 keywords :: [String]
 keywords =
@@ -55,25 +60,25 @@ keyword :: Text -> Parser ()
 keyword = void . P.string
 
 parens :: Parser a -> Parser a
-parens = lexeme . P.between (P.char '(') (P.char ')')
+parens = lexeme . P.between (P.hidden $ P.char '(') (P.hidden $ P.char ')')
 
 angles :: Parser a -> Parser a
-angles = lexeme . P.between (P.char '<') (P.char '>')
+angles = lexeme . P.between (P.hidden $ P.char '<') (P.hidden $ P.char '>')
 
 semicolon :: Parser Char
 semicolon = P.char ';'
 
 optionallyEndedBy :: (P.MonadParsec e s m) => m a -> m end -> m ([a], Maybe end)
 optionallyEndedBy aP endP = do
-    P.optional (P.try endP) >>= \case
-        Nothing -> do
-            a <- aP
-            first (a :) <$> (optionallyEndedBy aP endP <|> pure ([], Nothing))
-        Just res -> do
-            pure ([], Just res)
+    huh <- Left <$> aP <|> Right <$> P.optional endP
+    case huh of
+        Left res -> do
+            first (res :) <$> (optionallyEndedBy aP endP <|> pure ([], Nothing))
+        Right res -> do
+            pure ([], res)
 
 curlyBrackets :: Parser a -> Parser a
-curlyBrackets = P.between (lexeme $ P.char '{') (P.char '}')
+curlyBrackets = P.between (lexeme $ P.hidden $ P.char '{') (P.hidden $ P.char '}')
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme (P.hidden P.space) --L.lexeme (void $ P.many $ P.hidden (P.space <|> L.skipLineComment "//" <|> L.skipBlockCommentNested "/*" "*/"))
@@ -82,21 +87,21 @@ string :: Text -> Parser Text
 string txt = lexeme (P.string txt)
 
 commaSep :: Parser a -> Parser [a]
-commaSep p = P.sepBy p (lexeme $ P.char ',')
+commaSep p = P.sepBy p (P.hidden $ lexeme $ P.char ',')
 
 stringLiteral :: Parser Text
-stringLiteral = P.char '"' >> pack <$> P.manyTill L.charLiteral (P.char '"')
+stringLiteral = P.hidden (P.char '"') >> pack <$> P.manyTill L.charLiteral (P.hidden (P.char '"'))
 
 charLiteral :: Parser Char
-charLiteral = P.between (P.char '\'') (P.char '\'') L.charLiteral
+charLiteral = P.between (P.hidden $ P.char '\'') (P.hidden $ P.char '\'') L.charLiteral
 
 identifier :: Parser Ident
 identifier = do
-    headLet <- P.char '_' <|> P.letterChar
+    headLet <- P.char '_' <|> (P.lowerChar <?> "lower case identifier")
     tailLets <- many (P.char '_' <|> P.alphaNumChar)
     let name = headLet : tailLets
     if name `elem` keywords
-        then fail $ "'" <> name <> "' is a keyword, you can not use it as an identifer"
+        then customFailure (Keyword (pack name))
         else pure (Ident (pack (headLet : tailLets)))
 
 data Before

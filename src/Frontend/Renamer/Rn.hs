@@ -2,7 +2,6 @@
 
 module Frontend.Renamer.Rn (rename) where
 
-import Control.Arrow (left)
 import Control.Lens (locally)
 import Control.Monad (foldM)
 import Control.Monad.Except
@@ -15,8 +14,8 @@ import Relude
 import Types
 import Utils (listify')
 
-rename :: ProgramPar -> Either Text ProgramRn
-rename = left report . runGen emptyEnv emptyCtx . rnProgram
+rename :: ProgramPar -> Either RnError ProgramRn
+rename = runGen emptyEnv emptyCtx . rnProgram
 
 rnProgram :: ProgramPar -> Gen ProgramRn
 rnProgram program@(ProgramX a defs) = do
@@ -51,7 +50,7 @@ rnStatement = \case
     RetX a b -> do
         b' <- mapM rnExpr b
         pure $ RetX a b'
-    SBlockX () block -> SBlockX () <$> rnBlock block
+    SBlockX NoExtField block -> SBlockX NoExtField <$> rnBlock block
     BreakX a expr -> do
         b' <- mapM rnExpr expr
         pure $ BreakX a b'

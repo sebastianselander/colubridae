@@ -11,3 +11,11 @@ listify' f = everything (++) ([] `mkQ` (maybeToList . f))
 
 both :: (Bifunctor p) => (c -> d) -> p c c -> p d d
 both f = bimap f f
+
+chain :: (a -> a -> b) -> a -> [a] -> [b]
+chain _ _ [] = []
+chain f base [x] = [f base x]
+chain f base (x:y:xs) = f base x : go (x:y:xs)
+  where
+    go (x:y:xs) = f x y : go (y:xs)
+    go _ = []

@@ -1,9 +1,9 @@
-def main() -> int {
-    let y = 0;
-    let x = if y == 0 { y } else { 0 };
-    x = x + 1;
+def id(mut x: int) -> int {
+    return x;
 }
 
-def add(mut x:int, y:int) -> int {
-    return x + y;
+def main() {
+    let x = 123;
+    let f = id;
+    f(x);
 }

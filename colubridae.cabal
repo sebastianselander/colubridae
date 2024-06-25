@@ -33,6 +33,7 @@ library
     Frontend.Typechecker.Tc
     Frontend.Typechecker.Subst
     Frontend.Error
+    Frontend.StatementCheck
     Frontend.TH
     Types
     Utils

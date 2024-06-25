@@ -3,6 +3,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Frontend.Typechecker.Types where
 
@@ -11,6 +12,8 @@ import Data.List ((!!))
 import Data.Text (pack)
 import Relude
 import Types
+import Control.Lens (makeLenses)
+import Control.Lens.Getter (view)
 
 data Tc deriving (Data)
 
@@ -22,45 +25,55 @@ type TypeTc = TypeX Tc
 type LitTc = LitX Tc
 type StmtTc = StmtX Tc
 type BlockTc = BlockX Tc
+type SugarStmtTc = SugarStmtX Tc
 
-type instance XProgram Tc = ()
+type TcInfo = (SourceInfo, TypeTc)
 
-type instance XArg Tc = ()
+deriving instance Data StmtTc
+deriving instance Data SugarStmtTc
+deriving instance Data BlockTc
+deriving instance Data ExprTc
+deriving instance Data LitTc
+deriving instance Data TypeTc
 
-type instance XDef Tc = ()
+type instance XProgram Tc = NoExtField
 
-type instance XBlock Tc = TypeTc
+type instance XArg Tc = NoExtField
 
-type instance XStmt Tc = SugarStmtX Tc
-type instance XRet Tc = TypeTc
-type instance XSBlock Tc = ()
-type instance XBreak Tc = TypeTc
-type instance XIf Tc = TypeTc
-type instance XWhile Tc = TypeTc
-type instance XLet Tc = (TypeTc, TypeTc)
-type instance XAss Tc = (TypeTc, TypeTc)
-type instance XSExp Tc = ()
+type instance XDef Tc = NoExtField
 
-type instance XLit Tc = TypeTc
-type instance XVar Tc = TypeTc
-type instance XBinOp Tc = TypeTc
-type instance XExprStmt Tc = ()
-type instance XApp Tc = TypeTc
-type instance XExpr Tc = Void
+type instance XBlock Tc = TcInfo
 
-type instance XIntLit Tc = ()
-type instance XDoubleLit Tc = ()
-type instance XStringLit Tc = ()
-type instance XCharLit Tc = ()
-type instance XBoolLit Tc = ()
-type instance XUnitLit Tc = ()
+type instance XStmt Tc = SugarStmtTc
+type instance XRet Tc = TcInfo
+type instance XSBlock Tc = NoExtField
+type instance XBreak Tc = TcInfo
+type instance XIf Tc = TcInfo
+type instance XWhile Tc = TcInfo
+type instance XLet Tc = StmtType
+type instance XAss Tc = StmtType
+type instance XSExp Tc = NoExtField
 
-type instance XTyLit Tc = ()
-type instance XTyVar Tc = ()
-type instance XTyFun Tc = ()
+type instance XLit Tc = TcInfo
+type instance XVar Tc = TcInfo
+type instance XBinOp Tc = TcInfo
+type instance XExprStmt Tc = NoExtField
+type instance XApp Tc = TcInfo
+type instance XExpr Tc = DataConCantHappen
+
+type instance XIntLit Tc = NoExtField
+type instance XDoubleLit Tc = NoExtField
+type instance XStringLit Tc = NoExtField
+type instance XCharLit Tc = NoExtField
+type instance XBoolLit Tc = NoExtField
+type instance XUnitLit Tc = NoExtField
+
+type instance XTyLit Tc = NoExtField
+type instance XTyVar Tc = NoExtField
+type instance XTyFun Tc = NoExtField
 type instance XType Tc = MetaTy
 
-type instance XLoop Tc = TypeTc
+type instance XLoop Tc = TcInfo
 
 deriving instance Eq TypeTc
 deriving instance Ord TypeTc
@@ -81,7 +94,14 @@ pattern Mut ty <- TypeX (MutableX ty)
     Mut ty = TypeX (MutableX ty)
 
 data MetaTy = MutableX TypeTc | MetaX Int | UnsolvableX
-    deriving (Show, Eq, Ord)
+    deriving (Show, Eq, Ord, Data)
+
+data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
+    deriving (Show, Eq, Ord, Data, Typeable)
+$(makeLenses ''StmtType)
+
+instance Pretty StmtType where
+  pPretty ty = pPretty $ view varType ty
 
 instance Pretty MetaTy where
     pPretty = \case
@@ -92,32 +112,32 @@ instance Pretty MetaTy where
 letters :: [Text]
 letters = fmap pack $ [1 ..] >>= flip replicateM ['a' .. 'z']
 
-pattern Int :: (XTyLit a ~ ()) => TypeX a
-pattern Int <- TyLitX () IntX
+pattern Int :: (XTyLit a ~ NoExtField) => TypeX a
+pattern Int <- TyLitX NoExtField IntX
     where
-        Int = TyLitX () IntX
+        Int = TyLitX NoExtField IntX
 
-pattern Double :: (XTyLit a ~ ()) => TypeX a
-pattern Double <- TyLitX () DoubleX
+pattern Double :: (XTyLit a ~ NoExtField) => TypeX a
+pattern Double <- TyLitX NoExtField DoubleX
     where
-        Double = TyLitX () DoubleX
+        Double = TyLitX NoExtField DoubleX
 
-pattern String :: (XTyLit a ~ ()) => TypeX a
-pattern String <- TyLitX () StringX
+pattern String :: (XTyLit a ~ NoExtField) => TypeX a
+pattern String <- TyLitX NoExtField StringX
     where
-        String = TyLitX () StringX
+        String = TyLitX NoExtField StringX
 
-pattern Char :: (XTyLit a ~ ()) => TypeX a
-pattern Char <- TyLitX () CharX
+pattern Char :: (XTyLit a ~ NoExtField) => TypeX a
+pattern Char <- TyLitX NoExtField CharX
     where
-        Char = TyLitX () CharX
+        Char = TyLitX NoExtField CharX
 
-pattern Unit :: (XTyLit a ~ ()) => TypeX a
-pattern Unit <- TyLitX () UnitX
+pattern Unit :: (XTyLit a ~ NoExtField) => TypeX a
+pattern Unit <- TyLitX NoExtField UnitX
     where
-        Unit = TyLitX () UnitX
+        Unit = TyLitX NoExtField UnitX
 
-pattern Bool :: (XTyLit a ~ ()) => TypeX a
-pattern Bool <- TyLitX () BoolX
+pattern Bool :: (XTyLit a ~ NoExtField) => TypeX a
+pattern Bool <- TyLitX NoExtField BoolX
     where
-        Bool = TyLitX () BoolX
+        Bool = TyLitX NoExtField BoolX

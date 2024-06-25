@@ -7,25 +7,21 @@ module Frontend.Parser.Parse where
 import Control.Monad.Combinators.Expr (Operator (..))
 import Control.Monad.Combinators.Expr qualified as P
 import Data.List (foldr1)
-import Data.Text (pack)
 import Data.Tuple.Extra (uncurry3)
 import Frontend.Parser.Types
 import Frontend.Parser.Utils
 import Frontend.Parser.Utils qualified as P
 import Relude hiding (span)
-import Text.Megaparsec (customFailure)
+import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
 import Types
 
-pProgram :: String -> Text -> Either Text ProgramPar
-pProgram file source =
-    case flip runReader False $ P.runParserT (ProgramX () <$> P.many pDef <* P.eof) file source of
-        Left err -> Left $ pack $ P.errorBundlePretty err
-        Right prog -> Right prog
+parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
+parse = P.runParser (ProgramX NoExtField <$> P.many pDef <* P.eof)
 
 runP :: (Show a) => Parser a -> Text -> IO ()
-runP p input = case flip runReader False $ P.runParserT (p <* P.eof) "" input of
+runP p input = case P.runParser (p <* P.eof) "" input of
     Left err -> putStrLn $ P.errorBundlePretty err
     Right res -> print res
 
@@ -35,7 +31,7 @@ pDef = do
     lexeme (keyword "def")
     name <- lexeme identifier
     args <- parens (commaSep pArg)
-    ty <- P.option (TyLitX () UnitX) (lexeme (keyword "->") *> pType)
+    ty <- P.option (TyLitX NoExtField UnitX) (lexeme (keyword "->") *> pType)
     expressions <- pBlock
     info <- spanEnd gs
     pure (Fn info name args ty expressions)
@@ -50,38 +46,38 @@ pArg = do
     pure (ArgX (info, mut) name ty)
 
 pType :: Parser TypePar
-pType = P.choice [pAtom, pFunTy, parens pType]
+pType = P.choice [pAtom, pFunTy, parens pType] <?> "type"
   where
     pFunTy :: Parser TypePar
     pFunTy = do
         lexeme $ keyword "fn"
         argTys <- parens (commaSep pType)
         lexeme $ keyword "->"
-        TyFunX () argTys <$> pType
+        TyFunX NoExtField argTys <$> pType
 
     pAtom :: Parser TypePar
     pAtom = P.choice [pInt, pDouble, pChar, pString, pUnit, pBool, pTyVar]
 
     pInt :: Parser TypePar
-    pInt = TyLitX () IntX <$ lexeme (keyword "int")
+    pInt = TyLitX NoExtField IntX <$ lexeme (keyword "int")
 
     pDouble :: Parser TypePar
-    pDouble = TyLitX () DoubleX <$ lexeme (keyword "double")
+    pDouble = TyLitX NoExtField DoubleX <$ lexeme (keyword "double")
 
     pChar :: Parser TypePar
-    pChar = TyLitX () CharX <$ lexeme (keyword "char")
+    pChar = TyLitX NoExtField CharX <$ lexeme (keyword "char")
 
     pString :: Parser TypePar
-    pString = TyLitX () StringX <$ lexeme (keyword "string")
+    pString = TyLitX NoExtField StringX <$ lexeme (keyword "string")
 
     pUnit :: Parser TypePar
-    pUnit = TyLitX () UnitX <$ lexeme (keyword "()")
+    pUnit = TyLitX NoExtField UnitX <$ lexeme (keyword "()")
 
     pBool :: Parser TypePar
-    pBool = TyLitX () BoolX <$ lexeme (keyword "bool")
+    pBool = TyLitX NoExtField BoolX <$ lexeme (keyword "bool")
 
     pTyVar :: Parser TypePar
-    pTyVar = TyVarX () <$> angles identifier
+    pTyVar = TyVarX NoExtField <$> angles identifier
 
 pStmtColon :: Parser (Maybe StmtPar)
 pStmtColon = do
@@ -91,25 +87,25 @@ pStmtColon = do
             , Just <$> pWhile
             , Just <$> pRet <* semicolon
             , Just <$> pBreak <* semicolon
-            , Just . SBlockX () <$> pBlock
+            , Just . SBlockX NoExtField <$> pBlock
             , Just <$> pSExp <* semicolon
-            , Nothing <$ (pEmpty <* semicolon)
+            , Nothing <$ P.hidden (pEmpty <* semicolon)
             ]
 
 pStmt :: Parser StmtPar
 pStmt =
     P.choice
         [ pIf
-        , pWhile
         , pLoop
-        , SBlockX () <$> pBlock
+        , pWhile
+        , SBlockX NoExtField <$> pBlock
         ]
 
-pEmpty :: Parser ()
-pEmpty = return ()
+pEmpty :: Parser NoExtField
+pEmpty = return NoExtField
 
 pIf :: Parser StmtPar
-pIf = do
+pIf = P.label "if" $ do
     gs <- spanStart
     lexeme (keyword "if")
     cond <- pExpr
@@ -119,24 +115,24 @@ pIf = do
     pure (IfX info cond thenB elseB)
 
 pWhile :: Parser StmtPar
-pWhile = do
+pWhile = P.label "while" $ do
     gs <- spanStart
     lexeme (keyword "while")
     cond <- pExpr
-    loopBody <- local (const True) pBlock
+    loopBody <- pBlock
     info <- spanEnd gs
     pure (WhileX info cond loopBody)
 
 pLoop :: Parser StmtPar
-pLoop = do
+pLoop = P.label "loop" $ do
     gs <- spanStart
     lexeme (keyword "loop")
-    body <- local (const True) pBlock
+    body <- pBlock
     info <- spanEnd gs
     pure $ Loop info body
 
 pRet :: Parser StmtPar
-pRet = do
+pRet = P.label "return" $ do
     gs <- spanStart
     lexeme (keyword "return")
     expr <- P.optional pExpr
@@ -144,16 +140,15 @@ pRet = do
     pure (RetX info expr)
 
 pBreak :: Parser StmtPar
-pBreak = do
+pBreak = P.label "break" $ do
     gs <- spanStart
     lexeme (keyword "break")
-    unlessM ask $ customFailure BreakNotInLoop
     expr <- P.optional pExpr
     info <- spanEnd gs
     pure $ BreakX info expr
 
 pLet :: Parser ExprPar
-pLet = do
+pLet = P.label "let" $ do
     gs <- spanStart
     lexeme (keyword "let")
     mut <- maybe Immutable (const Mutable) <$> P.optional (lexeme (keyword "mut"))
@@ -165,7 +160,7 @@ pLet = do
     pure (LetX (info, mut, ty) name expr)
 
 pAss :: Parser (ExprPar -> ExprPar)
-pAss = do
+pAss = P.label "assignment" $ do
     gs <- spanStart
     (name, op) <- P.try $ do
         name <- lexeme identifier
@@ -198,7 +193,7 @@ pBlock' = do
     pure (info, catMaybes stmts, tail)
 
 pSExp :: Parser StmtPar
-pSExp = SExprX () <$> pExpr
+pSExp = SExprX NoExtField <$> pExpr
 
 pApp :: Parser (ExprPar -> ExprPar)
 pApp = do
@@ -278,40 +273,40 @@ pLit =
         , pChar
         , pString
         , pUnit
-        ]
+        ] <?> "literal"
   where
     pUnit :: Parser ExprPar
     pUnit = do
         gs <- spanStart
-        res <- UnitLitX <$> keyword "()"
+        res <- UnitLitX NoExtField <$ keyword "()"
         info <- spanEnd gs
         pure (LitX info res)
 
     pBool :: Parser ExprPar
     pBool = do
         gs <- spanStart
-        res <- BoolLitX () <$> (True <$ keyword "true" <|> False <$ keyword "false")
+        res <- BoolLitX NoExtField <$> (True <$ keyword "true" <|> False <$ keyword "false")
         info <- spanEnd gs
         pure (LitX info res)
 
     pNumber :: Parser ExprPar
     pNumber = do
         gs <- spanStart
-        res <- (DoubleLitX () <$> P.try P.float) <|> (IntLitX () <$> P.decimal)
+        res <- (DoubleLitX NoExtField <$> P.try P.float) <|> (IntLitX NoExtField <$> P.decimal)
         info <- spanEnd gs
         pure (LitX info res)
 
     pString :: Parser ExprPar
     pString = do
         gs <- spanStart
-        res <- StringLitX () <$> stringLiteral
+        res <- StringLitX NoExtField <$> stringLiteral
         info <- spanEnd gs
         pure (LitX info res)
 
     pChar :: Parser ExprPar
     pChar = do
         gs <- spanStart
-        res <- CharLitX () <$> charLiteral
+        res <- CharLitX NoExtField <$> charLiteral
         info <- spanEnd gs
         pure (LitX info res)
 

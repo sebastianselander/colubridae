@@ -1,4 +1,3 @@
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -29,7 +28,7 @@ deriving instance Data TypePar
 deriving instance Data StmtPar
 deriving instance Data BlockPar
 
-type instance XProgram Par = ()
+type instance XProgram Par = NoExtField
 
 type instance XArg Par = (SourceInfo, Mutability)
 
@@ -39,32 +38,32 @@ type instance XBlock Par = SourceInfo
 
 type instance XStmt Par = SugarStmtX Par
 type instance XRet Par = SourceInfo
-type instance XSBlock Par = ()
+type instance XSBlock Par = NoExtField
 type instance XBreak Par = SourceInfo
 type instance XIf Par = SourceInfo
 type instance XWhile Par = SourceInfo
 type instance XLet Par = (SourceInfo, Mutability, Maybe TypePar)
 type instance XAss Par = SourceInfo
-type instance XSExp Par = ()
+type instance XSExp Par = NoExtField
 
 type instance XLit Par = SourceInfo
 type instance XVar Par = SourceInfo
 type instance XBinOp Par = SourceInfo
 type instance XExprStmt Par = SourceInfo
 type instance XApp Par = SourceInfo
-type instance XExpr Par = Void
+type instance XExpr Par = DataConCantHappen
 
-type instance XIntLit Par = ()
-type instance XDoubleLit Par = ()
-type instance XStringLit Par = ()
-type instance XCharLit Par = ()
-type instance XBoolLit Par = ()
-type instance XUnitLit Par = ()
+type instance XIntLit Par = NoExtField
+type instance XDoubleLit Par = NoExtField
+type instance XStringLit Par = NoExtField
+type instance XCharLit Par = NoExtField
+type instance XBoolLit Par = NoExtField
+type instance XUnitLit Par = NoExtField
 
-type instance XTyLit Par = ()
-type instance XTyVar Par = ()
-type instance XTyFun Par = ()
-type instance XType Par = Void
+type instance XTyLit Par = NoExtField
+type instance XTyVar Par = NoExtField
+type instance XTyFun Par = NoExtField
+type instance XType Par = DataConCantHappen
 
 type instance XLoop Par = SourceInfo
 

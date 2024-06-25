@@ -1,14 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE PatternSynonyms #-}
 
 module Types where
 
 import Data.Data (Data)
 import Data.Kind qualified
+import Data.Text (intercalate)
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import GHC.Show (show)
@@ -16,7 +17,18 @@ import Relude hiding (Type, concat, intercalate, replicate)
 import Relude qualified
 import Text.Megaparsec (Pos)
 import Text.Megaparsec.Pos (unPos)
-import Data.Text (intercalate)
+
+data NoExtField = NoExtField
+    deriving (Show, Eq, Ord, Data, Typeable, Generic)
+
+instance Pretty NoExtField where
+  pPretty _ = ""
+
+data DataConCantHappen
+    deriving (Show, Eq, Ord, Data, Typeable, Generic)
+
+instance Pretty DataConCantHappen where
+  pPretty _ = ""
 
 data Mutability = Mutable | Immutable
     deriving (Show, Eq, Ord, Data, Typeable)
@@ -43,21 +55,21 @@ instance Show SourceInfo where
     show info = maybe "no pos" Relude.show info.spanInfo
 
 -- Program
-data ProgramX a = ProgramX (XProgram a) [DefX a]
+data ProgramX a = ProgramX !(XProgram a) [DefX a]
 type family XProgram a
 
 deriving instance (ForallX Show a) => Show (ProgramX a)
 deriving instance (ForallX Typeable a) => Typeable (ProgramX a)
 
 -- Definition
-data DefX a = Fn (XDef a) Ident [ArgX a] (TypeX a) (BlockX a)
+data DefX a = Fn !(XDef a) Ident [ArgX a] (TypeX a) (BlockX a)
 type family XDef a
 
 deriving instance (ForallX Show a) => Show (DefX a)
 deriving instance (ForallX Typeable a) => Typeable (DefX a)
 
 -- Argument
-data ArgX a = ArgX (XArg a) Ident (TypeX a)
+data ArgX a = ArgX !(XArg a) Ident (TypeX a)
 type family XArg a
 
 deriving instance (ForallX Show a) => Show (ArgX a)
@@ -65,9 +77,9 @@ deriving instance (ForallX Typeable a) => Typeable (ArgX a)
 
 -- Type
 data TypeX a
-    = TyLitX (XTyLit a) TyLit
-    | TyVarX (XTyVar a) Ident
-    | TyFunX (XTyFun a) [TypeX a] (TypeX a)
+    = TyLitX !(XTyLit a) TyLit
+    | TyVarX !(XTyVar a) Ident
+    | TyFunX !(XTyFun a) [TypeX a] (TypeX a)
     | TypeX !(XType a)
 type family XTyLit a
 type family XTyVar a
@@ -80,7 +92,7 @@ data TyLit = UnitX | StringX | IntX | DoubleX | CharX | BoolX
 deriving instance (ForallX Show a) => Show (TypeX a)
 deriving instance (ForallX Typeable a) => Typeable (TypeX a)
 
-data BlockX a = BlockX (XBlock a) [StmtX a] (Maybe (ExprX a))
+data BlockX a = BlockX !(XBlock a) [StmtX a] (Maybe (ExprX a))
 type family XBlock a
 
 deriving instance (ForallX Show a) => Show (BlockX a)
@@ -88,12 +100,12 @@ deriving instance (ForallX Typeable a) => Typeable (BlockX a)
 
 -- Statement
 data StmtX a
-    = RetX (XRet a) (Maybe (ExprX a))
-    | SBlockX (XSBlock a) (BlockX a)
-    | BreakX (XBreak a) (Maybe (ExprX a))
-    | IfX (XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
-    | WhileX (XWhile a) (ExprX a) (BlockX a)
-    | SExprX (XSExp a) (ExprX a)
+    = RetX !(XRet a) (Maybe (ExprX a))
+    | SBlockX !(XSBlock a) (BlockX a)
+    | BreakX !(XBreak a) (Maybe (ExprX a))
+    | IfX !(XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
+    | WhileX !(XWhile a) (ExprX a) (BlockX a)
+    | SExprX !(XSExp a) (ExprX a)
     | StmtX !(XStmt a)
 type family XRet a
 type family XSBlock a
@@ -117,13 +129,13 @@ deriving instance (ForallX Typeable a) => Typeable (StmtX a)
 
 -- Expression
 data ExprX a
-    = LitX (XLit a) (LitX a)
-    | VarX (XVar a) Ident
-    | BinOpX (XBinOp a) (ExprX a) BinOp (ExprX a)
-    | AppX (XApp a) (ExprX a) [ExprX a]
-    | EStmtX (XExprStmt a) (StmtX a)
-    | LetX (XLet a) Ident (ExprX a)
-    | AssX (XAss a) Ident AssignOp (ExprX a)
+    = LitX !(XLit a) (LitX a)
+    | VarX !(XVar a) Ident
+    | BinOpX !(XBinOp a) (ExprX a) BinOp (ExprX a)
+    | AppX !(XApp a) (ExprX a) [ExprX a]
+    | EStmtX !(XExprStmt a) (StmtX a)
+    | LetX !(XLet a) Ident (ExprX a)
+    | AssX !(XAss a) Ident AssignOp (ExprX a)
     | ExprX !(XExpr a)
 type family XExprStmt a
 type family XLit a
@@ -155,12 +167,12 @@ data BinOp
 
 -- Literal
 data LitX a
-    = IntLitX (XIntLit a) Integer
-    | DoubleLitX (XDoubleLit a) Double
-    | StringLitX (XStringLit a) Text
-    | CharLitX (XCharLit a) Char
-    | BoolLitX (XBoolLit a) Bool
-    | UnitLitX (XUnitLit a)
+    = IntLitX !(XIntLit a) Integer
+    | DoubleLitX !(XDoubleLit a) Double
+    | StringLitX !(XStringLit a) Text
+    | CharLitX !(XCharLit a) Char
+    | BoolLitX !(XBoolLit a) Bool
+    | UnitLitX !(XUnitLit a)
 type family XIntLit a
 type family XDoubleLit a
 type family XStringLit a
@@ -172,10 +184,12 @@ data SugarStmtX a = LoopX (XLoop a) (BlockX a)
 type family XLoop a
 deriving instance (ForallX Show a) => Show (SugarStmtX a)
 deriving instance (ForallX Typeable a) => Typeable (SugarStmtX a)
+deriving instance (ForallX Data a) => Typeable (Data a)
 
 pattern Loop :: (XStmt a1 ~ SugarStmtX a2) => XLoop a2 -> BlockX a2 -> StmtX a1
 pattern Loop info block <- StmtX (LoopX info block)
-  where Loop info block = StmtX (LoopX info block)
+    where
+        Loop info block = StmtX (LoopX info block)
 
 deriving instance (ForallX Show a) => Show (LitX a)
 deriving instance (ForallX Typeable a) => Typeable (LitX a)
@@ -271,10 +285,10 @@ instance (ForallX Pretty a) => Pretty (LitX a) where
     pPretty = prettyLit
 
 instance (ForallX Pretty a) => Pretty (BlockX a) where
-  pPretty = prettyBlock
+    pPretty = prettyBlock
 
 instance (ForallX Pretty a) => Pretty (SugarStmtX a) where
-  pPretty (LoopX _ block) = "loop \n" <> pPretty block
+    pPretty (LoopX _ block) = "loop \n" <> pPretty block
 
 prettyProgram :: (ForallX Pretty a) => ProgramX a -> Text
 prettyProgram (ProgramX _ defs) = Text.intercalate "\n\n" (fmap prettyDef defs)
