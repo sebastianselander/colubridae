@@ -131,7 +131,6 @@ eqAlphaArg (ArgX _ name1 _) (ArgX _ name2 _) = name1 == name2
 rnType :: (Monad m) => TypePar -> m TypeRn
 rnType = \case
     TyLitX a lit -> pure $ TyLitX a lit
-    TyVarX a name -> pure $ TyVarX a name
     TyFunX a b c -> do
         b <- mapM rnType b
         c <- rnType c

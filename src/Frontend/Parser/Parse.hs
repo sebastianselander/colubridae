@@ -56,7 +56,7 @@ pType = P.choice [pAtom, pFunTy, parens pType] <?> "type"
         TyFunX NoExtField argTys <$> pType
 
     pAtom :: Parser TypePar
-    pAtom = P.choice [pInt, pDouble, pChar, pString, pUnit, pBool, pTyVar]
+    pAtom = P.choice [pInt, pDouble, pChar, pString, pUnit, pBool]
 
     pInt :: Parser TypePar
     pInt = TyLitX NoExtField IntX <$ lexeme (keyword "int")
@@ -75,9 +75,6 @@ pType = P.choice [pAtom, pFunTy, parens pType] <?> "type"
 
     pBool :: Parser TypePar
     pBool = TyLitX NoExtField BoolX <$ lexeme (keyword "bool")
-
-    pTyVar :: Parser TypePar
-    pTyVar = TyVarX NoExtField <$> angles identifier
 
 -- TODO: Remove needing semicolon after if, loop, while!
 pStmtColon :: Parser (Maybe StmtPar)

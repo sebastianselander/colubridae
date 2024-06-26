@@ -70,7 +70,6 @@ type instance XBoolLit Rn = NoExtField
 type instance XUnitLit Rn = NoExtField
 
 type instance XTyLit Rn = NoExtField
-type instance XTyVar Rn = NoExtField
 type instance XTyFun Rn = NoExtField
 type instance XType Rn = DataConCantHappen
 

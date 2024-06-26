@@ -69,7 +69,6 @@ type instance XBoolLit Tc = NoExtField
 type instance XUnitLit Tc = NoExtField
 
 type instance XTyLit Tc = NoExtField
-type instance XTyVar Tc = NoExtField
 type instance XTyFun Tc = NoExtField
 type instance XType Tc = MetaTy
 

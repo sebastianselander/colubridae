@@ -78,11 +78,9 @@ deriving instance (ForallX Typeable a) => Typeable (ArgX a)
 -- Type
 data TypeX a
     = TyLitX !(XTyLit a) TyLit
-    | TyVarX !(XTyVar a) Ident
     | TyFunX !(XTyFun a) [TypeX a] (TypeX a)
     | TypeX !(XType a)
 type family XTyLit a
-type family XTyVar a
 type family XTyFun a
 type family XType a
 
@@ -222,7 +220,6 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XStringLit a)
     , c (XTyLit a)
     , c (XTyFun a)
-    , c (XTyVar a)
     , c (XVar a)
     , c (XWhile a)
     , c (XSBlock a)
@@ -324,7 +321,6 @@ prettyType2 = \case
         DoubleX -> "double"
         CharX -> "char"
         BoolX -> "bool"
-    TyVarX _ (Ident name) -> name
     ty@TyFunX {} -> Text.concat ["(", prettyType1 ty, ")"]
     TypeX a -> pPretty a
 

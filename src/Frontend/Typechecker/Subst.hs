@@ -18,7 +18,6 @@ instance Substitution TypeTc where
     apply :: Subst -> TypeTc -> TypeTc
     apply sub ty = case ty of
         TyLitX info lit -> TyLitX info lit
-        TyVarX info a -> TyVarX info a
         TyFunX info l r -> TyFunX info (fmap (apply sub) l) (apply sub r)
         TypeX meta -> fromMaybe (TypeX meta) (findSubst meta sub)
 

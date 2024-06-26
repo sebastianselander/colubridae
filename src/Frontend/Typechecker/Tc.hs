@@ -393,7 +393,6 @@ instance TypeOf BlockTc where
 instance TypeOf TypeRn where
     typeOf = \case
         TyLitX a b -> TyLitX a b
-        TyVarX a b -> TyVarX a b
         TyFunX a b c -> TyFunX a (fmap typeOf b) (typeOf c)
 
 unify
@@ -420,9 +419,6 @@ unify' declaredAt info ty1 ty2 = case (ty1, ty2) of
     (ty1, Meta meta) -> putSubst $ singleton (MetaX meta) ty1
     (TyLitX _ lit1, TyLitX _ lit2)
         | lit1 == lit2 -> pure ()
-        | otherwise -> void $ tyExpectedGot declaredAt info [ty1] ty2
-    (TyVarX _ name1, TyVarX _ name2)
-        | name1 == name2 -> pure ()
         | otherwise -> void $ tyExpectedGot declaredAt info [ty1] ty2
     (TyFunX _ l1 r1, TyFunX _ l2 r2) -> do
         unless (length l1 == length l2) (void $ tyExpectedGot declaredAt info [ty1] ty2)
