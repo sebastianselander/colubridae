@@ -1,0 +1,9 @@
+def main () {
+    let x = 123;
+    foo(x);
+}
+
+def foo(x: int) -> int {
+    let y = 0; 
+    y
+}

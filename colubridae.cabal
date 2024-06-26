@@ -68,7 +68,7 @@ executable colubridae
   default-language: GHC2021
 
 test-suite colubridae-test
-  import:           warnings
+  import:           warnings, extensions
   default-language: GHC2021
   type:             exitcode-stdio-1.0
   hs-source-dirs:   test
@@ -76,3 +76,6 @@ test-suite colubridae-test
   build-depends:
     , base
     , colubridae
+    , directory
+    , filepath
+    , relude
