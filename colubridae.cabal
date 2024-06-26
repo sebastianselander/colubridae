@@ -23,33 +23,35 @@ common extensions
 library
   import:           warnings, extensions
   exposed-modules:
+    Compile
+    Frontend.Error
     Frontend.Parser.Parse
     Frontend.Parser.Types
     Frontend.Parser.Utils
     Frontend.Renamer.Monad
     Frontend.Renamer.Rn
     Frontend.Renamer.Types
-    Frontend.Typechecker.Types
-    Frontend.Typechecker.Tc
-    Frontend.Typechecker.Subst
-    Frontend.Error
     Frontend.StatementCheck
     Frontend.TH
+    Frontend.Typechecker.Subst
+    Frontend.Typechecker.Tc
+    Frontend.Typechecker.Types
     Types
     Utils
 
   build-depends:
     , base
     , containers
-    , megaparsec
-    , parser-combinators
-    , relude
-    , syb
-    , mtl
-    , template-haskell
     , extra
     , lens
+    , megaparsec
     , monad-validate
+    , mtl
+    , parser-combinators
+    , pretty-simple
+    , relude
+    , syb
+    , template-haskell
 
   hs-source-dirs:   src
   default-language: GHC2021
