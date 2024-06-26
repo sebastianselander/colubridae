@@ -48,6 +48,7 @@ type instance XSExp Par = NoExtField
 
 type instance XLit Par = SourceInfo
 type instance XVar Par = SourceInfo
+type instance XPrefix Par = SourceInfo
 type instance XBinOp Par = SourceInfo
 type instance XExprStmt Par = SourceInfo
 type instance XApp Par = SourceInfo

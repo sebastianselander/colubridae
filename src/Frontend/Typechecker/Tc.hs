@@ -6,7 +6,6 @@
 module Frontend.Typechecker.Tc where
 
 import Control.Lens.Getter (use, uses, view, views)
-import Control.Lens.Operators ((+=))
 import Control.Lens.Setter (locally, modifying)
 import Control.Lens.TH
 import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
@@ -160,9 +159,10 @@ infExpr = \case
             Bound -> lookupVar name
             Lambda -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
-        meta <- freshMeta
-        putSubst $ singleton meta ty
         pure $ VarX (info, ty) name
+    PrefixX info op expr -> do
+        expr <- tcExpr Bool expr
+        pure $ PrefixX (info, Bool) op expr
     BinOpX info l op r -> do
         let types = operatorTypes op
         l <- infExpr l
@@ -211,16 +211,11 @@ infExpr = \case
                 applySt $ EStmtX NoExtField $ IfX (info, ty) cond true false
             stmt -> pure $ EStmtX NoExtField stmt
     LetX (info, mut, mbty) name expr -> do
-        ty <- case mbty of
-            Nothing -> TypeX <$> freshMeta
-            Just ty -> pure $ typeOf ty
-        expr <- tcExpr ty expr
-        unify Nothing info ty expr
-        ty <- applySt ty
-        let ty' = case mut of
-                Mutable -> Mut ty
-                Immutable -> ty
-        insertVar name ty' info
+        expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
+        let ty = case mut of
+                Mutable -> Mut (typeOf expr)
+                Immutable -> typeOf expr
+        insertVar name ty info
         applySt $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         (ty, info) <- case bind of
@@ -272,6 +267,18 @@ tcExpr expectedTy = \case
         let expr = VarX (info, ty) name
         unify (Just declaredAt) info expectedTy expr
         applySt expr
+    PrefixX info op expr -> do
+        case op of
+            Not -> do
+                expr <- tcExpr Bool expr
+                let expr' = PrefixX (info, Bool) op expr
+                unify Nothing info expectedTy expr'
+                pure expr'
+            Neg -> do
+                expr <- infExpr expr
+                let ty = typeOf expr
+                unless (ty `elem` [Int, Double]) (tyExpectedGot Nothing info [Int, Double] ty)
+                pure $ PrefixX (info, ty) op expr
     BinOpX info l op r -> do
         l <- infExpr l
         r <- tcExpr (typeOf l) r
@@ -349,12 +356,6 @@ lookupVarTy = fmap fst . lookupVar
 lookupFun :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
 lookupFun name = views functions (fromJust . Map.lookup name)
 
-freshMeta :: (MonadState Env m) => m MetaTy
-freshMeta = do
-    n <- use freshCounter
-    freshCounter += 1
-    pure $ MetaX n
-
 putSubst :: (MonadState Env m) => Subst -> m ()
 putSubst sub = modifying subst (`compose` sub)
 
@@ -381,6 +382,7 @@ instance TypeOf ExprTc where
     typeOf = \case
         LitX ty _ -> snd ty
         VarX ty _ -> snd ty
+        PrefixX ty _ _ -> snd ty
         BinOpX ty _ _ _ -> snd ty
         AppX ty _ _ -> snd ty
         LetX rec _ _ -> view stmtType rec
@@ -415,8 +417,6 @@ unify'
 unify' declaredAt info ty1 ty2 = case (ty1, ty2) of
     (Unsolvable, _) -> doneTcError
     (_, Unsolvable) -> doneTcError
-    (Meta meta, ty2) -> putSubst $ singleton (MetaX meta) ty2
-    (ty1, Meta meta) -> putSubst $ singleton (MetaX meta) ty1
     (TyLitX _ lit1, TyLitX _ lit2)
         | lit1 == lit2 -> pure ()
         | otherwise -> void $ tyExpectedGot declaredAt info [ty1] ty2

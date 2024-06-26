@@ -79,6 +79,7 @@ rnExpr = \case
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
                 =<< boundVar variable
         pure $ VarX (info, bind) name
+    PrefixX info op expr -> PrefixX info op <$> rnExpr expr
     BinOpX info l op r -> do
         l <- rnExpr l
         r <- rnExpr r

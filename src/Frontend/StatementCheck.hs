@@ -63,6 +63,7 @@ breakExpr :: ExprRn -> ChM ()
 breakExpr = \case
     LitX _ _ -> pure ()
     VarX _ _ -> pure ()
+    PrefixX _ _ r -> breakExpr r
     BinOpX _ l _ r -> breakExpr l >> breakExpr r
     AppX _ l rs -> breakExpr l >> mapM_ breakExpr rs
     EStmtX _ stmt -> breakStmt stmt
@@ -122,6 +123,7 @@ hasInfoExpr :: ExprRn -> SourceInfo
 hasInfoExpr = \case
     LitX info _ -> info
     VarX (info, _) _ -> info
+    PrefixX info _ _ -> info
     BinOpX info _ _ _ -> info
     AppX info _ _ -> info
     EStmtX info _ -> info

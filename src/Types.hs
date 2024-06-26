@@ -130,6 +130,7 @@ data ExprX a
     = LitX !(XLit a) (LitX a)
     | VarX !(XVar a) Ident
     | BinOpX !(XBinOp a) (ExprX a) BinOp (ExprX a)
+    | PrefixX !(XPrefix a) PrefixOp (ExprX a)
     | AppX !(XApp a) (ExprX a) [ExprX a]
     | EStmtX !(XExprStmt a) (StmtX a)
     | LetX !(XLet a) Ident (ExprX a)
@@ -138,6 +139,7 @@ data ExprX a
 type family XExprStmt a
 type family XLit a
 type family XVar a
+type family XPrefix a
 type family XBinOp a
 type family XApp a
 type family XLet a
@@ -146,6 +148,9 @@ type family XExpr a
 
 deriving instance (ForallX Show a) => Show (ExprX a)
 deriving instance (ForallX Typeable a) => Typeable (ExprX a)
+
+data PrefixOp = Not | Neg
+    deriving (Show, Eq, Ord, Data)
 
 data BinOp
     = Mul
@@ -199,6 +204,7 @@ newtype Ident = Ident Text
 type ForallX (c :: Data.Kind.Type -> Constraint) a =
     ( c (XApp a)
     , c (XArg a)
+    , c (XPrefix a)
     , c (XBinOp a)
     , c (XBlock a)
     , c (XBoolLit a)
@@ -353,10 +359,13 @@ prettyExpr6 :: (ForallX Pretty a) => ExprX a -> Text
 prettyExpr6 (BinOpX _ l Mod r) = unwords [prettyExpr7 l, "%", prettyExpr6 r]
 prettyExpr6 (BinOpX _ l Div r) = unwords [prettyExpr7 l, "/", prettyExpr6 r]
 prettyExpr6 (BinOpX _ l Mul r) = unwords [prettyExpr7 l, "*", prettyExpr6 r]
+prettyExpr6 (PrefixX _ Not r) = unwords ["-", prettyExpr7 r]
+prettyExpr6 (PrefixX _ Neg r) = unwords ["!", prettyExpr7 r]
 prettyExpr6 e = prettyExpr7 e
 
 prettyExpr7 :: (ForallX Pretty a) => ExprX a -> Text
 prettyExpr7 e@BinOpX {} = Text.concat ["(", prettyExpr1 e, ")"]
+prettyExpr7 e@PrefixX {} = Text.concat ["(", prettyExpr1 e, ")"]
 prettyExpr7 (LitX _ lit) = prettyLit lit
 prettyExpr7 (VarX _ (Ident name)) = name
 prettyExpr7 (EStmtX _ s) = prettyStmt s

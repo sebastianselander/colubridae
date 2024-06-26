@@ -8,8 +8,6 @@
 module Frontend.Typechecker.Types where
 
 import Data.Data (Data)
-import Data.List ((!!))
-import Data.Text (pack)
 import Relude
 import Types
 import Control.Lens (makeLenses)
@@ -56,6 +54,7 @@ type instance XSExp Tc = NoExtField
 
 type instance XLit Tc = TcInfo
 type instance XVar Tc = TcInfo
+type instance XPrefix Tc = TcInfo
 type instance XBinOp Tc = TcInfo
 type instance XExprStmt Tc = NoExtField
 type instance XApp Tc = TcInfo
@@ -77,11 +76,6 @@ type instance XLoop Tc = TcInfo
 deriving instance Eq TypeTc
 deriving instance Ord TypeTc
 
-pattern Meta :: (XType a ~ MetaTy) => Int -> TypeX a
-pattern Meta n <- TypeX (MetaX n)
-    where
-        Meta n = TypeX $ MetaX n
-
 pattern Unsolvable :: (XType a ~ MetaTy) => TypeX a
 pattern Unsolvable <- TypeX UnsolvableX
     where
@@ -92,7 +86,7 @@ pattern Mut ty <- TypeX (MutableX ty)
   where
     Mut ty = TypeX (MutableX ty)
 
-data MetaTy = MutableX TypeTc | MetaX Int | UnsolvableX
+data MetaTy = MutableX TypeTc | UnsolvableX
     deriving (Show, Eq, Ord, Data)
 
 data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
@@ -104,12 +98,8 @@ instance Pretty StmtType where
 
 instance Pretty MetaTy where
     pPretty = \case
-        MetaX n -> "#" <> (letters !! n) <> "#"
         UnsolvableX -> "#Unsolvable#"
         MutableX ty -> pPretty ty <> "?"
-
-letters :: [Text]
-letters = fmap pack $ [1 ..] >>= flip replicateM ['a' .. 'z']
 
 pattern Int :: (XTyLit a ~ NoExtField) => TypeX a
 pattern Int <- TyLitX NoExtField IntX

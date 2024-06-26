@@ -38,6 +38,7 @@ library
     Frontend.Typechecker.Types
     Backend.Intermediate.Hlvm
     Backend.Intermediate.Types
+    Backend.Desugar.Types
     Types
     Utils
 

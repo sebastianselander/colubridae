@@ -209,6 +209,10 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
             [ Postfix $ foldr1 (>>>) <$> P.some pApp
             ]
         ,
+            [ Prefix (keyword "!" $> PrefixX emptyInfo Not)
+            , Prefix (keyword "-" $> PrefixX emptyInfo Neg)
+            ]
+        ,
             [ binaryL "*" (binOp Mul)
             , binaryL "/" (binOp Div)
             , binaryL "%" (binOp Mod)
@@ -233,8 +237,7 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
         ,
             [ binaryL "||" (binOp Or)
             ]
-        ,
-            [ Prefix pAss ]
+        , [Prefix pAss]
         ]
 
     binaryL :: Text -> (a -> a -> a) -> Operator Parser a
@@ -272,7 +275,8 @@ pLit =
         , pChar
         , pString
         , pUnit
-        ] <?> "literal"
+        ]
+        <?> "literal"
   where
     pUnit :: Parser ExprPar
     pUnit = do
@@ -316,6 +320,7 @@ putInfo p = do
     pure $ case p of
         LitX _ l -> LitX pos l
         VarX _ v -> VarX pos v
+        PrefixX _ op r -> PrefixX pos op r
         BinOpX _ l op r -> BinOpX pos l op r
         EStmtX _ s -> EStmtX pos s
         AppX _ l rs -> AppX pos l rs

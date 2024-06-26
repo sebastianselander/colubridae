@@ -58,6 +58,7 @@ type instance XStmt Rn = SugarStmtX Rn
 type instance XLit Rn = XLit Par
 type instance XVar Rn = (SourceInfo, Boundedness)
 type instance XBinOp Rn = XBinOp Par
+type instance XPrefix Rn = XBinOp Par
 type instance XExprStmt Rn = XExprStmt Par
 type instance XApp Rn = XApp Par
 type instance XExpr Rn = DataConCantHappen
