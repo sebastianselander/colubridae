@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Parser.Utils where
 
@@ -70,12 +70,12 @@ semicolon = P.char ';'
 
 optionallyEndedBy :: (P.MonadParsec e s m) => m a -> m end -> m ([a], Maybe end)
 optionallyEndedBy aP endP = do
-    huh <- Left <$> aP <|> Right <$> P.optional endP
-    case huh of
-        Left res -> do
-            first (res :) <$> (optionallyEndedBy aP endP <|> pure ([], Nothing))
-        Right res -> do
-            pure ([], res)
+    P.optional (P.try endP) >>= \case
+        Nothing -> do
+            a <- aP
+            first (a :) <$> (optionallyEndedBy aP endP <|> pure ([], Nothing))
+        Just res -> do
+            pure ([], Just res)
 
 curlyBrackets :: Parser a -> Parser a
 curlyBrackets = P.between (lexeme $ P.hidden $ P.char '{') (P.hidden $ P.char '}')

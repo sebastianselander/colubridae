@@ -79,12 +79,14 @@ pType = P.choice [pAtom, pFunTy, parens pType] <?> "type"
     pTyVar :: Parser TypePar
     pTyVar = TyVarX NoExtField <$> angles identifier
 
+-- TODO: Remove needing semicolon after if, loop, while!
 pStmtColon :: Parser (Maybe StmtPar)
 pStmtColon = do
     lexeme
         $ P.choice
-            [ Just <$> pIf
-            , Just <$> pWhile
+            [ Just <$> pIf <* semicolon
+            , Just <$> pLoop <* semicolon
+            , Just <$> pWhile <* semicolon
             , Just <$> pRet <* semicolon
             , Just <$> pBreak <* semicolon
             , Just . SBlockX NoExtField <$> pBlock
