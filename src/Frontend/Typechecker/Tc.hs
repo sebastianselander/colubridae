@@ -22,7 +22,8 @@ import Relude.Unsafe (fromJust)
 import Types
 import Utils (chain, listify')
 
--- TODO: Wrap each checking result in maybe and explicitly decide to continue or not to gather all errors
+-- TODO: Wrap each checking result in maybe and explicitly decide to continue
+-- or not to gather all errors
 data Env = Env {_variables :: Map Ident (TypeTc, SourceInfo), _freshCounter :: Int, _subst :: Subst}
     deriving (Show)
 
@@ -66,12 +67,17 @@ tcProg (ProgramX NoExtField defs) = ProgramX NoExtField <$> mapM tcDefs defs
 -- TODO: Add the function to callstack for more precise error reporting
 tcDefs :: DefRn -> TcM (DefX Tc)
 tcDefs (Fn info name args rt block) = do
-    let arguments = fmap (\(ArgX (info, mut) name ty) -> (name, (case mut of Mutable -> Mut (typeOf ty); Immutable -> typeOf ty, info))) args
+    let arguments =
+            fmap
+                ( \(ArgX (info, mut) name ty) ->
+                    (name, (case mut of Mutable -> Mut (typeOf ty); Immutable -> typeOf ty, info))
+                )
+                args
     args <- mapM tcArg args
     modifying variables (\vars -> foldr (uncurry Map.insert) vars arguments)
     block <- locally returnType (const (typeOf rt)) $ infBlock block
     case block of
-        BlockX _ _ (Just expr) -> unify info (typeOf rt) expr
+        BlockX _ _ (Just expr) -> unify Nothing info (typeOf rt) expr
         BlockX _ _ Nothing -> pure ()
     Fn NoExtField name args (typeOf rt) <$> applySt block
 
@@ -119,17 +125,17 @@ infStmt stmt = view returnType >>= flip go stmt
                 BlockX _ stmt Nothing -> mapM_ breakValueless stmt
                 BlockX _ stmt (Just tail) -> do
                     mapM_ breakValueless stmt
-                    unify info Unit tail
+                    unify Nothing info Unit tail
             pure $ WhileX (info, Unit) expr block
         SExprX NoExtField expr -> do
             SExprX NoExtField <$> infExpr expr
         StmtX (LoopX info block) -> do
             block@(BlockX _blockTy stmts tail) <- tcBlock Unit block
-            maybe (pure ()) (unify info Unit) tail
+            maybe (pure ()) (unify Nothing info Unit) tail
             ty <- case listify' breakTypes stmts of
                 [] -> pure Unit
                 (x : xs) -> do
-                    sequence_ $ chain (unify' info) x xs
+                    sequence_ $ chain (unify' Nothing info) x xs
                     applySt x
             applySt $ StmtX $ LoopX (info, ty) block
 
@@ -200,7 +206,7 @@ infExpr = \case
                 ty <- case false of
                     Nothing -> Unsolvable <$ missingElse info
                     Just false -> do
-                        unify info (typeOf true) false
+                        unify Nothing info (typeOf true) false
                         applySt (typeOf true)
                 applySt $ EStmtX NoExtField $ IfX (info, ty) cond true false
             stmt -> pure $ EStmtX NoExtField stmt
@@ -209,7 +215,7 @@ infExpr = \case
             Nothing -> TypeX <$> freshMeta
             Just ty -> pure $ typeOf ty
         expr <- tcExpr ty expr
-        unify info ty expr
+        unify Nothing info ty expr
         ty <- applySt ty
         let ty' = case mut of
                 Mutable -> Mut ty
@@ -224,14 +230,29 @@ infExpr = \case
             Mut _ -> pure ()
             _ -> void $ immutableVariable info name
         expr <- tcExpr ty expr
-        unify info ty expr
+        unify Nothing info ty expr
         ty <- applySt ty
         case op of
-            AddAssign -> unless (ty `elem` [Int, Double]) (void $ tyExpectedGot info [Int, Double] ty)
-            SubAssign -> unless (ty `elem` [Int, Double]) (void $ tyExpectedGot info [Int, Double] ty)
-            MulAssign -> unless (ty `elem` [Int, Double]) (void $ tyExpectedGot info [Int, Double] ty)
-            DivAssign -> unless (ty `elem` [Int, Double]) (void $ tyExpectedGot info [Int, Double] ty)
-            ModAssign -> unless (ty `elem` [Int, Double]) (void $ tyExpectedGot info [Int, Double] ty)
+            AddAssign ->
+                unless
+                    (ty `elem` [Int, Double])
+                    (void $ tyExpectedGot Nothing info [Int, Double] ty)
+            SubAssign ->
+                unless
+                    (ty `elem` [Int, Double])
+                    (void $ tyExpectedGot Nothing info [Int, Double] ty)
+            MulAssign ->
+                unless
+                    (ty `elem` [Int, Double])
+                    (void $ tyExpectedGot Nothing info [Int, Double] ty)
+            DivAssign ->
+                unless
+                    (ty `elem` [Int, Double])
+                    (void $ tyExpectedGot Nothing info [Int, Double] ty)
+            ModAssign ->
+                unless
+                    (ty `elem` [Int, Double])
+                    (void $ tyExpectedGot Nothing info [Int, Double] ty)
             Assign -> pure ()
         pure $ AssX (StmtType Unit ty info) name op expr
 
@@ -240,34 +261,39 @@ tcExpr expectedTy = \case
     LitX info lit -> do
         let (ty, lit') = infLit lit
         let literal = LitX (info, ty) lit'
-        void $ unify info expectedTy literal
+        void $ unify Nothing info expectedTy literal
         applySt literal
     VarX (info, bind) name -> do
-        expr <- infExpr (VarX (info, bind) name)
-        unify info expectedTy expr
+        (ty, declaredAt) <- case bind of
+            Free -> lookupVar name
+            Bound -> lookupVar name
+            Lambda -> lookupVar name
+            Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
+        let expr = VarX (info, ty) name
+        unify (Just declaredAt) info expectedTy expr
         applySt expr
     BinOpX info l op r -> do
         l <- infExpr l
         r <- tcExpr (typeOf l) r
         let ty = operatorReturnType (typeOf r) op
         let expr = BinOpX (info, ty) l op r
-        unify info expectedTy expr
+        unify Nothing info expectedTy expr
         applySt expr
     AppX info fun args -> do
         expr <- infExpr (AppX info fun args)
-        unify info expectedTy expr
+        unify Nothing info expectedTy expr
         applySt expr
     LetX (info, mut, mbty) name expr -> do
         expr <- infExpr (LetX (info, mut, mbty) name expr)
-        unify info expectedTy expr
+        unify Nothing info expectedTy expr
         applySt expr
     AssX (info, bind) name op expr -> do
         expr <- infExpr (AssX (info, bind) name op expr)
-        unify info expectedTy expr
+        unify Nothing info expectedTy expr
         applySt expr
     EStmtX info stmt -> do
         expr <- infExpr (EStmtX info stmt)
-        unify info expectedTy expr
+        unify Nothing info expectedTy expr
         applySt expr
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
@@ -370,29 +396,41 @@ instance TypeOf TypeRn where
         TyVarX a b -> TyVarX a b
         TyFunX a b c -> TyFunX a (fmap typeOf b) (typeOf c)
 
-unify :: (MonadState Env m, MonadValidate [TcError] m, TypeOf a) => SourceInfo -> TypeTc -> a -> m ()
-unify info ty1 a = unify' info ty1 (typeOf a)
+unify
+    :: (MonadState Env m, MonadValidate [TcError] m, TypeOf a)
+    => Maybe SourceInfo
+    -> SourceInfo
+    -> TypeTc
+    -> a
+    -> m ()
+unify declaredAt info ty1 a = unify' declaredAt info ty1 (typeOf a)
 
 -- | Unify two types. The first argument type *must* the expected one!
-unify' :: (MonadState Env m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> TypeTc -> m ()
-unify' info ty1 ty2 = case (ty1, ty2) of
+unify'
+    :: (MonadState Env m, MonadValidate [TcError] m)
+    => Maybe SourceInfo
+    -> SourceInfo
+    -> TypeTc
+    -> TypeTc
+    -> m ()
+unify' declaredAt info ty1 ty2 = case (ty1, ty2) of
     (Unsolvable, _) -> doneTcError
     (_, Unsolvable) -> doneTcError
     (Meta meta, ty2) -> putSubst $ singleton (MetaX meta) ty2
     (ty1, Meta meta) -> putSubst $ singleton (MetaX meta) ty1
     (TyLitX _ lit1, TyLitX _ lit2)
         | lit1 == lit2 -> pure ()
-        | otherwise -> void $ tyExpectedGot info [ty1] ty2
+        | otherwise -> void $ tyExpectedGot declaredAt info [ty1] ty2
     (TyVarX _ name1, TyVarX _ name2)
         | name1 == name2 -> pure ()
-        | otherwise -> void $ tyExpectedGot info [ty1] ty2
+        | otherwise -> void $ tyExpectedGot declaredAt info [ty1] ty2
     (TyFunX _ l1 r1, TyFunX _ l2 r2) -> do
-        unless (length l1 == length l2) (void $ tyExpectedGot info [ty1] ty2)
-        zipWithM_ (unify' info) l1 l2
+        unless (length l1 == length l2) (void $ tyExpectedGot declaredAt info [ty1] ty2)
+        zipWithM_ (unify' declaredAt info) l1 l2
         r1 <- applySt r1
         r2 <- applySt r2
-        unify' info r1 r2
-    (Mut ty1, Mut ty2) -> unify' info ty1 ty2
-    (ty1, Mut ty2) -> unify' info ty1 ty2
+        unify' declaredAt info r1 r2
+    (Mut ty1, Mut ty2) -> unify' declaredAt info ty1 ty2
+    (ty1, Mut ty2) -> unify' declaredAt info ty1 ty2
     (Mut ty1, ty2) -> onlyImmutable info (MutableX ty1) ty2
-    (ty1, ty2) -> void $ tyExpectedGot info [ty1] ty2
+    (ty1, ty2) -> void $ tyExpectedGot declaredAt info [ty1] ty2

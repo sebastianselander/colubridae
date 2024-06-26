@@ -18,7 +18,7 @@ data RnError
     deriving (Show)
 
 data TcError
-    = TyExpectedGot SourceInfo [TypeTc] TypeTc
+    = TyExpectedGot (Maybe SourceInfo) SourceInfo [TypeTc] TypeTc
     | ImmutableVariable SourceInfo Ident
     | EmptyReturnNonUnit SourceInfo TypeTc
     | ApplyNonFunction SourceInfo TypeTc
