@@ -36,6 +36,8 @@ library
     Frontend.Typechecker.Subst
     Frontend.Typechecker.Tc
     Frontend.Typechecker.Types
+    Backend.Intermediate.Hlvm
+    Backend.Intermediate.Types
     Types
     Utils
 
