@@ -47,13 +47,13 @@ type instance XBlock Rn = XBlock Par
 
 type instance XRet Rn = XRet Par
 type instance XBreak Rn = XBreak Par
-type instance XSBlock Rn = NoExtField
+type instance XEBlock Rn = NoExtField
 type instance XIf Rn = XIf Par
 type instance XWhile Rn = XWhile Par
 type instance XLet Rn = (SourceInfo, Mutability, Maybe TypeRn)
 type instance XAss Rn = (SourceInfo, Boundedness)
 type instance XSExp Rn = XSExp Par
-type instance XStmt Rn = SugarStmtX Rn
+type instance XStmt Rn = DataConCantHappen
 
 type instance XLit Rn = XLit Par
 type instance XVar Rn = (SourceInfo, Boundedness)
@@ -61,7 +61,7 @@ type instance XBinOp Rn = XBinOp Par
 type instance XPrefix Rn = XBinOp Par
 type instance XExprStmt Rn = XExprStmt Par
 type instance XApp Rn = XApp Par
-type instance XExpr Rn = DataConCantHappen
+type instance XExpr Rn = SugarStmtX Rn
 
 type instance XIntLit Rn = NoExtField
 type instance XDoubleLit Rn = NoExtField

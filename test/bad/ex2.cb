@@ -1,0 +1,7 @@
+def main() {
+    let x = if true {
+        5
+    } else {
+        true
+    }
+}

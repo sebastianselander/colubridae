@@ -1,0 +1,9 @@
+def foo(x: int) -> int {
+        loop {
+            if true {
+                break 3;
+            } else {
+                break true;
+            }
+        }
+}

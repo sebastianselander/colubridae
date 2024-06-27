@@ -42,9 +42,9 @@ type instance XDef Tc = NoExtField
 
 type instance XBlock Tc = TcInfo
 
-type instance XStmt Tc = SugarStmtTc
+type instance XStmt Tc = DataConCantHappen
 type instance XRet Tc = TcInfo
-type instance XSBlock Tc = NoExtField
+type instance XEBlock Tc = NoExtField
 type instance XBreak Tc = TcInfo
 type instance XIf Tc = TcInfo
 type instance XWhile Tc = TcInfo
@@ -58,7 +58,7 @@ type instance XPrefix Tc = TcInfo
 type instance XBinOp Tc = TcInfo
 type instance XExprStmt Tc = NoExtField
 type instance XApp Tc = TcInfo
-type instance XExpr Tc = DataConCantHappen
+type instance XExpr Tc = SugarStmtTc
 
 type instance XIntLit Tc = NoExtField
 type instance XDoubleLit Tc = NoExtField
@@ -76,17 +76,17 @@ type instance XLoop Tc = TcInfo
 deriving instance Eq TypeTc
 deriving instance Ord TypeTc
 
-pattern Unsolvable :: (XType a ~ MetaTy) => TypeX a
-pattern Unsolvable <- TypeX UnsolvableX
+pattern Any :: (XType a ~ MetaTy) => TypeX a
+pattern Any <- TypeX AnyX
     where
-        Unsolvable = TypeX UnsolvableX
+        Any = TypeX AnyX
 
 pattern Mut :: (XType a ~ MetaTy) => TypeTc -> TypeX a
 pattern Mut ty <- TypeX (MutableX ty)
   where
     Mut ty = TypeX (MutableX ty)
 
-data MetaTy = MutableX TypeTc | UnsolvableX
+data MetaTy = MutableX TypeTc | AnyX
     deriving (Show, Eq, Ord, Data)
 
 data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
@@ -98,7 +98,7 @@ instance Pretty StmtType where
 
 instance Pretty MetaTy where
     pPretty = \case
-        UnsolvableX -> "#Unsolvable#"
+        AnyX -> "any"
         MutableX ty -> pPretty ty <> "?"
 
 pattern Int :: (XTyLit a ~ NoExtField) => TypeX a

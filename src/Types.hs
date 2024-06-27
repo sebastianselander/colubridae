@@ -22,13 +22,13 @@ data NoExtField = NoExtField
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
 
 instance Pretty NoExtField where
-  pPretty _ = ""
+    pPretty _ = ""
 
 data DataConCantHappen
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
 
 instance Pretty DataConCantHappen where
-  pPretty _ = ""
+    pPretty _ = ""
 
 data Mutability = Mutable | Immutable
     deriving (Show, Eq, Ord, Data, Typeable)
@@ -98,18 +98,8 @@ deriving instance (ForallX Typeable a) => Typeable (BlockX a)
 
 -- Statement
 data StmtX a
-    = RetX !(XRet a) (Maybe (ExprX a))
-    | SBlockX !(XSBlock a) (BlockX a)
-    | BreakX !(XBreak a) (Maybe (ExprX a))
-    | IfX !(XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
-    | WhileX !(XWhile a) (ExprX a) (BlockX a)
-    | SExprX !(XSExp a) (ExprX a)
+    = SExprX !(XSExp a) (ExprX a)
     | StmtX !(XStmt a)
-type family XRet a
-type family XSBlock a
-type family XBreak a
-type family XIf a
-type family XWhile a
 type family XSExp a
 type family XStmt a
 
@@ -132,9 +122,13 @@ data ExprX a
     | BinOpX !(XBinOp a) (ExprX a) BinOp (ExprX a)
     | PrefixX !(XPrefix a) PrefixOp (ExprX a)
     | AppX !(XApp a) (ExprX a) [ExprX a]
-    | EStmtX !(XExprStmt a) (StmtX a)
     | LetX !(XLet a) Ident (ExprX a)
     | AssX !(XAss a) Ident AssignOp (ExprX a)
+    | RetX !(XRet a) (Maybe (ExprX a))
+    | EBlockX !(XEBlock a) (BlockX a)
+    | BreakX !(XBreak a) (Maybe (ExprX a))
+    | IfX !(XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
+    | WhileX !(XWhile a) (ExprX a) (BlockX a)
     | ExprX !(XExpr a)
 type family XExprStmt a
 type family XLit a
@@ -142,8 +136,13 @@ type family XVar a
 type family XPrefix a
 type family XBinOp a
 type family XApp a
-type family XLet a
 type family XAss a
+type family XLet a
+type family XRet a
+type family XEBlock a
+type family XBreak a
+type family XIf a
+type family XWhile a
 type family XExpr a
 
 deriving instance (ForallX Show a) => Show (ExprX a)
@@ -189,10 +188,10 @@ deriving instance (ForallX Show a) => Show (SugarStmtX a)
 deriving instance (ForallX Typeable a) => Typeable (SugarStmtX a)
 deriving instance (ForallX Data a) => Typeable (Data a)
 
-pattern Loop :: (XStmt a1 ~ SugarStmtX a2) => XLoop a2 -> BlockX a2 -> StmtX a1
-pattern Loop info block <- StmtX (LoopX info block)
+pattern Loop :: (XExpr a1 ~ SugarStmtX a2) => XLoop a2 -> BlockX a2 -> ExprX a1
+pattern Loop info block <- ExprX (LoopX info block)
     where
-        Loop info block = StmtX (LoopX info block)
+        Loop info block = ExprX (LoopX info block)
 
 deriving instance (ForallX Show a) => Show (LitX a)
 deriving instance (ForallX Typeable a) => Typeable (LitX a)
@@ -228,7 +227,7 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XTyFun a)
     , c (XVar a)
     , c (XWhile a)
-    , c (XSBlock a)
+    , c (XEBlock a)
     , c (XExpr a)
     , c (XType a)
     , c (XLoop a)
@@ -368,27 +367,24 @@ prettyExpr7 e@BinOpX {} = Text.concat ["(", prettyExpr1 e, ")"]
 prettyExpr7 e@PrefixX {} = Text.concat ["(", prettyExpr1 e, ")"]
 prettyExpr7 (LitX _ lit) = prettyLit lit
 prettyExpr7 (VarX _ (Ident name)) = name
-prettyExpr7 (EStmtX _ s) = prettyStmt s
 prettyExpr7 (AppX _ l rs) = Text.concat [prettyExpr1 l, "(", Text.intercalate ", " $ fmap prettyExpr1 rs, ")"]
 prettyExpr7 (LetX m (Ident name) e) =
     let mut = "let " <> pPretty m
      in unwords [mut, name, "=", prettyExpr1 e]
 prettyExpr7 (AssX _ (Ident name) op e) = unwords [name, prettyAssignOp op, prettyExpr1 e]
 prettyExpr7 (ExprX a) = pPretty a
-
-prettyStmt :: (ForallX Pretty a) => StmtX a -> Text
-prettyStmt (RetX _ Nothing) = "return"
-prettyStmt (RetX _ (Just e)) = unwords ["return", prettyExpr1 e]
-prettyStmt (SBlockX _ block) = prettyBlock block
-prettyStmt (BreakX _ Nothing) = "break"
-prettyStmt (BreakX _ (Just e)) = unwords ["break", prettyExpr1 e]
-prettyStmt (IfX _ cond thenB Nothing) =
+prettyExpr7 (RetX _ Nothing) = "return"
+prettyExpr7 (RetX _ (Just e)) = unwords ["return", prettyExpr1 e]
+prettyExpr7 (EBlockX _ block) = prettyBlock block
+prettyExpr7 (BreakX _ Nothing) = "break"
+prettyExpr7 (BreakX _ (Just e)) = unwords ["break", prettyExpr1 e]
+prettyExpr7 (IfX _ cond thenB Nothing) =
     unwords
         [ "if"
         , prettyExpr1 cond
         , prettyBlock thenB
         ]
-prettyStmt (IfX _ cond thenB (Just elseB)) =
+prettyExpr7 (IfX _ cond thenB (Just elseB)) =
     unwords
         [ "if"
         , prettyExpr1 cond
@@ -396,12 +392,13 @@ prettyStmt (IfX _ cond thenB (Just elseB)) =
         , "else"
         , prettyBlock elseB
         ]
-prettyStmt (WhileX _ cond block) =
+prettyExpr7 (WhileX _ cond block) =
     unwords
         [ "while"
         , prettyExpr1 cond
         , prettyBlock block
         ]
+prettyStmt :: (ForallX Pretty a) => StmtX a -> Text
 prettyStmt (SExprX _ e) = prettyExpr1 e
 prettyStmt (StmtX a) = pPretty a
 

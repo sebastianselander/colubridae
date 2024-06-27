@@ -43,8 +43,19 @@ breakBlock (BlockX _ statements tail) = mapM_ breakStmt statements >> mapM_ brea
 
 breakStmt :: StmtRn -> ChM ()
 breakStmt = \case
+    SExprX NoExtField expr -> breakExpr expr
+
+breakExpr :: ExprRn -> ChM ()
+breakExpr = \case
+    LitX _ _ -> pure ()
+    VarX _ _ -> pure ()
+    PrefixX _ _ r -> breakExpr r
+    BinOpX _ l _ r -> breakExpr l >> breakExpr r
+    AppX _ l rs -> breakExpr l >> mapM_ breakExpr rs
+    LetX _ _ expr -> breakExpr expr
+    AssX _ _ _ expr -> breakExpr expr
     RetX _ _ -> pure ()
-    SBlockX NoExtField block -> breakBlock block
+    EBlockX NoExtField block -> breakBlock block
     BreakX info _ -> do
         loop <- view inLoop
         if loop
@@ -56,19 +67,7 @@ breakStmt = \case
         breakBlock true
         mapM_ breakBlock false
     WhileX _ expr block -> breakExpr expr >> locally inLoop (const True) (breakBlock block)
-    SExprX NoExtField expr -> breakExpr expr
-    StmtX (LoopX _ block) -> locally inLoop (const True) (breakBlock block)
-
-breakExpr :: ExprRn -> ChM ()
-breakExpr = \case
-    LitX _ _ -> pure ()
-    VarX _ _ -> pure ()
-    PrefixX _ _ r -> breakExpr r
-    BinOpX _ l _ r -> breakExpr l >> breakExpr r
-    AppX _ l rs -> breakExpr l >> mapM_ breakExpr rs
-    EStmtX _ stmt -> breakStmt stmt
-    LetX _ _ expr -> breakExpr expr
-    AssX _ _ _ expr -> breakExpr expr
+    ExprX (LoopX _ block) -> locally inLoop (const True) (breakBlock block)
 
 returnBlock :: BlockRn -> ChM Bool
 returnBlock (BlockX _ statements _) = returnStmts statements
@@ -84,8 +83,19 @@ returnStmts (x : xs) = do
 
 returnStmt :: StmtRn -> ChM Bool
 returnStmt = \case
+    SExprX NoExtField expr -> returnExpr expr
+
+returnExpr :: ExprRn -> ChM Bool
+returnExpr = \case
+    LitX _ _ -> pure False
+    VarX _ _ -> pure False
+    BinOpX _ l _ r -> (||) <$> returnExpr l <*> returnExpr r
+    PrefixX _ _ expr -> returnExpr expr
     RetX _ _ -> pure True
-    SBlockX NoExtField block -> returnBlock block
+    EBlockX NoExtField block -> returnBlock block
+    AppX _ l rs -> (||) <$> returnExpr l <*> anyM returnExpr rs
+    LetX _ _ expr -> returnExpr expr
+    AssX _ _ _ expr -> returnExpr expr
     BreakX _ _ -> pure False
     IfX _ expr true false -> do
         if
@@ -98,8 +108,7 @@ returnStmt = \case
                 unreachableStatement info >> maybe (pure False) returnBlock false
             | otherwise -> (&&) <$> returnBlock true <*> maybe (pure False) returnBlock false
     WhileX _ expr block -> if alwaysTrue expr then returnBlock block else pure False
-    SExprX NoExtField _ -> pure False
-    StmtX (LoopX _ block) -> returnBlock block
+    ExprX (LoopX _ block) -> returnBlock block
 
 -- TODO: Make mini evaluator
 alwaysTrue :: ExprRn -> Bool
@@ -111,13 +120,7 @@ alwaysFalse = const False
 
 hasInfoStmt :: StmtRn -> SourceInfo
 hasInfoStmt = \case
-    RetX info _ -> info
-    SBlockX NoExtField (BlockX info _ _) -> info
-    BreakX info _ -> info
-    IfX info _ _ _ -> info
-    WhileX info _ _ -> info
     SExprX NoExtField expr -> hasInfoExpr expr
-    StmtX (LoopX info _) -> info
 
 hasInfoExpr :: ExprRn -> SourceInfo
 hasInfoExpr = \case
@@ -126,6 +129,11 @@ hasInfoExpr = \case
     PrefixX info _ _ -> info
     BinOpX info _ _ _ -> info
     AppX info _ _ -> info
-    EStmtX info _ -> info
     LetX (info, _, _) _ _ -> info
     AssX (info, _) _ _ _ -> info
+    RetX info _ -> info
+    EBlockX NoExtField (BlockX info _ _) -> info
+    BreakX info _ -> info
+    IfX info _ _ _ -> info
+    WhileX info _ _ -> info
+    ExprX (LoopX info _) -> info

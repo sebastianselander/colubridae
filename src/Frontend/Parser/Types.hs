@@ -36,14 +36,7 @@ type instance XDef Par = SourceInfo
 
 type instance XBlock Par = SourceInfo
 
-type instance XStmt Par = SugarStmtX Par
-type instance XRet Par = SourceInfo
-type instance XSBlock Par = NoExtField
-type instance XBreak Par = SourceInfo
-type instance XIf Par = SourceInfo
-type instance XWhile Par = SourceInfo
-type instance XLet Par = (SourceInfo, Mutability, Maybe TypePar)
-type instance XAss Par = SourceInfo
+type instance XStmt Par = DataConCantHappen
 type instance XSExp Par = NoExtField
 
 type instance XLit Par = SourceInfo
@@ -52,7 +45,14 @@ type instance XPrefix Par = SourceInfo
 type instance XBinOp Par = SourceInfo
 type instance XExprStmt Par = SourceInfo
 type instance XApp Par = SourceInfo
-type instance XExpr Par = DataConCantHappen
+type instance XRet Par = SourceInfo
+type instance XEBlock Par = NoExtField
+type instance XBreak Par = SourceInfo
+type instance XIf Par = SourceInfo
+type instance XWhile Par = SourceInfo
+type instance XLet Par = (SourceInfo, Mutability, Maybe TypePar)
+type instance XAss Par = SourceInfo
+type instance XExpr Par = SugarStmtX Par
 
 type instance XIntLit Par = NoExtField
 type instance XDoubleLit Par = NoExtField

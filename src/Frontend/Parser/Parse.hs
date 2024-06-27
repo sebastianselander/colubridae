@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
 
-module Frontend.Parser.Parse where
+module Frontend.Parser.Parse (parse) where
 
 import Control.Monad.Combinators.Expr (Operator (..))
 import Control.Monad.Combinators.Expr qualified as P
@@ -81,29 +81,14 @@ pStmtColon :: Parser (Maybe StmtPar)
 pStmtColon = do
     lexeme
         $ P.choice
-            [ Just <$> pIf <* semicolon
-            , Just <$> pLoop <* semicolon
-            , Just <$> pWhile <* semicolon
-            , Just <$> pRet <* semicolon
-            , Just <$> pBreak <* semicolon
-            , Just . SBlockX NoExtField <$> pBlock
-            , Just <$> pSExp <* semicolon
+            [ Just <$> pSExp <* semicolon
             , Nothing <$ P.hidden (pEmpty <* semicolon)
             ]
-
-pStmt :: Parser StmtPar
-pStmt =
-    P.choice
-        [ pIf
-        , pLoop
-        , pWhile
-        , SBlockX NoExtField <$> pBlock
-        ]
 
 pEmpty :: Parser NoExtField
 pEmpty = return NoExtField
 
-pIf :: Parser StmtPar
+pIf :: Parser ExprPar
 pIf = P.label "if" $ do
     gs <- spanStart
     lexeme (keyword "if")
@@ -113,7 +98,7 @@ pIf = P.label "if" $ do
     info <- spanEnd gs
     pure (IfX info cond thenB elseB)
 
-pWhile :: Parser StmtPar
+pWhile :: Parser ExprPar
 pWhile = P.label "while" $ do
     gs <- spanStart
     lexeme (keyword "while")
@@ -122,7 +107,7 @@ pWhile = P.label "while" $ do
     info <- spanEnd gs
     pure (WhileX info cond loopBody)
 
-pLoop :: Parser StmtPar
+pLoop :: Parser ExprPar
 pLoop = P.label "loop" $ do
     gs <- spanStart
     lexeme (keyword "loop")
@@ -130,7 +115,7 @@ pLoop = P.label "loop" $ do
     info <- spanEnd gs
     pure $ Loop info body
 
-pRet :: Parser StmtPar
+pRet :: Parser ExprPar
 pRet = P.label "return" $ do
     gs <- spanStart
     lexeme (keyword "return")
@@ -138,7 +123,7 @@ pRet = P.label "return" $ do
     info <- spanEnd gs
     pure (RetX info expr)
 
-pBreak :: Parser StmtPar
+pBreak :: Parser ExprPar
 pBreak = P.label "break" $ do
     gs <- spanStart
     lexeme (keyword "break")
@@ -249,11 +234,11 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
 pExprAtom :: Parser ExprPar
 pExprAtom =
     P.choice
-        [ do
-            gs <- spanStart
-            stmt <- pStmt
-            info <- spanEnd gs
-            pure $ EStmtX info stmt
+        [ pIf
+        , pWhile
+        , pRet
+        , pLoop
+        , pBreak
         , pLit
         , pLet
         , pVar
@@ -322,7 +307,12 @@ putInfo p = do
         VarX _ v -> VarX pos v
         PrefixX _ op r -> PrefixX pos op r
         BinOpX _ l op r -> BinOpX pos l op r
-        EStmtX _ s -> EStmtX pos s
         AppX _ l rs -> AppX pos l rs
         LetX (_, mut, ty) name expr -> LetX (pos, mut, ty) name expr
         AssX _ name op expr -> AssX pos name op expr
+        RetX _ expr -> RetX pos expr
+        EBlockX NoExtField (BlockX _ stmts tail) -> EBlockX NoExtField (BlockX pos stmts tail)
+        BreakX _ expr -> BreakX pos expr
+        IfX _ cond true false -> IfX pos cond true false
+        WhileX _ cond block -> WhileX pos cond block
+        ExprX (LoopX _ block) -> ExprX (LoopX pos block)

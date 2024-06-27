@@ -16,7 +16,7 @@ import Frontend.Error
 import Frontend.Renamer.Types
 import Frontend.Typechecker.Subst
 import Frontend.Typechecker.Types
-import Relude hiding (intercalate)
+import Relude hiding (Any, intercalate)
 import Relude.Unsafe (fromJust)
 import Types
 import Utils (chain, listify')
@@ -65,22 +65,26 @@ tcProg (ProgramX NoExtField defs) = ProgramX NoExtField <$> mapM tcDefs defs
 
 -- TODO: Add the function to callstack for more precise error reporting
 tcDefs :: DefRn -> TcM (DefX Tc)
-tcDefs (Fn info name args rt block) = do
+tcDefs (Fn _ name args rt block) = do
     let arguments =
             fmap
                 ( \(ArgX (info, mut) name ty) ->
                     (name, (case mut of Mutable -> Mut (typeOf ty); Immutable -> typeOf ty, info))
                 )
                 args
-    args <- mapM tcArg args
+    args <- mapM infArg args
     modifying variables (\vars -> foldr (uncurry Map.insert) vars arguments)
-    block <- locally returnType (const (typeOf rt)) $ infBlock block
-    case block of
-        BlockX _ _ (Just expr) -> unify Nothing info (typeOf rt) expr
-        BlockX _ _ Nothing -> pure ()
-    Fn NoExtField name args (typeOf rt) <$> applySt block
+    let retTy = typeOf rt
+    block <- locally returnType (const retTy) $ case block of
+        BlockX info stmts (Just expr) -> do
+            stmts <- mapM infStmt stmts
+            expr <- tcExpr retTy expr
+            pure $ BlockX (info, retTy) stmts (Just expr)
+        BlockX info stmts Nothing -> do
+            stmts <- mapM infStmt stmts
+            pure $ BlockX (info, Any) stmts Nothing
+    Fn NoExtField name args retTy <$> applySt block
 
--- TODO: Break statments must have the same type as the block in loops
 infBlock :: BlockRn -> TcM BlockTc
 infBlock (BlockX info statements tailExpression) = do
     stmts <- mapM infStmt statements
@@ -93,60 +97,16 @@ tcBlock expectedTy (BlockX info statements tailExpression) = do
     expr <- mapM (tcExpr expectedTy) tailExpression
     pure $ BlockX (info, maybe Unit typeOf expr) stmts expr
 
-tcArg :: ArgRn -> TcM ArgTc
-tcArg (ArgX (_, _) name ty) = pure $ ArgX NoExtField name (typeOf ty)
+infArg :: ArgRn -> TcM ArgTc
+infArg (ArgX (_, _) name ty) = pure $ ArgX NoExtField name (typeOf ty)
 
 infStmt :: StmtRn -> TcM StmtTc
-infStmt stmt = view returnType >>= flip go stmt
-  where
-    go returnType = \case
-        RetX info mbExpr -> do
-            case mbExpr of
-                Nothing -> do
-                    unless (returnType == Unit) (void $ emptyReturnNonUnit info returnType)
-                    pure $ RetX (info, Unit) Nothing
-                Just expr -> do
-                    expr <- tcExpr returnType expr
-                    pure $ RetX (info, returnType) (Just expr)
-        SBlockX NoExtField block -> SBlockX NoExtField <$> infBlock block
-        BreakX info expr -> do
-            expr <- mapM infExpr expr
-            pure $ BreakX (info, maybe Unit typeOf expr) expr
-        IfX info condition true false -> do
-            condition <- tcExpr Bool condition
-            true <- infBlock true
-            false <- mapM infBlock false
-            pure $ IfX (info, Unit) condition true false
-        WhileX info expr block -> do
-            expr <- tcExpr Bool expr
-            block <- infBlock block
-            case block of
-                BlockX _ stmt Nothing -> mapM_ breakValueless stmt
-                BlockX _ stmt (Just tail) -> do
-                    mapM_ breakValueless stmt
-                    unify Nothing info Unit tail
-            pure $ WhileX (info, Unit) expr block
-        SExprX NoExtField expr -> do
-            SExprX NoExtField <$> infExpr expr
-        StmtX (LoopX info block) -> do
-            block@(BlockX _blockTy stmts tail) <- tcBlock Unit block
-            maybe (pure ()) (unify Nothing info Unit) tail
-            ty <- case listify' breakTypes stmts of
-                [] -> pure Unit
-                (x : xs) -> do
-                    sequence_ $ chain (unify' Nothing info) x xs
-                    applySt x
-            applySt $ StmtX $ LoopX (info, ty) block
+infStmt (SExprX NoExtField expr) = SExprX NoExtField <$> infExpr expr
 
-breakTypes :: StmtTc -> Maybe TypeTc
-breakTypes = \case
-    BreakX ty _ -> Just $ snd ty
+breakExpr :: ExprTc -> Maybe ExprTc
+breakExpr = \case
+    e@BreakX {} -> Just e
     _ -> Nothing
-
-breakValueless :: (MonadValidate [TcError] m) => StmtTc -> m ()
-breakValueless = \case
-    BreakX (info, _) (Just _) -> void $ nonEmptyBreak info
-    _ -> pure ()
 
 infExpr :: ExprRn -> TcM ExprTc
 infExpr = \case
@@ -172,23 +132,21 @@ infExpr = \case
         if typeOf r `elem` types
             then pure $ BinOpX (info, ty) l op r
             else do
-                ty <- Unsolvable <$ invalidOperatorType info op (typeOf r)
+                ty <- Any <$ invalidOperatorType info op (typeOf r)
                 pure $ BinOpX (info, ty) l op r
     AppX info l r -> do
         l <- infExpr l
-        -- TODO: Simplify this logic
-        -- TODO: Check for mutable argument stuff
         case typeOf l of
             TyFunX NoExtField argTys retTy -> do
                 let argTysLength = length argTys
                 let rLength = length r
                 if
                     | argTysLength < rLength -> do
-                        retTy <- Unsolvable <$ tooManyArguments info argTysLength rLength
+                        retTy <- Any <$ tooManyArguments info argTysLength rLength
                         r <- mapM infExpr r
                         pure $ AppX (info, retTy) l r
                     | argTysLength > rLength -> do
-                        retTy <- Unsolvable <$ partiallyAppliedFunction info argTysLength rLength
+                        retTy <- Any <$ partiallyAppliedFunction info argTysLength rLength
                         r <- mapM infExpr r
                         pure $ AppX (info, retTy) l r
                     | otherwise -> do
@@ -196,20 +154,9 @@ infExpr = \case
                         r <- zipWithM tcExpr argTys r
                         pure $ AppX (info, retTy) l r
             ty -> do
-                retTy <- Unsolvable <$ applyNonFunction info ty
+                retTy <- Any <$ applyNonFunction info ty
                 r <- mapM infExpr r
                 pure $ AppX (info, retTy) l r
-    EStmtX info stmt -> do
-        stmt <- infStmt stmt
-        case stmt of
-            IfX _ cond true false -> do
-                ty <- case false of
-                    Nothing -> Unsolvable <$ missingElse info
-                    Just false -> do
-                        unify Nothing info (typeOf true) false
-                        applySt (typeOf true)
-                applySt $ EStmtX NoExtField $ IfX (info, ty) cond true false
-            stmt -> pure $ EStmtX NoExtField stmt
     LetX (info, mut, mbty) name expr -> do
         expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
         let ty = case mut of
@@ -219,7 +166,7 @@ infExpr = \case
         applySt $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         (ty, info) <- case bind of
-            Toplevel -> assignNonVariable info name >> pure (Unsolvable, info)
+            Toplevel -> assignNonVariable info name >> pure (Any, info)
             _ -> lookupVar name
         case ty of
             Mut _ -> pure ()
@@ -250,6 +197,48 @@ infExpr = \case
                     (void $ tyExpectedGot Nothing info [Int, Double] ty)
             Assign -> pure ()
         pure $ AssX (StmtType Unit ty info) name op expr
+    RetX info mbExpr -> do
+        returnType <- view returnType
+        case mbExpr of
+            Nothing -> do
+                unless (returnType == Unit) (void $ emptyReturnNonUnit info returnType)
+                pure $ RetX (info, Unit) Nothing
+            Just expr -> do
+                expr <- tcExpr returnType expr
+                pure $ RetX (info, returnType) (Just expr)
+    EBlockX NoExtField block -> EBlockX NoExtField <$> infBlock block
+    BreakX info expr -> do
+        expr <- mapM infExpr expr
+        pure $ BreakX (info, maybe Unit typeOf expr) expr
+    IfX info condition true false -> do
+        condition <- tcExpr Bool condition
+        true <- infBlock true
+        let ty = typeOf true
+        false <- mapM (tcBlock ty) false
+        pure $ IfX (info, ty) condition true false
+    WhileX info expr block -> do
+        let blockType = Unit
+        expr <- tcExpr Bool expr
+        block <- tcBlock blockType block
+        case block of
+            BlockX _ stmt tail -> do
+                let breakExprs = listify' breakExpr stmt
+                maybe (pure ()) (unify Nothing info blockType) tail
+                mapM_ (\expr -> unify Nothing (hasInfo expr) Unit expr) breakExprs
+        pure $ WhileX (info, Unit) expr block
+    ExprX (LoopX info block) -> do
+        --BUG: Not all breaks are caught, check bad/ex1
+        block@(BlockX _ stmts _) <- infBlock block
+        ty <- case listify' breakExpr stmts of
+            [] -> pure Any
+            (x : xs) -> do
+                sequence_
+                    $ chain
+                        (\expr1 expr2 -> unify Nothing (hasInfo expr2) (typeOf expr1) expr2)
+                        x
+                        xs
+                typeOf <$> applySt x
+        applySt $ ExprX $ LoopX (info, ty) block
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
 tcExpr expectedTy = \case
@@ -291,17 +280,63 @@ tcExpr expectedTy = \case
         unify Nothing info expectedTy expr
         applySt expr
     LetX (info, mut, mbty) name expr -> do
-        expr <- infExpr (LetX (info, mut, mbty) name expr)
-        unify Nothing info expectedTy expr
-        applySt expr
+        expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
+        let ty = case mut of
+                Mutable -> Mut (typeOf expr)
+                Immutable -> typeOf expr
+        unify' Nothing info expectedTy Unit
+        insertVar name ty info
+        applySt $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         expr <- infExpr (AssX (info, bind) name op expr)
         unify Nothing info expectedTy expr
         applySt expr
-    EStmtX info stmt -> do
-        expr <- infExpr (EStmtX info stmt)
-        unify Nothing info expectedTy expr
-        applySt expr
+    RetX info expr -> do
+        returnType <- view returnType
+        case expr of
+            Nothing -> do
+                unify' Nothing info returnType Unit
+                pure $ RetX (info, Any) Nothing
+            Just expr -> do
+                expr <- tcExpr returnType expr
+                applySt $ RetX (info, Any) (Just expr)
+    EBlockX NoExtField block -> do
+        block <- tcBlock expectedTy block
+        pure $ EBlockX NoExtField block
+    BreakX info expr -> do
+        expr <- mapM infExpr expr
+        pure $ BreakX (info, Any) expr
+    IfX info cond true false -> do
+        cond <- tcExpr Bool cond
+        true <- infBlock true
+        let ty = typeOf true
+        false <- mapM (tcBlock ty) false 
+        pure $ IfX (info, ty) cond true false
+    while@(WhileX info _ _) -> do
+        while <- infExpr while
+        unify Nothing info expectedTy while
+        pure while
+    loop@(ExprX (LoopX info _)) -> do
+        --BUG: Not all breaks are caught, check bad/ex1
+        loop <- infExpr loop
+        unify Nothing info expectedTy loop
+        pure loop
+
+hasInfo :: ExprTc -> SourceInfo
+hasInfo = \case
+    LitX info _ -> fst info
+    VarX info _ -> fst info
+    PrefixX info _ _ -> fst info
+    BinOpX info _ _ _ -> fst info
+    AppX info _ _ -> fst info
+    LetX info _ _ -> view stmtInfo info
+    AssX info _ _ _ -> view stmtInfo info
+    RetX info _ -> fst info
+    EBlockX _ (BlockX info _ _) -> fst info
+    BreakX info _ -> fst info
+    IfX info _ _ _ -> fst info
+    WhileX info _ _ -> fst info
+    ExprX (LoopX info _) -> fst info
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
@@ -367,16 +402,9 @@ applySt a = do
 class TypeOf a where
     typeOf :: a -> TypeTc
 
--- TODO: Remove types from statements and move to statement-expressions
 instance TypeOf StmtTc where
     typeOf = \case
-        RetX ty _ -> snd ty
-        SBlockX _ block -> typeOf block
-        BreakX ty _ -> snd ty
-        IfX ty _ _ _ -> snd ty
-        WhileX ty _ _ -> snd ty
         SExprX _ expr -> typeOf expr
-        StmtX (LoopX ty _) -> snd ty
 
 instance TypeOf ExprTc where
     typeOf = \case
@@ -387,7 +415,12 @@ instance TypeOf ExprTc where
         AppX ty _ _ -> snd ty
         LetX rec _ _ -> view stmtType rec
         AssX rec _ _ _ -> view stmtType rec
-        EStmtX _ stmt -> typeOf stmt
+        RetX ty _ -> snd ty
+        EBlockX _ block -> typeOf block
+        BreakX ty _ -> snd ty
+        IfX ty _ _ _ -> snd ty
+        WhileX ty _ _ -> snd ty
+        ExprX (LoopX ty _) -> snd ty
 
 instance TypeOf BlockTc where
     typeOf (BlockX ty _ _) = snd ty
@@ -415,8 +448,8 @@ unify'
     -> TypeTc
     -> m ()
 unify' declaredAt info ty1 ty2 = case (ty1, ty2) of
-    (Unsolvable, _) -> doneTcError
-    (_, Unsolvable) -> doneTcError
+    (Any, _) -> pure ()
+    (_, Any) -> pure ()
     (TyLitX _ lit1, TyLitX _ lit2)
         | lit1 == lit2 -> pure ()
         | otherwise -> void $ tyExpectedGot declaredAt info [ty1] ty2

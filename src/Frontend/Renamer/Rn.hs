@@ -47,28 +47,9 @@ rnBlock (BlockX a stmts expr) = uncurry (BlockX a) <$> newContext ((,) <$> mapM 
 
 rnStatement :: StmtPar -> Gen StmtRn
 rnStatement = \case
-    RetX a b -> do
-        b' <- mapM rnExpr b
-        pure $ RetX a b'
-    SBlockX NoExtField block -> SBlockX NoExtField <$> rnBlock block
-    BreakX a expr -> do
-        b' <- mapM rnExpr expr
-        pure $ BreakX a b'
-    IfX a b true false -> do
-        b <- rnExpr b
-        true <- newContext $ rnBlock true
-        false <- newContext $ mapM rnBlock false
-        pure $ IfX a b true false
-    WhileX a b block -> do
-        b <- rnExpr b
-        stmts <- newContext $ rnBlock block
-        pure $ WhileX a b stmts
     SExprX a b -> do
         b <- rnExpr b
         pure $ SExprX a b
-    StmtX (LoopX info block) -> do
-        block <- rnBlock block
-        pure $ StmtX $ LoopX info block
 
 rnExpr :: ExprPar -> Gen ExprRn
 rnExpr = \case
@@ -99,7 +80,23 @@ rnExpr = \case
                 =<< boundVar variable
         expr <- rnExpr expr
         pure (AssX (info, bind) name op expr)
-    EStmtX info stmt -> EStmtX info <$> rnStatement stmt
+    RetX a b -> do
+        b' <- mapM rnExpr b
+        pure $ RetX a b'
+    EBlockX info block -> EBlockX info <$> rnBlock block
+    BreakX a expr -> do
+        b' <- mapM rnExpr expr
+        pure $ BreakX a b'
+    IfX a b true false -> do
+        b <- rnExpr b
+        true <- newContext $ rnBlock true
+        false <- newContext $ mapM rnBlock false
+        pure $ IfX a b true false
+    WhileX a b block -> do
+        b <- rnExpr b
+        stmts <- newContext $ rnBlock block
+        pure $ WhileX a b stmts
+    ExprX (LoopX info block) -> ExprX . LoopX info <$> rnBlock block
 
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case

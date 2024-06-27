@@ -30,18 +30,17 @@ instance Substitution ExprTc where
         AppX ty l r -> AppX (apply sub ty) (apply sub l) (fmap (apply sub) r)
         LetX (StmtType ty1 ty2 info) name expr -> LetX (StmtType (apply sub ty1) (apply sub ty2) info) name (apply sub expr)
         AssX (StmtType ty1 ty2 info) name op expr -> AssX (StmtType (apply sub ty1) (apply sub ty2) info) name op (apply sub expr)
-        EStmtX NoExtField stmt -> EStmtX NoExtField (apply sub stmt)
-
-instance Substitution StmtTc where
-    apply sub stmt = case stmt of
         RetX ty mbExpr -> RetX (apply sub ty) (fmap (apply sub) mbExpr)
-        SBlockX NoExtField block -> SBlockX NoExtField (apply sub block)
+        EBlockX NoExtField block -> EBlockX NoExtField (apply sub block)
         BreakX ty mbExpr -> BreakX (apply sub ty) (fmap (apply sub) mbExpr)
         IfX ty condition true false ->
             IfX (apply sub ty) (apply sub condition) (apply sub true) (fmap (apply sub) false)
         WhileX ty condition block -> WhileX (apply sub ty) (apply sub condition) (apply sub block)
+        ExprX (LoopX ty block) -> ExprX $ LoopX (apply sub ty) (apply sub block)
+
+instance Substitution StmtTc where
+    apply sub stmt = case stmt of
         SExprX NoExtField expr -> SExprX NoExtField (apply sub expr)
-        StmtX (LoopX ty block) -> StmtX $ LoopX (apply sub ty) (apply sub block)
 
 instance Substitution BlockTc where
     apply sub (BlockX ty stmts tail) =
