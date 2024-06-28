@@ -2,10 +2,10 @@
 indentation: 4
 
 # Max line length for automatic line breaking
-column-limit: none
+column-limit: 100
 
 # Styling of arrows in type signatures (choices: trailing, leading, or leading-args)
-function-arrows: leading
+function-arrows: trailing
 
 # How to place commas in multi-line lists, records, etc. (choices: leading or trailing)
 comma-style: leading

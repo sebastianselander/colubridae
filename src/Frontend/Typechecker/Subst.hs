@@ -27,6 +27,7 @@ instance Substitution ExprTc where
         LitX ty lit -> LitX (apply sub ty) lit
         VarX ty var -> VarX (apply sub ty) var
         BinOpX ty l op r -> BinOpX (apply sub ty) (apply sub l) op (apply sub r)
+        PrefixX ty op expr -> PrefixX (apply sub ty) op (apply sub expr)
         AppX ty l r -> AppX (apply sub ty) (apply sub l) (fmap (apply sub) r)
         LetX (StmtType ty1 ty2 info) name expr -> LetX (StmtType (apply sub ty1) (apply sub ty2) info) name (apply sub expr)
         AssX (StmtType ty1 ty2 info) name op expr -> AssX (StmtType (apply sub ty1) (apply sub ty2) info) name op (apply sub expr)

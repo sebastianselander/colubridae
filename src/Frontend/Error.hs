@@ -1,15 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Error where
 
 import Control.Monad.Except (MonadError, throwError)
 import Control.Monad.Validate
+import Data.Text (intercalate)
 import Frontend.TH
 import Frontend.Typechecker.Types
 import Relude hiding (All, First, intercalate)
-import Types (Ident, SourceInfo, BinOp)
-import Data.Text (intercalate)
+import Types (BinOp, Ident, SourceInfo)
+import Frontend.Renamer.Types (ExprRn)
 
 data RnError
     = UnboundVariable SourceInfo Ident
@@ -18,21 +20,24 @@ data RnError
     deriving (Show)
 
 data TcError
-    = TyExpectedGot (Maybe SourceInfo) SourceInfo [TypeTc] TypeTc
-    | ImmutableVariable SourceInfo Ident
-    | EmptyReturnNonUnit SourceInfo TypeTc
-    | ApplyNonFunction SourceInfo TypeTc
-    | PartiallyAppliedFunction SourceInfo Int Int
-    | TooManyArguments SourceInfo Int Int
-    | InvalidOperatorType SourceInfo BinOp TypeTc
-    | AssignNonVariable SourceInfo Ident
-    | MissingElse SourceInfo
-    | ExpectingImmutable SourceInfo
-    | NonEmptyBreak SourceInfo 
-    | OnlyImmutable SourceInfo MetaTy TypeTc
+    = TyExpectedGot SourceInfo ExprRn [TypeTc] TypeTc
+    | ImmutableVariable SourceInfo ExprRn Ident
+    | EmptyReturnNonUnit SourceInfo ExprRn TypeTc
+    | ApplyNonFunction SourceInfo ExprRn TypeTc
+    | PartiallyAppliedFunction SourceInfo ExprRn Int Int
+    | TooManyArguments SourceInfo ExprRn Int Int
+    | InvalidOperatorType SourceInfo ExprRn BinOp TypeTc
+    | AssignNonVariable SourceInfo ExprRn Ident
+    | MissingElse SourceInfo ExprRn
+    | ExpectingImmutable SourceInfo ExprRn
+    | NonEmptyBreak SourceInfo ExprRn
+    | OnlyImmutable SourceInfo ExprRn MetaTy TypeTc
     deriving (Show)
 
-data ChError = BreakOutsideLoop SourceInfo | MissingReturn SourceInfo Ident | UnreachableStatement SourceInfo
+data ChError
+    = BreakOutsideLoop SourceInfo
+    | MissingReturn SourceInfo Ident
+    | UnreachableStatement SourceInfo
     deriving (Show)
 
 data TcWarning = MakeExpressionBreak SourceInfo ExprTc
@@ -41,7 +46,7 @@ data TcWarning = MakeExpressionBreak SourceInfo ExprTc
 class Report a where
     report :: a -> Text
 
-instance Report a => Report [a] where
+instance (Report a) => Report [a] where
     report xs = intercalate "\n\n" $ fmap report xs
 
 instance Report RnError where
@@ -56,8 +61,11 @@ instance Report TcWarning where
 instance Report ChError where
     report = show
 
-doneTcError :: (MonadValidate [TcError] m) => m a
-doneTcError = refute []
+reportRnError :: RnError -> Text
+reportRnError err = case err of
+    UnboundVariable info name -> "unbound variable: " <> show name
+    ConflictingDefinitionArgument {} -> undefined
+    DuplicateToplevels {} -> undefined
 
 $(gen All "TcError")
 $(gen First "RnError")
