@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Types where
+module Frontend.Types where
 
 import Data.Data (Data)
 import Data.Kind qualified
@@ -17,6 +17,7 @@ import Relude hiding (Type, concat, intercalate, replicate)
 import Relude qualified
 import Text.Megaparsec (Pos)
 import Text.Megaparsec.Pos (unPos)
+import Utils (indent)
 
 data NoExtField = NoExtField
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
@@ -419,6 +420,3 @@ prettyLit l = case l of
     CharLitX _ l -> Relude.show l
     BoolLitX _ l -> Relude.show l
     UnitLitX _ -> "()"
-
-indent :: Int -> Text -> Text
-indent n t = Text.replicate n " " <> t

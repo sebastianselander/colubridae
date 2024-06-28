@@ -3,7 +3,7 @@ module Frontend.Typechecker.Subst where
 import Data.Map qualified as Map
 import Frontend.Typechecker.Types
 import Relude
-import Types (BlockX (..), ExprX (..), StmtX (..), TypeX (..), SugarStmtX (..), NoExtField (NoExtField))
+import Frontend.Types (BlockX (..), ExprX (..), StmtX (..), TypeX (..), SugarStmtX (..), NoExtField (NoExtField))
 
 newtype Subst = Subst {unSubst :: Map MetaTy TypeTc}
     deriving (Show)

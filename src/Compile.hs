@@ -13,7 +13,7 @@ import Frontend.Typechecker.Tc (tc)
 import Relude hiding (concat, intercalate)
 import Data.Text (intercalate)
 import Text.Pretty.Simple (pShow)
-import Types (pPretty)
+import Frontend.Types (pPretty)
 
 data Phase = Parse | Rename | StCheck | TypeCheck
     deriving Show

@@ -5,7 +5,6 @@
 module Frontend.Renamer.Monad where
 
 import Control.Lens hiding ((<|))
-import Control.Monad.Except (Except, MonadError, runExcept)
 import Data.List.NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -13,7 +12,8 @@ import Data.Set qualified as Set
 import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
 import Relude hiding (Map)
-import Types (Ident (..))
+import Frontend.Types (Ident (..))
+import Control.Monad.Validate (MonadValidate, Validate, runValidate)
 
 data Env = Env
     { _conversionKV :: Map Ident Ident -- Just for remembering
@@ -28,14 +28,14 @@ newtype Ctx = Ctx {_definitions :: Set Ident}
 $(makeLenses ''Env)
 $(makeLenses ''Ctx)
 
-newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Except RnError)) a}
+newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
     deriving
         ( Functor
         , Applicative
         , Monad
         , MonadState Env
         , MonadReader Ctx
-        , MonadError RnError
+        , MonadValidate [RnError]
         )
 
 emptyEnv :: Env
@@ -44,9 +44,9 @@ emptyEnv = Env mempty mempty (return mempty)
 emptyCtx :: Ctx
 emptyCtx = Ctx mempty
 
-runGen :: Env -> Ctx -> Gen a -> Either RnError a
+runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
 runGen env ctx =
-    runExcept
+    runValidate
         . flip runReaderT ctx
         . flip evalStateT env
         . runGen'

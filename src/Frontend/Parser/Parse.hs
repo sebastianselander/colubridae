@@ -15,7 +15,7 @@ import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
-import Types
+import Frontend.Types
 
 parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
 parse = P.runParser (ProgramX NoExtField <$> P.many pDef <* P.eof)

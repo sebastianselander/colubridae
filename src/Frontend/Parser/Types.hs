@@ -5,7 +5,7 @@ module Frontend.Parser.Types where
 
 import Data.Data (Data)
 import Relude hiding (intercalate, replicate)
-import Types
+import Frontend.Types
 
 data Par
     deriving (Data)

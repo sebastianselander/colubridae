@@ -1,7 +1,7 @@
 module Backend.Intermediate.Types where
 
 import Relude hiding (Type)
-import Types (Ident)
+import Frontend.Types (Ident)
 
 newtype Ir = Ir [TopDef]
     deriving (Show)

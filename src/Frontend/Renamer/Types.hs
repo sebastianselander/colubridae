@@ -6,7 +6,7 @@ module Frontend.Renamer.Types where
 import Data.Data (Data)
 import Frontend.Parser.Types
 import Relude
-import Types
+import Frontend.Types
 
 data Boundedness = Free | Bound | Toplevel | Lambda
     deriving (Show, Eq, Ord, Data)

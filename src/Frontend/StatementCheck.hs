@@ -9,7 +9,7 @@ import Control.Monad.Validate (MonadValidate, Validate, runValidate)
 import Frontend.Error
 import Frontend.Renamer.Types
 import Relude
-import Types
+import Frontend.Types
 
 newtype Ctx = Ctx {_inLoop :: Bool}
     deriving (Show)

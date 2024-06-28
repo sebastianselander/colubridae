@@ -19,7 +19,7 @@ import Frontend.Typechecker.Subst
 import Frontend.Typechecker.Types
 import Relude hiding (Any, intercalate)
 import Relude.Unsafe (fromJust)
-import Types
+import Frontend.Types
 import Utils (chain, listify')
 
 data Env = Env

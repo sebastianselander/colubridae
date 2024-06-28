@@ -1,17 +1,19 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Error where
 
-import Control.Monad.Except (MonadError, throwError)
 import Control.Monad.Validate
-import Data.Text (intercalate)
+import Data.Text (intercalate, pack)
+import Frontend.Renamer.Types (ExprRn)
 import Frontend.TH
 import Frontend.Typechecker.Types
 import Relude hiding (All, First, intercalate)
-import Types (BinOp, Ident, SourceInfo)
-import Frontend.Renamer.Types (ExprRn)
+import Text.Megaparsec (unPos)
+import Frontend.Types (BinOp, Ident, SourceInfo (..), Span (..), pPretty)
+import Utils (indent, quote)
 
 data RnError
     = UnboundVariable SourceInfo Ident
@@ -50,7 +52,7 @@ instance (Report a) => Report [a] where
     report xs = intercalate "\n\n" $ fmap report xs
 
 instance Report RnError where
-    report = show
+    report = reportRnError
 
 instance Report TcError where
     report = show
@@ -63,10 +65,24 @@ instance Report ChError where
 
 reportRnError :: RnError -> Text
 reportRnError err = case err of
-    UnboundVariable info name -> "unbound variable: " <> show name
-    ConflictingDefinitionArgument {} -> undefined
-    DuplicateToplevels {} -> undefined
+    UnboundVariable info name ->
+        combine
+            info
+            (unwords ["Variable", quote $ pPretty name, "not in scope"])
+    ConflictingDefinitionArgument info name -> combine info (unwords ["Conflicting definitions for", quote $ pPretty name])
+    DuplicateToplevels info name -> combine info (unwords ["Definition", quote $ pPretty name, "already declared earlier"])
+
+combine :: SourceInfo -> Text -> Text
+combine info msg = mconcat [reportSourceInfo info, ":\n", indent 2 ("* " <> msg)]
+
+reportSourceInfo :: SourceInfo -> Text
+reportSourceInfo info = do
+    let path = pack info.sourceFile
+    let pos = do
+            Span (startRow, startCol) (_endRow, _endCol) <- info.spanInfo
+            pure $ mconcat [show $ unPos startRow, ":", show $ unPos startCol]
+    mconcat [path, ":", fromMaybe "?:?" pos]
 
 $(gen All "TcError")
-$(gen First "RnError")
+$(gen All "RnError")
 $(gen All "ChError")

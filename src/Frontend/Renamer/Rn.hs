@@ -1,20 +1,21 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Frontend.Renamer.Rn (rename) where
 
 import Control.Lens (locally)
 import Control.Monad (foldM)
-import Control.Monad.Except
 import Data.Set qualified as Set
 import Frontend.Error
 import Frontend.Parser.Types
 import Frontend.Renamer.Monad
 import Frontend.Renamer.Types
 import Relude
-import Types
+import Frontend.Types
 import Utils (listify')
+import Control.Monad.Validate (MonadValidate)
 
-rename :: ProgramPar -> Either RnError ProgramRn
+rename :: ProgramPar -> Either [RnError] ProgramRn
 rename = runGen emptyEnv emptyCtx . rnProgram
 
 rnProgram :: ProgramPar -> Gen ProgramRn
@@ -25,10 +26,10 @@ rnProgram program@(ProgramX a defs) = do
     defs <- locally definitions (const toplevelSet) (mapM rnDef defs)
     pure $ ProgramX a defs
 
-uniqueDefs :: (MonadError RnError m) => [(SourceInfo, Ident)] -> m ()
+uniqueDefs :: (MonadValidate [RnError] m) => [(SourceInfo, Ident)] -> m ()
 uniqueDefs = go mempty
   where
-    go :: (MonadError RnError m) => Set Ident -> [(SourceInfo, Ident)] -> m ()
+    go :: (MonadValidate [RnError] m) => Set Ident -> [(SourceInfo, Ident)] -> m ()
     go _ [] = pure ()
     go seen ((info, name) : xs) =
         if Set.member name seen
@@ -56,7 +57,7 @@ rnExpr = \case
     LitX info lit -> LitX info <$> rnLit lit
     VarX info variable -> do
         (bind, name) <-
-            maybe (unboundVariable info variable) pure
+            maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
                 =<< boundVar variable
         pure $ VarX (info, bind) name
@@ -76,7 +77,7 @@ rnExpr = \case
         pure $ LetX (info, mut, ty) name' expr
     AssX info variable op expr -> do
         (bind, name) <-
-            maybe (unboundVariable info variable) pure
+            maybe ((Free, Ident "unbound")<$ unboundVariable info variable) pure
                 =<< boundVar variable
         expr <- rnExpr expr
         pure (AssX (info, bind) name op expr)
@@ -113,10 +114,10 @@ getDefinitions = listify' fnName
     fnName :: DefPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _) = Just (info, name)
 
-uniqueArgs :: (MonadState Env m, MonadError RnError m) => [ArgPar] -> m [ArgRn]
+uniqueArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]
 uniqueArgs = foldM f mempty
   where
-    f :: (MonadState Env m, MonadError RnError m) => [ArgRn] -> ArgPar -> m [ArgRn]
+    f :: (MonadState Env m, MonadValidate [RnError] m) => [ArgRn] -> ArgPar -> m [ArgRn]
     f seen arg@(ArgX (info, mut) name ty) = do
         when (any (eqAlphaArg arg) seen) (conflictingDefinitionArgument info name)
         name <- insertVar name

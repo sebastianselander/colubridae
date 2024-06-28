@@ -9,7 +9,7 @@ module Frontend.Typechecker.Types where
 
 import Data.Data (Data)
 import Relude
-import Types
+import Frontend.Types
 import Control.Lens (makeLenses)
 import Control.Lens.Getter (view)
 

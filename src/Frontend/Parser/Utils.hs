@@ -11,7 +11,7 @@ import Text.Megaparsec (Pos, ParseErrorBundle, customFailure, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
-import Types
+import Frontend.Types
 import Frontend.Error (Report, report)
 import Text.Megaparsec.Error (errorBundlePretty)
 

@@ -1,7 +1,10 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Utils where
 
 import Data.Generics (Data, everything, everywhere, mkQ, mkT)
 import Relude
+import qualified Data.Text as Text
 
 genMap :: (Data a, Typeable b) => (b -> b) -> a -> a
 genMap f = everywhere (mkT f)
@@ -19,3 +22,10 @@ chain f base (x:y:xs) = f base x : go (x:y:xs)
   where
     go (x:y:xs) = f x y : go (y:xs)
     go _ = []
+
+
+indent :: Int -> Text -> Text
+indent n t = Text.replicate n " " <> t
+
+quote :: Text -> Text
+quote txt = "'" <> txt <> "'"
