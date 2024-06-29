@@ -137,7 +137,7 @@ infExpr currentExpr = case currentExpr of
             Bound -> lookupVar name
             Lambda -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
-        pure $ VarX (info, ty) name
+        pure $ VarX (info, ty, bind) name
     PrefixX info op expr -> do
         expr <- tcExpr Bool expr
         pure $ PrefixX (info, Bool) op expr
@@ -214,7 +214,7 @@ infExpr currentExpr = case currentExpr of
                     (ty `elem` [Int, Double])
                     (void $ tyExpectedGot info currentExpr [Int, Double] ty)
             Assign -> pure ()
-        pure $ AssX (StmtType Unit ty info) name op expr
+        pure $ AssX (StmtType Unit ty info, bind) name op expr
     RetX info mbExpr -> do
         returnType <- view returnType
         case mbExpr of
@@ -270,7 +270,7 @@ tcExpr expectedTy currentExpr = case currentExpr of
             Bound -> lookupVar name
             Lambda -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
-        let expr = VarX (info, ty) name
+        let expr = VarX (info, ty, bind) name
         unify info currentExpr expectedTy expr
         applySt expr
     PrefixX info op expr -> do
@@ -341,12 +341,12 @@ tcExpr expectedTy currentExpr = case currentExpr of
 hasInfo :: ExprTc -> SourceInfo
 hasInfo = \case
     LitX info _ -> fst info
-    VarX info _ -> fst info
+    VarX (info, _, _) _ -> info
     PrefixX info _ _ -> fst info
     BinOpX info _ _ _ -> fst info
     AppX info _ _ -> fst info
     LetX info _ _ -> view stmtInfo info
-    AssX info _ _ _ -> view stmtInfo info
+    AssX (info, _) _ _ _ -> view stmtInfo info
     RetX info _ -> fst info
     EBlockX _ (BlockX info _ _) -> fst info
     BreakX info _ -> fst info
@@ -425,12 +425,12 @@ instance TypeOf StmtTc where
 instance TypeOf ExprTc where
     typeOf = \case
         LitX ty _ -> snd ty
-        VarX ty _ -> snd ty
+        VarX (_,ty,_) _ -> ty
         PrefixX ty _ _ -> snd ty
         BinOpX ty _ _ _ -> snd ty
         AppX ty _ _ -> snd ty
         LetX rec _ _ -> view stmtType rec
-        AssX rec _ _ _ -> view stmtType rec
+        AssX (rec, _) _ _ _ -> view stmtType rec
         RetX ty _ -> snd ty
         EBlockX _ block -> typeOf block
         BreakX ty _ -> snd ty

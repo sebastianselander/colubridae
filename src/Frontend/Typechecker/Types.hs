@@ -12,6 +12,7 @@ import Relude
 import Frontend.Types
 import Control.Lens (makeLenses)
 import Control.Lens.Getter (view)
+import Frontend.Renamer.Types (Boundedness)
 
 data Tc deriving (Data)
 
@@ -26,6 +27,7 @@ type BlockTc = BlockX Tc
 type SugarStmtTc = SugarStmtX Tc
 
 type TcInfo = (SourceInfo, TypeTc)
+type TcInfoBound = (SourceInfo, TypeTc, Boundedness)
 
 deriving instance Data StmtTc
 deriving instance Data SugarStmtTc
@@ -49,11 +51,11 @@ type instance XBreak Tc = TcInfo
 type instance XIf Tc = TcInfo
 type instance XWhile Tc = TcInfo
 type instance XLet Tc = StmtType
-type instance XAss Tc = StmtType
+type instance XAss Tc = (StmtType, Boundedness)
 type instance XSExp Tc = NoExtField
 
 type instance XLit Tc = TcInfo
-type instance XVar Tc = TcInfo
+type instance XVar Tc = TcInfoBound
 type instance XPrefix Tc = TcInfo
 type instance XBinOp Tc = TcInfo
 type instance XExprStmt Tc = NoExtField
