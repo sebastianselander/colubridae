@@ -15,11 +15,12 @@ import Data.Text (intercalate)
 import Text.Pretty.Simple (pShow)
 import Frontend.Types (pPretty)
 import Backend.Desugar.Desugar (desugar)
+import Backend.Desugar.Pretty (prettyDesugar)
 
 data Phase = Parse | Rename | StCheck | TypeCheck | Desugar
     deriving Show
 
-data DebugOutput = Debug {phase :: Phase, pretty :: Maybe Text, normal :: Text}
+data DebugOutput = Debug {phase :: Phase, prettyTxt :: Maybe Text, normalTxt :: Text}
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
 
 instance Semigroup DebugOutputs where
@@ -52,7 +53,7 @@ compile fileName fileContents = do
 
     _res <- case desugar names res of
         res -> do
-            log (Debug Desugar Nothing (toStrict $ pShow res)) []
+            log (Debug Desugar (Just $ prettyDesugar res) (toStrict $ pShow res)) []
             pure res
 
     pure ""
