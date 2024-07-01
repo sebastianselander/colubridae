@@ -25,12 +25,12 @@ instance Substitution ExprTc where
     apply :: Subst -> ExprTc -> ExprTc
     apply sub expr = case expr of
         LitX ty lit -> LitX (apply sub ty) lit
-        VarX ty var -> VarX (apply sub ty) var
+        VarX (info, ty, bound) var -> VarX (info, apply sub ty, bound) var
         BinOpX ty l op r -> BinOpX (apply sub ty) (apply sub l) op (apply sub r)
         PrefixX ty op expr -> PrefixX (apply sub ty) op (apply sub expr)
         AppX ty l r -> AppX (apply sub ty) (apply sub l) (fmap (apply sub) r)
         LetX (StmtType ty1 ty2 info) name expr -> LetX (StmtType (apply sub ty1) (apply sub ty2) info) name (apply sub expr)
-        AssX (StmtType ty1 ty2 info) name op expr -> AssX (StmtType (apply sub ty1) (apply sub ty2) info) name op (apply sub expr)
+        AssX (StmtType ty1 ty2 info, bound) name op expr -> AssX (StmtType (apply sub ty1) (apply sub ty2) info, bound) name op (apply sub expr)
         RetX ty mbExpr -> RetX (apply sub ty) (fmap (apply sub) mbExpr)
         EBlockX NoExtField block -> EBlockX NoExtField (apply sub block)
         BreakX ty mbExpr -> BreakX (apply sub ty) (fmap (apply sub) mbExpr)

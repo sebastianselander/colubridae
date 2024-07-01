@@ -18,6 +18,7 @@ import Relude qualified
 import Text.Megaparsec (Pos)
 import Text.Megaparsec.Pos (unPos)
 import Utils (indent)
+import Names
 
 data NoExtField = NoExtField
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
@@ -84,6 +85,12 @@ data TypeX a
 type family XTyLit a
 type family XTyFun a
 type family XType a
+
+coerceType :: (XTyLit t1 ~ XTyLit t2, XTyFun t1 ~ XTyFun t2, XType t1 ~ XType t2) => TypeX t1 -> TypeX t2
+coerceType ty = case ty of
+    TyLitX a b -> TyLitX a b
+    TyFunX a b c -> TyFunX a (fmap coerceType b) (coerceType c)
+    TypeX a -> TypeX a
 
 data TyLit = UnitX | StringX | IntX | DoubleX | CharX | BoolX
     deriving (Show, Eq, Ord, Enum, Data)
@@ -196,10 +203,6 @@ pattern Loop info block <- ExprX (LoopX info block)
 
 deriving instance (ForallX Show a) => Show (LitX a)
 deriving instance (ForallX Typeable a) => Typeable (LitX a)
-
--- Identifier
-newtype Ident = Ident Text
-    deriving (Show, Eq, Ord, Data, Semigroup, Monoid)
 
 type ForallX (c :: Data.Kind.Type -> Constraint) a =
     ( c (XApp a)

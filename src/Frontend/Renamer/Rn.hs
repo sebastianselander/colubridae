@@ -14,17 +14,19 @@ import Relude
 import Frontend.Types
 import Utils (listify')
 import Control.Monad.Validate (MonadValidate)
+import Names (Ident(..), mkNames, Names)
 
-rename :: ProgramPar -> Either [RnError] ProgramRn
+rename :: ProgramPar -> Either [RnError] (ProgramRn, Names)
 rename = runGen emptyEnv emptyCtx . rnProgram
 
-rnProgram :: ProgramPar -> Gen ProgramRn
+rnProgram :: ProgramPar -> Gen (ProgramRn, Names)
 rnProgram program@(ProgramX a defs) = do
     let toplevels = getDefinitions program
     uniqueDefs toplevels
     let toplevelSet = Set.fromList $ fmap snd toplevels
     defs <- locally definitions (const toplevelSet) (mapM rnDef defs)
-    pure $ ProgramX a defs
+    names <- names
+    pure (ProgramX a defs, mkNames names)
 
 uniqueDefs :: (MonadValidate [RnError] m) => [(SourceInfo, Ident)] -> m ()
 uniqueDefs = go mempty
@@ -128,9 +130,4 @@ eqAlphaArg :: forall a b. ArgX a -> ArgX b -> Bool
 eqAlphaArg (ArgX _ name1 _) (ArgX _ name2 _) = name1 == name2
 
 rnType :: (Monad m) => TypePar -> m TypeRn
-rnType = \case
-    TyLitX a lit -> pure $ TyLitX a lit
-    TyFunX a b c -> do
-        b <- mapM rnType b
-        c <- rnType c
-        pure $ TyFunX a b c
+rnType = pure . coerceType

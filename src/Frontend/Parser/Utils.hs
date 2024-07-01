@@ -14,6 +14,7 @@ import Text.Megaparsec.Char.Lexer qualified as L
 import Frontend.Types
 import Frontend.Error (Report, report)
 import Text.Megaparsec.Error (errorBundlePretty)
+import Names (Ident(..))
 
 type Parser = P.Parsec CustomParseError Text
 

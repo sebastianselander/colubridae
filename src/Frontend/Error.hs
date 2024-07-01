@@ -12,8 +12,9 @@ import Frontend.TH
 import Frontend.Typechecker.Types
 import Relude hiding (All, First, intercalate)
 import Text.Megaparsec (unPos)
-import Frontend.Types (BinOp, Ident, SourceInfo (..), Span (..), pPretty)
+import Frontend.Types (BinOp, SourceInfo (..), Span (..), pPretty)
 import Utils (indent, quote)
+import Names (Ident)
 
 data RnError
     = UnboundVariable SourceInfo Ident

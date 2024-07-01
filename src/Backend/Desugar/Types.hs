@@ -2,11 +2,12 @@ module Backend.Desugar.Types where
 
 import Data.Data (Data)
 import Relude hiding (Type)
+import Names (Ident)
 
 newtype Program = Program [Def]
     deriving (Show, Eq, Ord, Data)
 
-data Def = Fn Ident [Arg] Type [Block]
+data Def = Fn Ident [Arg] Type [TyExpr]
     deriving (Show, Eq, Ord, Data)
 
 data Arg = Arg Ident Type
@@ -23,26 +24,25 @@ data Type
     | TyFun [Type] Type
     deriving (Show, Eq, Ord, Data)
 
-data Block = Block [Expr] (Maybe Expr)
+data TyExpr = Typed Type Expr
     deriving (Show, Eq, Ord, Data)
 
 data Expr
     = Lit Lit
     | Var Binding Ident
-    | BinOp Expr BinOp Expr
-    | PrefixOp PrefixOp Expr
-    | EBlock Block
-    | App Expr [Expr]
-    | Let Ident Type Expr
-    | Ass Ident Expr
-    | Ret Expr
-    | Break Expr
-    | If Expr Block (Maybe Block)
-    | While Expr Block
-    | Typed Type Expr
+    | BinOp TyExpr BinOp TyExpr
+    | PrefixOp PrefixOp TyExpr
+    | EBlock [TyExpr]
+    | App TyExpr [TyExpr]
+    | Let Ident Type TyExpr
+    | Ass Ident Type TyExpr
+    | Ret TyExpr
+    | Break TyExpr
+    | If TyExpr [TyExpr] (Maybe [TyExpr])
+    | While TyExpr [TyExpr]
     deriving (Show, Eq, Ord, Data)
 
-data Binding = Free | Bound | Toplevel | Lifted
+data Binding = Free | Bound | Toplevel | Lambda
     deriving (Show, Eq, Ord, Data)
 
 data BinOp
@@ -71,7 +71,4 @@ data Lit
     | CharLit !Char
     | BoolLit !Bool
     | UnitLit
-    deriving (Show, Eq, Ord, Data)
-
-newtype Ident = Ident Text
     deriving (Show, Eq, Ord, Data)

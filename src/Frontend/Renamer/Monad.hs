@@ -2,21 +2,36 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Frontend.Renamer.Monad where
+module Frontend.Renamer.Monad
+    ( Env,
+      Ctx,
+      Gen,
+      newContext,
+      boundVar,
+      insertVar,
+      emptyCtx,
+      emptyEnv,
+      definitions,
+      numbering,
+      newToOld,
+      runGen,
+      boundFun,
+      names,
+    ) where
 
 import Control.Lens hiding ((<|))
+import Control.Monad.Validate (MonadValidate, Validate, runValidate)
 import Data.List.NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
+import Names (Ident (..))
 import Relude hiding (Map)
-import Frontend.Types (Ident (..))
-import Control.Monad.Validate (MonadValidate, Validate, runValidate)
 
 data Env = Env
-    { _conversionKV :: Map Ident Ident -- Just for remembering
+    { _newToOld :: Map Ident Ident -- Just for remembering
     , _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident Ident)
     }
@@ -52,21 +67,7 @@ runGen env ctx =
         . runGen'
 
 names :: Gen (Map Ident Ident)
-names = use conversionKV
-
-conversions :: Gen (Map Ident Ident)
-conversions = use conversionKV
-
-fresh :: Ident -> Gen Ident
-fresh name = do
-    Env {_conversionKV, _numbering, _scope} <- get
-    let (n, name') = case Map.lookup name _numbering of
-            Nothing -> (1, name <> Ident (show (1 :: Int)))
-            Just n -> (n + 1, name <> Ident (show (n + 1)))
-    let names' = Map.insert name' name _conversionKV
-    let nameCounter = Map.insert name n nameCounter
-    put Env {_conversionKV = names', _numbering = nameCounter, _scope}
-    pure name'
+names = use newToOld
 
 {-| Checks if a variable is bound in the closest scope
 | It does *not* check if a variable is completely unbound

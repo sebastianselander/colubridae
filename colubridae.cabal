@@ -23,10 +23,13 @@ common extensions
 library
   import:           warnings, extensions
   exposed-modules:
-    Backend.Desugar.Types
+    Backend.Desugar.Basic
+    Backend.Desugar.Breaks
     Backend.Desugar.Desugar
-    Backend.Intermediate.Hlvm
-    Backend.Intermediate.Types
+    Backend.Desugar.Types
+    Backend.Llvm.Llvm
+    Backend.Llvm.Monad
+    Backend.Llvm.Types
     Compile
     Frontend.Error
     Frontend.Parser.Parse
@@ -42,10 +45,12 @@ library
     Frontend.Typechecker.Types
     Frontend.Types
     Utils
+    Names
 
   build-depends:
     , base
     , containers
+    , dlist
     , extra
     , lens
     , megaparsec

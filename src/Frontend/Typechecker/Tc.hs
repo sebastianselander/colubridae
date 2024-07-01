@@ -21,6 +21,7 @@ import Relude hiding (Any, intercalate)
 import Relude.Unsafe (fromJust)
 import Frontend.Types
 import Utils (chain, listify')
+import Names (Ident, getOriginalName, Names)
 
 data Env = Env
     { _variables :: Map Ident (TypeTc, SourceInfo)
@@ -32,6 +33,7 @@ data Ctx = Ctx
     { _functions :: Map Ident (TypeTc, SourceInfo)
     , _returnType :: TypeTc
     , _currentFun :: DefRn
+    , _names :: Names
     }
     deriving (Show)
 
@@ -40,9 +42,6 @@ $(makeLenses ''Ctx)
 
 newtype TcM a = Tc {runTc :: StateT Env (ReaderT Ctx (ValidateT [TcError] (Writer [TcWarning]))) a}
     deriving (Functor, Applicative, Monad, MonadReader Ctx, MonadValidate [TcError], MonadState Env)
-
-tc :: ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
-tc = tcProg
 
 run :: Ctx -> Env -> TcM a -> (Either [TcError] a, [TcWarning])
 run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT env . runTc
@@ -59,15 +58,15 @@ getDefs = listify' f
         Mutable -> Mut $ typeOf ty
         Immutable -> typeOf ty
 
-tcProg :: ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
-tcProg (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap (tcDefs funTable) defs of
+tc :: Names -> ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
+tc names (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap (tcDefs names funTable) defs of
     (([], defs), warnings) -> (Right $ ProgramX NoExtField defs, mconcat warnings)
     ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
   where
     funTable = Map.fromList $ getDefs defs
 
-tcDefs :: Map Ident (TypeTc, SourceInfo) -> DefRn -> (Either [TcError] DefTc, [TcWarning])
-tcDefs funTable fun@(Fn _ _ args rt _) =
+tcDefs :: Names -> Map Ident (TypeTc, SourceInfo) -> DefRn -> (Either [TcError] DefTc, [TcWarning])
+tcDefs names funTable fun@(Fn _ _ args rt _) =
     let varTable =
             foldr
                 ( uncurry Map.insert
@@ -84,7 +83,7 @@ tcDefs funTable fun@(Fn _ _ args rt _) =
                 )
                 mempty
                 args
-        ctx = Ctx funTable (typeOf rt) fun
+        ctx = Ctx funTable (typeOf rt) fun names
         env = Env varTable nullSubst
      in run ctx env $ go fun
   where
@@ -184,11 +183,11 @@ infExpr currentExpr = case currentExpr of
         applySt $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         (ty, info) <- case bind of
-            Toplevel -> assignNonVariable info currentExpr name >> pure (Any, info)
+            Toplevel -> assignNonVariable @TcM info currentExpr <$> views names (getOriginalName name) >> pure (Any, info)
             _ -> lookupVar name
         case ty of
             Mut _ -> pure ()
-            _ -> void $ immutableVariable info currentExpr name
+            _ -> void $ immutableVariable @TcM info currentExpr <$> views names (getOriginalName name)
         expr <- tcExpr ty expr
         unify info currentExpr ty expr
         ty <- applySt ty

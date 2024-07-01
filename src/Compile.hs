@@ -14,11 +14,12 @@ import Relude hiding (concat, intercalate)
 import Data.Text (intercalate)
 import Text.Pretty.Simple (pShow)
 import Frontend.Types (pPretty)
+import Backend.Desugar.Desugar (desugar)
 
-data Phase = Parse | Rename | StCheck | TypeCheck
+data Phase = Parse | Rename | StCheck | TypeCheck | Desugar
     deriving Show
 
-data DebugOutput = Debug {phase :: Phase, pretty :: Text, normal :: Text}
+data DebugOutput = Debug {phase :: Phase, pretty :: Maybe Text, normal :: Text}
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
 
 instance Semigroup DebugOutputs where
@@ -35,18 +36,23 @@ log debug warnings = do
 compile :: String -> Text -> ExceptT Text (Writer DebugOutputs) Text
 compile fileName fileContents = do
     res <- liftEither $ left report $ parse fileName fileContents
-    log (Debug Parse (pPretty res) (toStrict $ pShow res)) []
+    log (Debug Parse (Just $ pPretty res) (toStrict $ pShow res)) []
 
-    res <- liftEither $ left report $ rename res
-    log (Debug Rename (pPretty res) (toStrict $ pShow res)) []
+    (res, names) <- liftEither $ left report $ rename res
+    log (Debug Rename (Just $ pPretty res) (toStrict $ pShow res)) []
 
     res <- liftEither $ left report $ check res
-    log (Debug StCheck (pPretty res) (toStrict $ pShow res)) []
+    log (Debug StCheck (Just $ pPretty res) (toStrict $ pShow res)) []
 
-    _ <- case tc res of
+    res <- case tc names res of
         (res, warnings) -> do
             res <- liftEither $ left report res
-            log (Debug TypeCheck (pPretty res) (toStrict $ pShow res)) (fmap report warnings)
+            log (Debug TypeCheck (Just $ pPretty res) (toStrict $ pShow res)) (fmap report warnings)
+            pure res
+
+    _res <- case desugar names res of
+        res -> do
+            log (Debug Desugar Nothing (toStrict $ pShow res)) []
             pure res
 
     pure ""
@@ -56,7 +62,7 @@ runCompile fileName = runWriter . runExceptT . compile fileName
 
 showDebug :: DebugOutput -> Text
 showDebug (Debug phase pretty normal) = 
-    unlines ["======== " <> show phase <> " output ========", "", pretty, "", normal]
+    unlines ["======== " <> show phase <> " output ========", "", fromMaybe "" pretty, "", normal]
 
 showDebugs :: DebugOutputs -> Text
 showDebugs (Debugs debugs warnings) = unlines [intercalate "\n" $ fmap showDebug debugs, intercalate "\n" warnings]
