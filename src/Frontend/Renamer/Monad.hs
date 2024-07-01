@@ -28,10 +28,10 @@ import Data.Set qualified as Set
 import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
 import Names (Ident (..))
-import Relude hiding (Map)
+import Relude hiding (head, Map)
 
 data Env = Env
-    { _newToOld :: Map Ident Ident -- Just for remembering
+    { _newToOld :: Map Ident Ident
     , _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident Ident)
     }
@@ -91,20 +91,20 @@ boundVar name = do
 -- | Insert and rename a variable into the outermost scope
 insertVar :: (MonadState Env m) => Ident -> m Ident
 insertVar name@(Ident nm) = do
-    (outer :| rest) <- use scope
+    outer <- uses scope head
     numb <- use numbering
     let n = Map.findWithDefault 0 name numb + 1
-    let numbering' = Map.insert name n numb
     let name' = Ident $ nm <> "#" <> show n
     let outer' = Map.insert name name' outer
-    assign scope (outer' :| rest)
-    assign numbering numbering'
+    modifying newToOld (Map.insert name' name)
+    modifying scope (outer' <|)
+    modifying numbering (Map.insert name n)
     pure name'
 
 newContext :: Gen a -> Gen a
 newContext rn = do
-    before <- get
+    before <- use scope
     modifying scope (Map.empty <|)
     res <- rn
-    put before
+    assign scope before
     pure res
