@@ -185,9 +185,11 @@ infExpr currentExpr = case currentExpr of
         (ty, info) <- case bind of
             Toplevel -> assignNonVariable @TcM info currentExpr <$> views names (getOriginalName name) >> pure (Any, info)
             _ -> lookupVar name
-        case ty of
-            Mut _ -> pure ()
-            _ -> void $ immutableVariable @TcM info currentExpr <$> views names (getOriginalName name)
+        ty <- case ty of
+            Mut ty -> pure ty
+            _ -> do
+                name <- views names (getOriginalName name)
+                Any <$ immutableVariable @TcM info currentExpr name
         expr <- tcExpr ty expr
         unify info currentExpr ty expr
         ty <- applySt ty
