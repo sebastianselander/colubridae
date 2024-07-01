@@ -1,20 +1,20 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Frontend.Renamer.Rn (rename) where
 
 import Control.Lens (locally)
 import Control.Monad (foldM)
+import Control.Monad.Validate (MonadValidate)
 import Data.Set qualified as Set
 import Frontend.Error
 import Frontend.Parser.Types
 import Frontend.Renamer.Monad
 import Frontend.Renamer.Types
-import Relude
 import Frontend.Types
+import Names (Ident (..), Names, mkNames)
+import Relude
 import Utils (listify')
-import Control.Monad.Validate (MonadValidate)
-import Names (Ident(..), mkNames, Names)
 
 rename :: ProgramPar -> Either [RnError] (ProgramRn, Names)
 rename = runGen emptyEnv emptyCtx . rnProgram
@@ -40,13 +40,14 @@ uniqueDefs = go mempty
 
 rnDef :: DefPar -> Gen DefRn
 rnDef (Fn pos name arguments returnType block) = do
-    arguments <- uniqueArgs arguments
+    arguments <- rnArgs arguments
     returnType <- rnType returnType
     statements <- rnBlock block
     return $ Fn pos name arguments returnType statements
 
 rnBlock :: BlockPar -> Gen BlockRn
-rnBlock (BlockX a stmts expr) = uncurry (BlockX a) <$> newContext ((,) <$> mapM rnStatement stmts <*> mapM rnExpr expr)
+rnBlock (BlockX a stmts expr) =
+    uncurry (BlockX a) <$> newContext ((,) <$> mapM rnStatement stmts <*> mapM rnExpr expr)
 
 rnStatement :: StmtPar -> Gen StmtRn
 rnStatement = \case
@@ -79,7 +80,7 @@ rnExpr = \case
         pure $ LetX (info, mut, ty) name' expr
     AssX info variable op expr -> do
         (bind, name) <-
-            maybe ((Free, Ident "unbound")<$ unboundVariable info variable) pure
+            maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
                 =<< boundVar variable
         expr <- rnExpr expr
         pure (AssX (info, bind) name op expr)
@@ -116,8 +117,8 @@ getDefinitions = listify' fnName
     fnName :: DefPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _) = Just (info, name)
 
-uniqueArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]
-uniqueArgs = foldM f mempty
+rnArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]
+rnArgs = foldM f mempty
   where
     f :: (MonadState Env m, MonadValidate [RnError] m) => [ArgRn] -> ArgPar -> m [ArgRn]
     f seen arg@(ArgX (info, mut) name ty) = do
