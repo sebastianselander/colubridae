@@ -18,7 +18,7 @@ import Text.Megaparsec.Char.Lexer qualified as P
 import Frontend.Types
 
 parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
-parse = P.runParser (ProgramX NoExtField <$> P.many pDef <* P.eof)
+parse = P.runParser (ProgramX NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof))
 
 runP :: (Show a) => Parser a -> Text -> IO ()
 runP p input = case P.runParser (p <* P.eof) "" input of

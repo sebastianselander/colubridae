@@ -1,67 +1,75 @@
+{-# LANGUAGE LambdaCase #-}
 module Backend.Llvm.Types where
 
 import Data.Data (Data)
 import Names (Ident)
+import Origin
 import Relude hiding (Type)
 
-newtype Ir = Ir [TopDef]
+newtype Ir = Ir [Decl]
     deriving (Show)
 
-data TopDef = Fn !Origin !Ident [Operand] !Type [Named Instruction]
+data Decl = Define !Origin !Ident [Operand] !LlvmType [Named Instruction]
+          | LlvmMain [Named Instruction]
     deriving (Show)
 
-data Origin = Toplevel | Lifted
+data Operand
+    = Variable !LlvmType !Ident
+    | Literal !LlvmType !Literal
+    | Global !LlvmType !Ident
     deriving (Show)
 
-data Operand = Var !Type !Ident | Literal !Lit | Global !Ident
+data ArithOp = LlvmAdd | LlvmSub | LlvmMul | LlvmDiv | LlvmRem
     deriving (Show)
 
-data ArithOp = Add | Sub | Mul | Div | Rem
+data CmpOp = LlvmEq | LlvmNeq | LlvmGt | LlvmLt | LlvmGe | LlvmLe
     deriving (Show)
 
-data CmpOp = Eq | Neq | Gt | Lt | Ge | Le
-    deriving (Show)
-
-newtype Label = L Int
+newtype Label = L Ident
     deriving (Show)
 
 data Instruction
-    = Call !Type !Operand !Operand [Operand]
-    | Arith !ArithOp !Type !Operand !Operand
-    | Cmp !CmpOp !Type !Operand !Operand
-    | And !Type !Operand !Operand
-    | Or !Type !Operand !Operand
-    | Alloca !Type
-    | Store !Operand
-    | Load !Type !Operand
+    = Call !LlvmType !Operand [Operand]
+    | Arith !ArithOp !LlvmType !Operand !Operand
+    | Cmp !CmpOp !LlvmType !Operand !Operand
+    | And !LlvmType !Operand !Operand
+    | Or !LlvmType !Operand !Operand
+    | Alloca !LlvmType
+    | Store !Operand !Operand
+    | Load !Operand
     | Ret !Operand
     | Label !Label
     | Comment !Text
     | Br !Operand !Label !Label
     | Jump !Label
+    | Unreachable
     deriving (Show)
 
-data Type
-    = Int
-    | Bool
-    | Double
-    | String
-    | Char
-    | Unit
-    | Pointer Type
+data LlvmType
+    = I64
+    | I1
+    | Float
+    | I8
+    | Ptr LlvmType
+    | FunPtr LlvmType [LlvmType]
     deriving (Show)
 
-data Lit
+data Literal
     = LInt !Integer
     | LDouble !Double
     | LBool !Bool
     | LChar !Char
-    | LString !String
     | LUnit
     deriving (Show)
 
-newtype Name = Name Text
-    deriving (Show, Generic, Data)
-
-data Named a = Named Name a | Nameless a
+data Named a = Named Ident a | Nameless a
     deriving (Show, Functor, Traversable, Foldable, Generic, Data)
+
+class Typed a where
+  typeOf :: a -> LlvmType
+
+instance Typed Operand where
+  typeOf = \case
+    Variable ty _ -> ty
+    Global ty _ -> ty
+    Literal ty _ -> ty

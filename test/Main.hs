@@ -17,18 +17,15 @@ main = do
             <$> listDirectory "test/good"
 
     bads <-
-        ( fmap (\[a, b] -> (a, b))
-                . groupBy (\l r -> dropExtensions l == dropExtensions r)
-                . sort
-            )
+        sort
             . fmap ("test/bad/" ++)
             <$> listDirectory "test/bad"
-    goods <- mapM (testFile isRight) goods
-    bads <- mapM (testFile isLeft) bads
+    goods <- mapM (testFile isRight . second (const Nothing)) goods
+    bads <- mapM (testFile isLeft . (,Nothing)) bads
     unless (and goods && and bads) exitFailure
     exitSuccess
 
-testFile :: (forall a b. Either a b -> Bool) -> (String, String) -> IO Bool
+testFile :: (forall a b. Either a b -> Bool) -> (String, Maybe String) -> IO Bool
 testFile isEither (input, _) = do
     content <- decodeUtf8 <$> readFileBS input
     pure $ isEither $ fst $ runCompile input content

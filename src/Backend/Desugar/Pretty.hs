@@ -9,6 +9,7 @@ import Names
 import Prettyprinter
 import Prettyprinter.Render.Text (renderStrict)
 import Relude hiding (Text, Type)
+import Origin (Origin(Top))
 
 prettyDesugar :: Program -> Text
 prettyDesugar = renderStrict . layoutPretty defaultLayoutOptions . pProgram
@@ -64,7 +65,8 @@ pProgram :: Program -> Doc ann
 pProgram (Program defs) = hcat (punctuate hardline (fmap pDef defs))
 
 pDef :: Def -> Doc ann
-pDef (Fn name args typ exprs) =
+pDef (Main exprs) = pDef (Fn Top (Ident "main") [] Unit exprs)
+pDef (Fn _ name args typ exprs) =
     concatWith
         (<+>)
         [ "def"
@@ -93,35 +95,30 @@ pExpr (Typed _ expr) = go expr
         Var _ ident -> pIdent ident
         BinOp l op r -> pExpr l <+> pBinOp op <+> pExpr r
         PrefixOp op expr -> pPrefixOp op <+> pExpr expr
-        EBlock exprs ->
-            concatWith
-                (<+>)
-                [ "{"
-                , hardline
-                , indent 4 $ hcat $ punctuate hardline (fmap pExpr exprs)
-                , hardline
-                , "}"
-                ]
         App l rs -> pExpr l <> parens (hcat (punctuate comma $ fmap pExpr rs))
-        Let name ty expr -> "let" <+> pIdent name <> ":" <+> pType ty <+> "=" <+> pExpr expr
+        Let name ty expr -> "let" <+> pIdent name <> ":" <+> pType ty <+> maybe emptyDoc (\e -> "=" <+> pExpr e) expr
         Ass name ty expr -> pIdent name <> ":" <+> pType ty <+> "=" <+> pExpr expr
-        Ret expr -> "return" <+> pExpr expr
-        Break expr -> "break" <+> pExpr expr
+        Return expr -> "return" <+> pExpr expr
+        Break -> "break"
         If cond true mbfalse ->
             let iff =
                     "if"
                         <+> pExpr cond
                         <+> "{"
+                        <> hardline
                         <> indent 4 (hcat $ punctuate hardline (fmap pExpr true))
+                        <> hardline
                         <> "}"
                 els e =
                     "else"
                         <+> "{"
+                        <> hardline
                         <> indent 4 (hcat $ punctuate hardline (fmap pExpr e))
+                        <> hardline
                         <> "}"
              in case mbfalse of
                     Nothing -> iff
-                    Just false -> iff <> els false
+                    Just false -> iff <+> els false
         While cond exprs ->
             "while"
                 <+> pExpr cond

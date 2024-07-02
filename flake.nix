@@ -28,6 +28,11 @@
               typst
               typstfmt
               typst-lsp
+              lldb
+              llvmPackages_latest.llvm
+              clang
+              zlib
+              gnumake
             ];
           }; };
       });

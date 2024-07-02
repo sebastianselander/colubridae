@@ -5,5 +5,5 @@ import Relude
 
 simplifyBreakAndReturn :: TyExpr -> TyExpr
 simplifyBreakAndReturn (Typed ty expr) = case expr of
-    If condition@(Typed ty (Break breakExpr)) true false -> condition
+    If condition@(Typed ty Break) true false -> condition
     e -> Typed ty e

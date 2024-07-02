@@ -1,5 +1,6 @@
+// all break expressions have to have the same type
 def foo(x: int) -> int {
-        let x: int = loop {
+        let x = loop {
             if true {
                 break 3;
             } else {

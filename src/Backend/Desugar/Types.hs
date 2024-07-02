@@ -3,11 +3,13 @@ module Backend.Desugar.Types where
 import Data.Data (Data)
 import Relude hiding (Type)
 import Names (Ident)
+import Origin (Origin)
 
 newtype Program = Program [Def]
     deriving (Show, Eq, Ord, Data)
 
-data Def = Fn Ident [Arg] Type [TyExpr]
+data Def = Fn !Origin Ident [Arg] Type [TyExpr]
+         | Main [TyExpr]
     deriving (Show, Eq, Ord, Data)
 
 data Arg = Arg Ident Type
@@ -32,12 +34,11 @@ data Expr
     | Var Binding Ident
     | BinOp TyExpr BinOp TyExpr
     | PrefixOp PrefixOp TyExpr
-    | EBlock [TyExpr]
     | App TyExpr [TyExpr]
-    | Let Ident Type TyExpr
+    | Let Ident Type (Maybe TyExpr)
     | Ass Ident Type TyExpr
-    | Ret TyExpr
-    | Break TyExpr
+    | Return TyExpr
+    | Break
     | If TyExpr [TyExpr] (Maybe [TyExpr])
     | While TyExpr [TyExpr]
     deriving (Show, Eq, Ord, Data)

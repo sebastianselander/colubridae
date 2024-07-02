@@ -4,6 +4,7 @@ import Data.Data (Data)
 import Data.Map qualified as Map
 import Relude
 import Relude.Unsafe (fromJust)
+import Prettyprinter (Pretty (..))
 
 newtype Names = Names {unNames :: Map Ident Ident}
     deriving (Show, Data)
@@ -14,6 +15,9 @@ mkNames = Names
 -- Identifier
 newtype Ident = Ident Text
     deriving (Show, Eq, Ord, Data, Semigroup, Monoid)
+
+instance Pretty Ident where
+  pretty (Ident name) = pretty name
 
 getOriginalName :: Ident -> Names -> Ident
 getOriginalName name names = fromJust $ Map.lookup name (unNames names)

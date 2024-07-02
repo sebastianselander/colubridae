@@ -29,6 +29,7 @@ import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
 import Names (Ident (..))
 import Relude hiding (head, Map)
+import Frontend.Builtin (builtInNames)
 
 data Env = Env
     { _newToOld :: Map Ident Ident
@@ -57,7 +58,7 @@ emptyEnv :: Env
 emptyEnv = Env mempty mempty (return mempty)
 
 emptyCtx :: Ctx
-emptyCtx = Ctx mempty
+emptyCtx = Ctx builtInNames
 
 runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
 runGen env ctx =
@@ -94,7 +95,7 @@ insertVar name@(Ident nm) = do
     outer <- uses scope head
     numb <- use numbering
     let n = Map.findWithDefault 0 name numb + 1
-    let name' = Ident $ nm <> "#" <> show n
+    let name' = Ident $ nm <> "$" <> show n
     let outer' = Map.insert name name' outer
     modifying newToOld (Map.insert name' name)
     modifying scope (outer' <|)

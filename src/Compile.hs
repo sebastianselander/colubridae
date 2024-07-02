@@ -16,8 +16,10 @@ import Text.Pretty.Simple (pShow)
 import Frontend.Types (pPretty)
 import Backend.Desugar.Desugar (desugar)
 import Backend.Desugar.Pretty (prettyDesugar)
+import Backend.Llvm.Llvm (assemble)
+import Backend.Llvm.ToLlvm (llvmOut)
 
-data Phase = Parse | Rename | StCheck | TypeCheck | Desugar
+data Phase = Parse | Rename | StCheck | TypeCheck | Desugar | Llvm
     deriving Show
 
 data DebugOutput = Debug {phase :: Phase, prettyTxt :: Maybe Text, normalTxt :: Text}
@@ -30,7 +32,7 @@ instance Monoid DebugOutputs where
   mempty = Debugs [] []
   mappend = (<>)
 
-log :: MonadWriter DebugOutputs m => DebugOutput -> [Text] -> m () 
+log :: MonadWriter DebugOutputs m => DebugOutput -> [Text] -> m ()
 log debug warnings = do
     tell (Debugs [debug] warnings)
 
@@ -51,19 +53,22 @@ compile fileName fileContents = do
             log (Debug TypeCheck (Just $ pPretty res) (toStrict $ pShow res)) (fmap report warnings)
             pure res
 
-    _res <- case desugar names res of
+    res <- case desugar names res of
         res -> do
             log (Debug Desugar (Just $ prettyDesugar res) (toStrict $ pShow res)) []
             pure res
 
-    pure ""
+    case assemble res of
+           res -> do
+            log (Debug Llvm (Just $ llvmOut res) (toStrict $ pShow res)) []
+            pure (llvmOut res)
 
 runCompile :: String -> Text -> (Either Text Text, DebugOutputs)
-runCompile fileName = runWriter . runExceptT . compile fileName 
+runCompile fileName = runWriter . runExceptT . compile fileName
 
 showDebug :: DebugOutput -> Text
-showDebug (Debug phase pretty normal) = 
-    unlines ["======== " <> show phase <> " output ========", "", fromMaybe "" pretty, "", normal]
+showDebug (Debug phase pretty normal) =
+    unlines ["======== " <> show phase <> " output ========", "", normal, fromMaybe "" pretty, ""]
 
 showDebugs :: DebugOutputs -> Text
 showDebugs (Debugs debugs warnings) = unlines [intercalate "\n" $ fmap showDebug debugs, intercalate "\n" warnings]

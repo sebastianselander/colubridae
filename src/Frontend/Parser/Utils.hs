@@ -1,20 +1,20 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Frontend.Parser.Utils where
 
 import Data.Text (pack)
+import Frontend.Error (Report, report)
+import Frontend.Types
+import Names (Ident (..))
 import Relude hiding (span)
-import Text.Megaparsec (Pos, ParseErrorBundle, customFailure, (<?>))
+import Text.Megaparsec (ParseErrorBundle, Pos, customFailure, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
-import Frontend.Types
-import Frontend.Error (Report, report)
 import Text.Megaparsec.Error (errorBundlePretty)
-import Names (Ident(..))
 
 type Parser = P.Parsec CustomParseError Text
 
@@ -29,7 +29,6 @@ instance P.ShowErrorComponent CustomParseError where
 
 instance Report (ParseErrorBundle Text CustomParseError) where
     report = pack . errorBundlePretty
-
 
 keywords :: [String]
 keywords =
@@ -82,7 +81,8 @@ curlyBrackets :: Parser a -> Parser a
 curlyBrackets = P.between (lexeme $ P.hidden $ P.char '{') (P.hidden $ P.char '}')
 
 lexeme :: Parser a -> Parser a
-lexeme = L.lexeme (P.hidden P.space) --L.lexeme (void $ P.many $ P.hidden (P.space <|> L.skipLineComment "//" <|> L.skipBlockCommentNested "/*" "*/"))
+lexeme =
+    L.lexeme (P.hidden $ L.space P.space1 (L.skipLineComment "//") (L.skipBlockCommentNested "/*" "*/")) -- L.lexeme (void $ P.many $ P.hidden (P.space <|> L.skipLineComment "//" <|> L.skipBlockCommentNested "/*" "*/"))
 
 string :: Text -> Parser Text
 string txt = lexeme (P.string txt)

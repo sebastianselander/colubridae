@@ -13,12 +13,12 @@ import Data.Text (intercalate)
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import GHC.Show (show)
+import Names
 import Relude hiding (Type, concat, intercalate, replicate)
 import Relude qualified
 import Text.Megaparsec (Pos)
 import Text.Megaparsec.Pos (unPos)
 import Utils (indent)
-import Names
 
 data NoExtField = NoExtField
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
@@ -64,7 +64,8 @@ deriving instance (ForallX Show a) => Show (ProgramX a)
 deriving instance (ForallX Typeable a) => Typeable (ProgramX a)
 
 -- Definition
-data DefX a = Fn !(XDef a) Ident [ArgX a] (TypeX a) (BlockX a)
+data DefX a
+    = Fn !(XDef a) Ident [ArgX a] (TypeX a) (BlockX a)
 type family XDef a
 
 deriving instance (ForallX Show a) => Show (DefX a)
@@ -86,7 +87,8 @@ type family XTyLit a
 type family XTyFun a
 type family XType a
 
-coerceType :: (XTyLit t1 ~ XTyLit t2, XTyFun t1 ~ XTyFun t2, XType t1 ~ XType t2) => TypeX t1 -> TypeX t2
+coerceType ::
+    (XTyLit t1 ~ XTyLit t2, XTyFun t1 ~ XTyFun t2, XType t1 ~ XType t2) => TypeX t1 -> TypeX t2
 coerceType ty = case ty of
     TyLitX a b -> TyLitX a b
     TyFunX a b c -> TyFunX a (fmap coerceType b) (coerceType c)
@@ -312,7 +314,9 @@ prettyDef (Fn _ (Ident name) args ty block) =
 
 prettyBlock :: (ForallX Pretty a) => BlockX a -> Text
 prettyBlock (BlockX _ stmts tail) =
-    "{\n" <> unlines (fmap (indent 4 . prettyStmt) stmts <> maybe [] (return . indent 4 . prettyExpr1) tail) <> "}"
+    "{\n"
+        <> unlines (fmap (indent 4 . prettyStmt) stmts <> maybe [] (return . indent 4 . prettyExpr1) tail)
+        <> "}"
 
 prettyArg :: (ForallX Pretty a) => ArgX a -> Text
 prettyArg (ArgX a (Ident name) ty) = unwords [pPretty a, name, ":", prettyType1 ty]

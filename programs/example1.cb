@@ -1,5 +1,9 @@
-def foo() -> int {
-    3 + 4;
-    3
+def main() {
+    let mut x = 0;
+    while true {
+        x = 12;
+        break;
+    };
+    printInt(x);
 }
 

@@ -11,7 +11,6 @@ import Control.Lens.TH
 import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Data (Data)
-import Data.Generics.Schemes (listify)
 import Data.Map.Strict qualified as Map
 import Frontend.Error
 import Frontend.Renamer.Types
@@ -22,6 +21,7 @@ import Relude.Unsafe (fromJust)
 import Frontend.Types
 import Utils (chain, listify')
 import Names (Ident, getOriginalName, Names)
+import Frontend.Builtin (builtIns)
 
 data Env = Env
     { _variables :: Map Ident (TypeTc, SourceInfo)
@@ -83,14 +83,13 @@ tcDefs names funTable fun@(Fn _ _ args rt _) =
                 )
                 mempty
                 args
-        ctx = Ctx funTable (typeOf rt) fun names
+        ctx = Ctx (Map.union builtIns funTable) (typeOf rt) fun names
         env = Env varTable nullSubst
      in run ctx env $ go fun
   where
     go (Fn _ name args rt block) =
         locally currentFun (const fun) $ do
             args <- mapM infArg args
-
             let retTy = typeOf rt
             block <- locally returnType (const retTy) $ case block of
                 BlockX info stmts (Just expr) -> do
@@ -108,10 +107,14 @@ infBlock (BlockX info statements tailExpression) = do
     expr <- mapM infExpr tailExpression
     pure $ BlockX (info, maybe Unit typeOf expr) stmts expr
 
-tcBlock :: TypeTc -> BlockX Rn -> TcM BlockTc
-tcBlock expectedTy (BlockX info statements tailExpression) = do
+tcBlock :: ExprRn -> TypeTc -> BlockX Rn -> TcM BlockTc
+tcBlock currentExpr expectedTy (BlockX info statements tailExpression) = do
     stmts <- mapM infStmt statements
-    expr <- mapM (tcExpr expectedTy) tailExpression
+    expr <- case tailExpression of
+        Nothing -> do
+            unless (expectedTy == Unit) (tyExpectedGot info currentExpr [expectedTy] Unit)
+            pure Nothing
+        Just tail -> Just <$> tcExpr expectedTy tail
     pure $ BlockX (info, maybe Unit typeOf expr) stmts expr
 
 infArg :: ArgRn -> TcM ArgTc
@@ -120,10 +123,28 @@ infArg (ArgX (_, _) name ty) = pure $ ArgX NoExtField name (typeOf ty)
 infStmt :: StmtRn -> TcM StmtTc
 infStmt (SExprX NoExtField expr) = SExprX NoExtField <$> infExpr expr
 
-breakExpr :: ExprTc -> Bool
-breakExpr = \case
-    BreakX {} -> True
-    _ -> False
+breaks :: BlockTc -> [ExprTc]
+breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e) stmts <> maybe [] breakExpr tail
+  where
+    -- | Find all breaks in a block. Do not traverse further on expressions where breaks are allowed
+    breakExpr :: ExprTc -> [ExprTc]
+    breakExpr e = case e of
+        LitX {} -> []
+        VarX {} -> []
+        BreakX {} -> [e]
+        IfX _ cond l r -> breakExpr cond <> breaks l <> maybe [] breaks r
+        BinOpX _ l _ r -> breakExpr l <> breakExpr r
+        PrefixX _ _ e -> breakExpr e
+        AppX _ l rs -> breakExpr l <> concatMap breakExpr rs
+        LetX _ _ expr -> breakExpr expr
+        AssX _ _ _ expr -> breakExpr expr
+        RetX _ expr -> maybe [] breakExpr expr
+        EBlockX _ block -> breaks block
+        WhileX {}  -> []
+        ExprX (LoopX {}) -> []
+
+    -- | WhileX !(XWhile a) (ExprX a) (BlockX a)
+    -- | ExprX !(XExpr a)
 
 infExpr :: ExprRn -> TcM ExprTc
 infExpr currentExpr = case currentExpr of
@@ -233,21 +254,20 @@ infExpr currentExpr = case currentExpr of
         condition <- tcExpr Bool condition
         true <- infBlock true
         let ty = typeOf true
-        false <- mapM (tcBlock ty) false
+        false <- mapM (tcBlock currentExpr ty) false
         pure $ IfX (info, ty) condition true false
     WhileX info expr block -> do
-        let blockType = Unit
         expr <- tcExpr Bool expr
-        block <- tcBlock blockType block
+        block <- tcBlock currentExpr Unit block
         case block of
-            BlockX _ stmt tail -> do
-                let breakExprs = listify breakExpr stmt
-                maybe (pure ()) (unify info currentExpr blockType) tail
+            block@(BlockX _ _ tail) -> do
+                let breakExprs = breaks block
+                maybe (pure ()) (unify info currentExpr Unit) tail
                 mapM_ (\expr -> unify (hasInfo expr) currentExpr Unit expr) breakExprs
         pure $ WhileX (info, Unit) expr block
     ExprX (LoopX info block) -> do
-        block@(BlockX _ stmts tail) <- infBlock block
-        ty <- case listify breakExpr (maybe stmts (\x -> SExprX NoExtField x : stmts) tail) of
+        block <- tcBlock currentExpr Unit block
+        ty <- case breaks block of
             [] -> pure Any
             (x : xs) -> do
                 sequence_
@@ -319,17 +339,16 @@ tcExpr expectedTy currentExpr = case currentExpr of
                 expr <- tcExpr returnType expr
                 applySt $ RetX (info, Any) (Just expr)
     EBlockX NoExtField block -> do
-        block <- tcBlock expectedTy block
+        block <- tcBlock currentExpr expectedTy block
         pure $ EBlockX NoExtField block
     BreakX info expr -> do
         expr <- mapM infExpr expr
         pure $ BreakX (info, Any) expr
     IfX info cond true false -> do
         cond <- tcExpr Bool cond
-        true <- infBlock true
-        let ty = typeOf true
-        false <- mapM (tcBlock ty) false
-        pure $ IfX (info, ty) cond true false
+        true <- tcBlock currentExpr expectedTy true
+        false <- mapM (tcBlock currentExpr expectedTy) false
+        pure $ IfX (info, expectedTy) cond true false
     while@(WhileX info _ _) -> do
         while <- infExpr while
         unify info currentExpr expectedTy while

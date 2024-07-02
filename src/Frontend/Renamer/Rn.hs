@@ -15,6 +15,7 @@ import Frontend.Types
 import Names (Ident (..), Names, mkNames)
 import Relude
 import Utils (listify')
+import Frontend.Builtin (builtInNames)
 
 rename :: ProgramPar -> Either [RnError] (ProgramRn, Names)
 rename = runGen emptyEnv emptyCtx . rnProgram
@@ -24,12 +25,12 @@ rnProgram program@(ProgramX a defs) = do
     let toplevels = getDefinitions program
     uniqueDefs toplevels
     let toplevelSet = Set.fromList $ fmap snd toplevels
-    defs <- locally definitions (const toplevelSet) (mapM rnDef defs)
+    defs <- locally definitions (Set.union toplevelSet) (mapM rnDef defs)
     names <- names
     pure (ProgramX a defs, mkNames names)
 
 uniqueDefs :: (MonadValidate [RnError] m) => [(SourceInfo, Ident)] -> m ()
-uniqueDefs = go mempty
+uniqueDefs = go builtInNames
   where
     go :: (MonadValidate [RnError] m) => Set Ident -> [(SourceInfo, Ident)] -> m ()
     go _ [] = pure ()

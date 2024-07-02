@@ -14,6 +14,7 @@ main = do
             hPutStrLn stderr $ showDebugs debugs
             hPutStrLn stderr err
             exitFailure
-        (Right _, debugs) -> do
+        (Right prg, debugs) -> do
             hPutStrLn stderr $ showDebugs debugs
+            writeFileText "out.ll" prg
             exitSuccess

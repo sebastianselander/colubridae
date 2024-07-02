@@ -31,6 +31,8 @@ library
     Backend.Llvm.Llvm
     Backend.Llvm.Monad
     Backend.Llvm.Types
+    Backend.Llvm.ToLlvm
+    Backend.Llvm.Prelude
     Compile
     Frontend.Error
     Frontend.Parser.Parse
@@ -45,8 +47,10 @@ library
     Frontend.Typechecker.Tc
     Frontend.Typechecker.Types
     Frontend.Types
+    Frontend.Builtin
     Utils
     Names
+    Origin
 
   build-depends:
     , base
@@ -63,6 +67,7 @@ library
     , syb
     , template-haskell
     , prettyprinter
+    , string-interpolate
 
   hs-source-dirs:   src
   default-language: GHC2021
