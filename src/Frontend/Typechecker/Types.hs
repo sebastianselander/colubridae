@@ -8,7 +8,7 @@
 module Frontend.Typechecker.Types where
 
 import Data.Data (Data)
-import Relude
+import Relude hiding (Any)
 import Frontend.Types
 import Control.Lens (makeLenses)
 import Control.Lens.Getter (view)
@@ -25,6 +25,7 @@ type LitTc = LitX Tc
 type StmtTc = StmtX Tc
 type BlockTc = BlockX Tc
 type SugarStmtTc = SugarStmtX Tc
+type LamArgTc = LamArgX Tc
 
 type TcInfo = (SourceInfo, TypeTc)
 type TcInfoBound = (SourceInfo, TypeTc, Boundedness)
@@ -35,6 +36,7 @@ deriving instance Data BlockTc
 deriving instance Data ExprTc
 deriving instance Data LitTc
 deriving instance Data TypeTc
+deriving instance Data LamArgTc
 
 type instance XProgram Tc = NoExtField
 
@@ -74,6 +76,8 @@ type instance XTyFun Tc = NoExtField
 type instance XType Tc = MetaTy
 
 type instance XLoop Tc = TcInfo
+type instance XLam Tc = TcInfo
+type instance XLamArg Tc = TypeTc
 
 deriving instance Eq TypeTc
 deriving instance Ord TypeTc
@@ -88,7 +92,12 @@ pattern Mut ty <- TypeX (MutableX ty)
   where
     Mut ty = TypeX (MutableX ty)
 
-data MetaTy = MutableX TypeTc | AnyX
+pattern Meta :: (XType a ~ MetaTy) => Int -> TypeX a
+pattern Meta n <- TypeX (MetaTyVar n)
+    where
+      Meta n = TypeX (MetaTyVar n)
+ 
+data MetaTy = MutableX TypeTc | MetaTyVar Int | AnyX
     deriving (Show, Eq, Ord, Data)
 
 data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
@@ -102,6 +111,7 @@ instance Pretty MetaTy where
     pPretty = \case
         AnyX -> "any"
         MutableX ty -> pPretty ty <> "?"
+        MetaTyVar n -> "#a" <> show n <> "#"
 
 pattern Int :: (XTyLit a ~ NoExtField) => TypeX a
 pattern Int <- TyLitX NoExtField IntX

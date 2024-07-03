@@ -2,8 +2,8 @@ module Frontend.Typechecker.Subst where
 
 import Data.Map qualified as Map
 import Frontend.Typechecker.Types
-import Relude
-import Frontend.Types (BlockX (..), ExprX (..), StmtX (..), TypeX (..), SugarStmtX (..), NoExtField (NoExtField))
+import Relude hiding (Any)
+import Frontend.Types
 
 newtype Subst = Subst {unSubst :: Map MetaTy TypeTc}
     deriving (Show)
@@ -14,12 +14,20 @@ class Substitution a where
 instance Substitution (a, TypeTc) where
   apply sub = second (apply sub)
 
+instance (Substitution a) => Substitution [a] where
+  apply sub = fmap (apply sub)
+
+instance Substitution LamArgTc where
+  apply sub (LamArgX ty name) = LamArgX (apply sub ty) name
+
 instance Substitution TypeTc where
     apply :: Subst -> TypeTc -> TypeTc
     apply sub ty = case ty of
         TyLitX info lit -> TyLitX info lit
         TyFunX info l r -> TyFunX info (fmap (apply sub) l) (apply sub r)
-        TypeX meta -> fromMaybe (TypeX meta) (findSubst meta sub)
+        TypeX AnyX -> Any
+        TypeX (MutableX ty) -> Mut (apply sub ty)
+        TypeX (MetaTyVar n) -> fromMaybe (Meta n) $ findSubst (MetaTyVar n) sub
 
 instance Substitution ExprTc where
     apply :: Subst -> ExprTc -> ExprTc
@@ -37,7 +45,8 @@ instance Substitution ExprTc where
         IfX ty condition true false ->
             IfX (apply sub ty) (apply sub condition) (apply sub true) (fmap (apply sub) false)
         WhileX ty condition block -> WhileX (apply sub ty) (apply sub condition) (apply sub block)
-        ExprX (LoopX ty block) -> ExprX $ LoopX (apply sub ty) (apply sub block)
+        Loop ty block -> ExprX $ LoopX (apply sub ty) (apply sub block)
+        Lam ty args body -> Lam (apply sub ty) (apply sub args) (apply sub body)
 
 instance Substitution StmtTc where
     apply sub stmt = case stmt of

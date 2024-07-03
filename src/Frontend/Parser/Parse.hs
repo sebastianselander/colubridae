@@ -11,11 +11,12 @@ import Data.Tuple.Extra (uncurry3)
 import Frontend.Parser.Types
 import Frontend.Parser.Utils
 import Frontend.Parser.Utils qualified as P
+import Frontend.Types
+import Names (Ident)
 import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
-import Frontend.Types
 
 parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
 parse = P.runParser (ProgramX NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof))
@@ -186,6 +187,28 @@ pApp = do
     info <- spanEnd gs
     pure $ \l -> AppX info l args
 
+pLam :: Parser (ExprPar -> ExprPar)
+pLam = do
+    gs <- spanStart
+    keyword "\\"
+    args <- P.many lamArg
+    keyword "->"
+    info <- spanEnd gs
+    pure $ Lam info args
+  where
+    lamArg :: Parser LamArgPar
+    lamArg =
+        ( do
+            ArgX (info, mut) name ty <- parens pArg
+            pure (LamArgX (info, mut, Just ty) name)
+        )
+            <|> ( do
+                    gs <- spanStart
+                    name <- lexeme identifier
+                    info <- spanEnd gs
+                    pure $ LamArgX (info, Immutable, Nothing) name
+                )
+
 pExpr :: Parser ExprPar
 pExpr = putInfo (P.makeExprParser pExprAtom table)
   where
@@ -222,7 +245,11 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
         ,
             [ binaryL "||" (binOp Or)
             ]
-        , [Prefix pAss]
+        ,
+            [ Prefix pAss
+            , Prefix pLam
+            ]
+        , []
         ]
 
     binaryL :: Text -> (a -> a -> a) -> Operator Parser a
@@ -315,4 +342,5 @@ putInfo p = do
         BreakX _ expr -> BreakX pos expr
         IfX _ cond true false -> IfX pos cond true false
         WhileX _ cond block -> WhileX pos cond block
-        ExprX (LoopX _ block) -> ExprX (LoopX pos block)
+        Loop _ block -> Loop pos block
+        Lam _ args body -> Lam pos args body

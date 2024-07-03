@@ -6,26 +6,27 @@
 module Frontend.Typechecker.Tc where
 
 import Control.Lens.Getter (use, uses, view, views)
-import Control.Lens.Setter (locally, modifying)
+import Control.Lens.Setter (locally, modifying, (+=))
 import Control.Lens.TH
 import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Data (Data)
 import Data.Map.Strict qualified as Map
+import Frontend.Builtin (builtIns)
 import Frontend.Error
 import Frontend.Renamer.Types
 import Frontend.Typechecker.Subst
 import Frontend.Typechecker.Types
+import Frontend.Types
+import Names (Ident, Names, getOriginalName)
 import Relude hiding (Any, intercalate)
 import Relude.Unsafe (fromJust)
-import Frontend.Types
 import Utils (chain, listify')
-import Names (Ident, getOriginalName, Names)
-import Frontend.Builtin (builtIns)
 
 data Env = Env
     { _variables :: Map Ident (TypeTc, SourceInfo)
     , _subst :: Subst
+    , _freshCounter :: Int
     }
     deriving (Show)
 
@@ -84,7 +85,7 @@ tcDefs names funTable fun@(Fn _ _ args rt _) =
                 mempty
                 args
         ctx = Ctx (Map.union builtIns funTable) (typeOf rt) fun names
-        env = Env varTable nullSubst
+        env = Env varTable nullSubst 0
      in run ctx env $ go fun
   where
     go (Fn _ name args rt block) =
@@ -126,7 +127,7 @@ infStmt (SExprX NoExtField expr) = SExprX NoExtField <$> infExpr expr
 breaks :: BlockTc -> [ExprTc]
 breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e) stmts <> maybe [] breakExpr tail
   where
-    -- | Find all breaks in a block. Do not traverse further on expressions where breaks are allowed
+    -- \| Find all breaks in a block. Do not traverse further on expressions where breaks are allowed
     breakExpr :: ExprTc -> [ExprTc]
     breakExpr e = case e of
         LitX {} -> []
@@ -140,11 +141,10 @@ breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e)
         AssX _ _ _ expr -> breakExpr expr
         RetX _ expr -> maybe [] breakExpr expr
         EBlockX _ block -> breaks block
-        WhileX {}  -> []
-        ExprX (LoopX {}) -> []
+        WhileX {} -> []
+        Loop {} -> []
+        Lam {} -> []
 
-    -- | WhileX !(XWhile a) (ExprX a) (BlockX a)
-    -- | ExprX !(XExpr a)
 
 infExpr :: ExprRn -> TcM ExprTc
 infExpr currentExpr = case currentExpr of
@@ -156,6 +156,7 @@ infExpr currentExpr = case currentExpr of
             Free -> lookupVar name
             Bound -> lookupVar name
             Lambda -> lookupVar name
+            Argument -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
         pure $ VarX (info, ty, bind) name
     PrefixX info op expr -> do
@@ -180,11 +181,23 @@ infExpr currentExpr = case currentExpr of
                 let rLength = length r
                 if
                     | argTysLength < rLength -> do
-                        retTy <- Any <$ tooManyArguments info currentExpr argTysLength rLength
+                        retTy <-
+                            Any
+                                <$ tooManyArguments
+                                    info
+                                    currentExpr
+                                    argTysLength
+                                    rLength
                         r <- mapM infExpr r
                         pure $ AppX (info, retTy) l r
                     | argTysLength > rLength -> do
-                        retTy <- Any <$ partiallyAppliedFunction info currentExpr argTysLength rLength
+                        retTy <-
+                            Any
+                                <$ partiallyAppliedFunction
+                                    info
+                                    currentExpr
+                                    argTysLength
+                                    rLength
                         r <- mapM infExpr r
                         pure $ AppX (info, retTy) l r
                     | otherwise -> do
@@ -204,7 +217,10 @@ infExpr currentExpr = case currentExpr of
         applySt $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         (ty, info) <- case bind of
-            Toplevel -> assignNonVariable @TcM info currentExpr <$> views names (getOriginalName name) >> pure (Any, info)
+            Toplevel ->
+                assignNonVariable @TcM info currentExpr
+                    <$> views names (getOriginalName name)
+                    >> pure (Any, info)
             _ -> lookupVar name
         ty <- case ty of
             Mut ty -> pure ty
@@ -265,7 +281,7 @@ infExpr currentExpr = case currentExpr of
                 maybe (pure ()) (unify info currentExpr Unit) tail
                 mapM_ (\expr -> unify (hasInfo expr) currentExpr Unit expr) breakExprs
         pure $ WhileX (info, Unit) expr block
-    ExprX (LoopX info block) -> do
+    Loop info block -> do
         block <- tcBlock currentExpr Unit block
         ty <- case breaks block of
             [] -> pure Any
@@ -277,6 +293,19 @@ infExpr currentExpr = case currentExpr of
                         xs
                 typeOf <$> applySt x
         applySt $ ExprX $ LoopX (info, ty) block
+    Lam info args body -> do
+        let insertArg (LamArgX (info, mut, ty) name) = do
+                let ty' = case mut of
+                        Mutable -> fmap (Mut . typeOf) ty
+                        Immutable -> fmap typeOf ty
+                ty <- maybe freshTy pure ty'
+                insertVar name ty info
+                pure $ LamArgX ty name
+        args <- mapM insertArg args
+        body <- infExpr body
+        let ty = TyFunX NoExtField (fmap typeOf args) (typeOf body)
+        args <- applySt args
+        pure $ Lam (info, ty) args body
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
 tcExpr expectedTy currentExpr = case currentExpr of
@@ -290,6 +319,7 @@ tcExpr expectedTy currentExpr = case currentExpr of
             Free -> lookupVar name
             Bound -> lookupVar name
             Lambda -> lookupVar name
+            Argument -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
         let expr = VarX (info, ty, bind) name
         unify info currentExpr expectedTy expr
@@ -353,10 +383,12 @@ tcExpr expectedTy currentExpr = case currentExpr of
         while <- infExpr while
         unify info currentExpr expectedTy while
         pure while
-    loop@(ExprX (LoopX info _)) -> do
+    loop@(Loop info _) -> do
         loop <- infExpr loop
         unify info currentExpr expectedTy loop
         pure loop
+    -- TODO: Type checking for lambdas
+    Lam info args body -> undefined 
 
 hasInfo :: ExprTc -> SourceInfo
 hasInfo = \case
@@ -372,7 +404,8 @@ hasInfo = \case
     BreakX info _ -> fst info
     IfX info _ _ _ -> fst info
     WhileX info _ _ -> fst info
-    ExprX (LoopX info _) -> fst info
+    Loop info _ -> fst info
+    Lam info _ _ -> fst info
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
@@ -445,7 +478,7 @@ instance TypeOf StmtTc where
 instance TypeOf ExprTc where
     typeOf = \case
         LitX ty _ -> snd ty
-        VarX (_,ty,_) _ -> ty
+        VarX (_, ty, _) _ -> ty
         PrefixX ty _ _ -> snd ty
         BinOpX ty _ _ _ -> snd ty
         AppX ty _ _ -> snd ty
@@ -456,7 +489,8 @@ instance TypeOf ExprTc where
         BreakX ty _ -> snd ty
         IfX ty _ _ _ -> snd ty
         WhileX ty _ _ -> snd ty
-        ExprX (LoopX ty _) -> snd ty
+        Loop ty _ -> snd ty
+        Lam ty _ _ -> snd ty
 
 instance TypeOf BlockTc where
     typeOf (BlockX ty _ _) = snd ty
@@ -465,6 +499,15 @@ instance TypeOf TypeRn where
     typeOf = \case
         TyLitX a b -> TyLitX a b
         TyFunX a b c -> TyFunX a (fmap typeOf b) (typeOf c)
+
+instance TypeOf LamArgTc where
+    typeOf (LamArgX ty name) = ty
+
+freshTy :: TcM TypeTc
+freshTy = do
+    n <- use freshCounter
+    freshCounter += 1
+    pure $ Meta n
 
 unify ::
     (MonadState Env m, MonadValidate [TcError] m, TypeOf a) =>
@@ -484,8 +527,6 @@ unify' ::
     TypeTc ->
     m ()
 unify' info currentExpr ty1 ty2 = case (ty1, ty2) of
-    (Any, _) -> pure ()
-    (_, Any) -> pure ()
     (TyLitX _ lit1, TyLitX _ lit2)
         | lit1 == lit2 -> pure ()
         | otherwise -> void $ tyExpectedGot info currentExpr [ty1] ty2
@@ -495,7 +536,10 @@ unify' info currentExpr ty1 ty2 = case (ty1, ty2) of
         r1 <- applySt r1
         r2 <- applySt r2
         unify' info currentExpr r1 r2
-    (Mut ty1, Mut ty2) -> unify' info currentExpr ty1 ty2
-    (ty1, Mut ty2) -> unify' info currentExpr ty1 ty2
-    (Mut ty1, ty2) -> onlyImmutable info currentExpr (MutableX ty1) ty2
+    (TypeX AnyX, _) -> pure ()
+    (_, TypeX AnyX) -> pure ()
+    (ty1, TypeX (MutableX ty2)) -> unify' info currentExpr ty1 ty2
+    (TypeX (MutableX ty1), ty2) -> unify' info currentExpr ty1 ty2
+    (TypeX (MetaTyVar n), ty1) -> putSubst $ singleton (MetaTyVar n) ty1
+    (ty1, TypeX (MetaTyVar n)) -> putSubst $ singleton (MetaTyVar n) ty1
     (ty1, ty2) -> void $ tyExpectedGot info currentExpr [ty1] ty2

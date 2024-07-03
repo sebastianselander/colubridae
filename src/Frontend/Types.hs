@@ -192,16 +192,32 @@ type family XCharLit a
 type family XBoolLit a
 type family XUnitLit a
 
-data SugarStmtX a = LoopX (XLoop a) (BlockX a)
+data SugarStmtX a
+    = LoopX (XLoop a) (BlockX a)
+    | LamX (XLam a) [LamArgX a] (ExprX a)
+
+data LamArgX a = LamArgX !(XLamArg a) Ident
+type family XLamArg a
+
+deriving instance (ForallX Show a) => Show (LamArgX a)
+deriving instance (ForallX Typeable a) => Typeable (LamArgX a)
+
 type family XLoop a
+type family XLam a
 deriving instance (ForallX Show a) => Show (SugarStmtX a)
 deriving instance (ForallX Typeable a) => Typeable (SugarStmtX a)
-deriving instance (ForallX Data a) => Typeable (Data a)
 
 pattern Loop :: (XExpr a1 ~ SugarStmtX a2) => XLoop a2 -> BlockX a2 -> ExprX a1
 pattern Loop info block <- ExprX (LoopX info block)
     where
         Loop info block = ExprX (LoopX info block)
+
+pattern Lam :: (XExpr a1 ~ SugarStmtX a2) => XLam a2 -> [LamArgX a2] -> ExprX a2 -> ExprX a1
+pattern Lam info args body <- ExprX (LamX info args body)
+    where
+        Lam info args body = ExprX (LamX info args body)
+
+{-# COMPLETE Lam, Loop #-}
 
 deriving instance (ForallX Show a) => Show (LitX a)
 deriving instance (ForallX Typeable a) => Typeable (LitX a)
@@ -237,6 +253,8 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XExpr a)
     , c (XType a)
     , c (XLoop a)
+    , c (XLam a)
+    , c (XLamArg a)
     )
 
 class Pretty a where
@@ -297,6 +315,10 @@ instance (ForallX Pretty a) => Pretty (BlockX a) where
 
 instance (ForallX Pretty a) => Pretty (SugarStmtX a) where
     pPretty (LoopX _ block) = "loop \n" <> pPretty block
+    pPretty (LamX _ args body) = "(" <> intercalate ", " (fmap pPretty args) <> ") -> " <> pPretty body
+
+instance (ForallX Pretty a) => Pretty (LamArgX a) where
+    pPretty (LamArgX _ name) = pPretty name
 
 prettyProgram :: (ForallX Pretty a) => ProgramX a -> Text
 prettyProgram (ProgramX _ defs) = Text.intercalate "\n\n" (fmap prettyDef defs)

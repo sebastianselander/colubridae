@@ -8,7 +8,7 @@ import Frontend.Parser.Types
 import Relude
 import Frontend.Types
 
-data Boundedness = Free | Bound | Toplevel | Lambda
+data Boundedness = Free | Bound | Toplevel | Lambda | Argument
     deriving (Show, Eq, Ord, Data)
 
 instance Pretty Boundedness where
@@ -26,6 +26,7 @@ type LitRn = LitX Rn
 type StmtRn = StmtX Rn
 type BlockRn = BlockX Rn
 type SugarStmtRn = SugarStmtX Rn
+type LamArgRn = LamArgX Rn
 
 deriving instance Data ExprRn
 deriving instance Data ProgramRn
@@ -36,6 +37,7 @@ deriving instance Data TypeRn
 deriving instance Data BlockRn
 deriving instance Data StmtRn
 deriving instance Data SugarStmtRn
+deriving instance Data LamArgRn
 
 type instance XProgram Rn = XProgram Par
 
@@ -75,3 +77,5 @@ type instance XTyFun Rn = NoExtField
 type instance XType Rn = DataConCantHappen
 
 type instance XLoop Rn = SourceInfo
+type instance XLam Rn = XLam Par
+type instance XLamArg Rn = (SourceInfo, Mutability, Maybe TypeRn)

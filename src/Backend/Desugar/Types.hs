@@ -43,7 +43,7 @@ data Expr
     | While TyExpr [TyExpr]
     deriving (Show, Eq, Ord, Data)
 
-data Binding = Free | Bound | Toplevel | Lambda
+data Binding = Free | Bound | Toplevel | Lambda | Argument
     deriving (Show, Eq, Ord, Data)
 
 data BinOp

@@ -93,7 +93,9 @@ dsDef names def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, ty) st
                 Just tail -> do
                     mapM_ dsStmt stmts
                     tail <- dsExpr tail
-                    void $ unnamed $ typed ty (Return tail)
+                    if isMain def
+                        then void (unnamed (pure tail))
+                        else void $ unnamed $ typed ty (Return tail)
             pure (args, returnType)
      in if isMain def
             then Main (toList emits)
@@ -176,6 +178,7 @@ dsExpr = \case
         block <- dsBlock (emit . Typed Unit . Ass var ty') var block
         unnamed $ typed ty (While true block)
         named $ pure $ Typed ty' (Var Bound var)
+    Tc.ExprX (Tc.LamX {}) -> pure $ Typed Unit Break
 
 dsBlock :: (TyExpr -> DsM ()) -> Ident -> Tc.BlockX Tc.Tc -> DsM [TyExpr]
 dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
@@ -244,6 +247,7 @@ dsType = \case
     Tc.TyFunX NoExtField l r -> TyFun <$> mapM dsType l <*> dsType r
     Tc.TypeX (Tc.MutableX ty) -> Mut <$> dsType ty
     Tc.TypeX Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type of `return` and `break` so that they can be placed anywhere.
+    Tc.TypeX (Tc.MetaTyVar _) -> pure Unit -- TODO: Should not exist here
 
 true :: TyExpr
 true = Typed Bool $ Lit $ BoolLit True
@@ -281,3 +285,4 @@ dsBound = \case
     Rn.Bound -> Bound
     Rn.Toplevel -> Toplevel
     Rn.Lambda -> Lambda
+    Rn.Argument -> Argument

@@ -18,6 +18,7 @@ type DefPar = DefX Par
 type TypePar = TypeX Par
 type BlockPar = BlockX Par
 type StmtPar = StmtX Par
+type LamArgPar = LamArgX Par
 
 deriving instance Data ExprPar
 deriving instance Data ProgramPar
@@ -66,5 +67,9 @@ type instance XTyFun Par = NoExtField
 type instance XType Par = DataConCantHappen
 
 type instance XLoop Par = SourceInfo
+type instance XLam Par = SourceInfo
+type instance XLamArg Par = (SourceInfo, Mutability, Maybe TypePar)
 
 deriving instance Data (SugarStmtX Par)
+deriving instance Data (LamArgX Par)
+    

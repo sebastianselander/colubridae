@@ -9,6 +9,7 @@ module Frontend.Renamer.Monad
       newContext,
       boundVar,
       insertVar,
+      boundArg,
       emptyCtx,
       emptyEnv,
       definitions,
@@ -16,6 +17,7 @@ module Frontend.Renamer.Monad
       newToOld,
       runGen,
       boundFun,
+      insertArg,
       names,
     ) where
 
@@ -25,16 +27,17 @@ import Data.List.NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
+import Frontend.Builtin (builtInNames)
 import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
 import Names (Ident (..))
-import Relude hiding (head, Map)
-import Frontend.Builtin (builtInNames)
+import Relude hiding (Map, head)
 
 data Env = Env
     { _newToOld :: Map Ident Ident
     , _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident Ident)
+    , _arguments :: Map Ident Ident
     }
     deriving (Show)
 
@@ -55,7 +58,7 @@ newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
         )
 
 emptyEnv :: Env
-emptyEnv = Env mempty mempty (return mempty)
+emptyEnv = Env mempty mempty (return mempty) mempty
 
 emptyCtx :: Ctx
 emptyCtx = Ctx builtInNames
@@ -75,6 +78,9 @@ names = use newToOld
 -}
 boundFun :: (MonadReader Ctx m) => Ident -> m (Maybe Ident)
 boundFun name = views definitions (bool Nothing (Just name) . Set.member name)
+
+boundArg :: (MonadState Env m) => Ident -> m (Maybe Ident)
+boundArg name = uses arguments (Map.lookup name)
 
 boundVar :: (MonadState Env m) => Ident -> m (Maybe (Boundedness, Ident))
 boundVar name = do
@@ -100,6 +106,16 @@ insertVar name@(Ident nm) = do
     modifying newToOld (Map.insert name' name)
     modifying scope (outer' <|)
     modifying numbering (Map.insert name n)
+    pure name'
+
+insertArg :: (MonadState Env m) => Ident -> m Ident
+insertArg name@(Ident nm) = do
+    numb <- use numbering
+    let n = Map.findWithDefault 0 name numb + 1
+    let name' = Ident $ nm <> "$" <> show n
+    modifying newToOld (Map.insert name' name)
+    modifying numbering (Map.insert name n)
+    modifying arguments (Map.insert name name')
     pure name'
 
 newContext :: Gen a -> Gen a

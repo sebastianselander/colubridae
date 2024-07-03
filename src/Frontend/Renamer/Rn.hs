@@ -7,6 +7,7 @@ import Control.Lens (locally)
 import Control.Monad (foldM)
 import Control.Monad.Validate (MonadValidate)
 import Data.Set qualified as Set
+import Frontend.Builtin (builtInNames)
 import Frontend.Error
 import Frontend.Parser.Types
 import Frontend.Renamer.Monad
@@ -15,7 +16,6 @@ import Frontend.Types
 import Names (Ident (..), Names, mkNames)
 import Relude
 import Utils (listify')
-import Frontend.Builtin (builtInNames)
 
 rename :: ProgramPar -> Either [RnError] (ProgramRn, Names)
 rename = runGen emptyEnv emptyCtx . rnProgram
@@ -63,6 +63,7 @@ rnExpr = \case
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
+                =<< maybe (fmap (Argument,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
         pure $ VarX (info, bind) name
     PrefixX info op expr -> PrefixX info op <$> rnExpr expr
@@ -101,7 +102,22 @@ rnExpr = \case
         b <- rnExpr b
         stmts <- newContext $ rnBlock block
         pure $ WhileX a b stmts
-    ExprX (LoopX info block) -> ExprX . LoopX info <$> rnBlock block
+    Loop info block -> Loop info <$> rnBlock block
+    Lam info args body -> do
+        args <- rnLamArgs args
+        body <- newContext $ rnExpr body
+        pure $ Lam info args body
+
+rnLamArgs :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgPar] -> m [LamArgRn]
+rnLamArgs = foldM f mempty
+  where
+    f :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgRn] -> LamArgPar -> m [LamArgRn]
+    f seen arg@(LamArgX (info, mut, ty) name) = do
+        when (any (eqAlphaLamArg arg) seen) (conflictingDefinitionArgument info name)
+        name <- insertArg name
+        ty <- mapM rnType ty
+        pure (LamArgX (info, mut, ty) name : seen)
+
 
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
@@ -124,12 +140,16 @@ rnArgs = foldM f mempty
     f :: (MonadState Env m, MonadValidate [RnError] m) => [ArgRn] -> ArgPar -> m [ArgRn]
     f seen arg@(ArgX (info, mut) name ty) = do
         when (any (eqAlphaArg arg) seen) (conflictingDefinitionArgument info name)
-        name <- insertVar name
+        name <- insertArg name
         ty <- rnType ty
         pure (ArgX (info, mut) name ty : seen)
 
 eqAlphaArg :: forall a b. ArgX a -> ArgX b -> Bool
 eqAlphaArg (ArgX _ name1 _) (ArgX _ name2 _) = name1 == name2
+
+eqAlphaLamArg :: forall a b. LamArgX a -> LamArgX b -> Bool
+eqAlphaLamArg (LamArgX _ name1) (LamArgX _ name2) = name1 == name2
+
 
 rnType :: (Monad m) => TypePar -> m TypeRn
 rnType = pure . coerceType

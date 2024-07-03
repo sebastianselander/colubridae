@@ -67,7 +67,9 @@ breakExpr = \case
         breakBlock true
         mapM_ breakBlock false
     WhileX _ expr block -> breakExpr expr >> locally inLoop (const True) (breakBlock block)
-    ExprX (LoopX _ block) -> locally inLoop (const True) (breakBlock block)
+    Loop _ block -> locally inLoop (const True) (breakBlock block)
+    Lam _ _ body -> breakExpr body
+
 
 returnBlock :: BlockRn -> ChM Bool
 returnBlock (BlockX _ statements _) = returnStmts statements
