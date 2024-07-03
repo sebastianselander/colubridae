@@ -1,0 +1,9 @@
+def main() {
+    let x = 10;
+    let y = 40;
+    printInt(add(x,y));
+}
+
+def add(x: int, y: int) -> int {
+    x + y
+}

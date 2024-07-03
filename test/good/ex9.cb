@@ -1,0 +1,12 @@
+def main() {
+    let mut i = 0;
+    let x = loop {
+        if (i < 10) {
+            printInt(i);
+            i += 1;
+        } else {
+            break 123
+        }
+    };
+    printInt(x);
+}

@@ -1,0 +1,7 @@
+def main() {
+    if !true {
+        printInt(1)
+    } else {
+        printInt(0)
+    }
+}

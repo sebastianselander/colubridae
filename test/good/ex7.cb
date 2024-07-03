@@ -1,0 +1,11 @@
+def main() {
+    let mut i = 0;
+    let x = loop {
+        i += 1;
+        if (i > 10) {
+            break 69420
+        };
+        printInt(i);
+    };
+    printInt(i);
+}

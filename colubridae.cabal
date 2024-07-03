@@ -95,3 +95,4 @@ test-suite colubridae-test
     , directory
     , filepath
     , relude
+    , process
