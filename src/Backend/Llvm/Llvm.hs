@@ -40,11 +40,17 @@ assembleExpr (Typed taggedType' expr) =
                     Bound -> load taggedType $ Variable (Ptr taggedType) name
                     Toplevel -> pure $ Global taggedType name
                     Lambda -> pure $ Global taggedType name
+                    Argument -> pure $ Variable taggedType name
             BinOp leftExpr operator rightExpr -> do
                 left <- assembleExpr leftExpr
                 right <- assembleExpr rightExpr
                 llvmBinOp operator taggedType left right
-            PrefixOp operator expr -> undefined
+            PrefixOp Not expr -> do
+                expr <- assembleExpr expr
+                eq I1 (Literal I1 (LBool False)) expr
+            PrefixOp Neg expr -> do
+                expr <- assembleExpr expr
+                sub taggedType (Literal taggedType (LInt 0)) expr
             App appExpr argExprs -> do
                 app <- assembleExpr appExpr
                 args <- mapM assembleExpr argExprs   
@@ -53,7 +59,6 @@ assembleExpr (Typed taggedType' expr) =
             Let name varType (Just expr) -> do
                 decl <- alloca name (llvmType varType)
                 expr <- assembleExpr expr
-                comment "here"
                 store expr decl
                 pure decl
             Ass name varType expr -> do
@@ -67,6 +72,7 @@ assembleExpr (Typed taggedType' expr) =
                 unit
             Break -> do
                 lbl <- view breakLabel
+                comment "break"
                 jump lbl
                 unit
             If condition trueBlk falseBlk -> do
@@ -120,7 +126,7 @@ assembleLit :: (Monad m) => Lit -> m Operand
 assembleLit = \case
     IntLit int -> pure $ Literal I64 (LInt int)
     DoubleLit double -> pure $ Literal Float (LDouble double)
-    StringLit string -> error "TODO" -- BUG: string literals should be lifted earlier
+    StringLit _ -> error "TODO" -- BUG: string literals should be lifted earlier
     CharLit char -> pure $ Literal I8 (LChar char)
     BoolLit bool -> pure $ Literal I1 (LBool bool)
     UnitLit -> pure $ Literal I1 LUnit

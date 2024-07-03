@@ -38,7 +38,7 @@ instance Pretty Decl where
             <+> pretty ty
             <+> "@"
             <> pretty name
-            <> tupled (fmap pretty args)
+            <> tupled (fmap typed args)
             <+> lbrace
             <> hardline
             <> indentedBlock instr
@@ -64,30 +64,27 @@ instance Pretty Literal where
 
 instance Pretty Instruction where
     pretty = \case
-        Call ty fun args -> "call" <+> pretty ty <+> tyLess fun <> tupled (fmap pretty args)
-        Arith op ty l r -> pretty op <+> pretty ty <+> tyLess l <> "," <+> tyLess r
-        Cmp op ty l r -> "icmp" <+> pretty op <+> pretty ty <+> pretty l <> "," <+> pretty r
+        Call ty fun args -> "call" <+> pretty ty <+> pretty fun <> tupled (fmap typed args)
+        Arith operator ty l r -> pretty operator <+> pretty ty <+> pretty l <> "," <+> pretty r
+        Cmp operator _ l r -> "icmp" <+> pretty operator <+> pretty (typeOf l) <+> pretty l <> "," <+> pretty r
         And ty l r -> "and" <+> pretty ty <+> pretty l <> "," <+> pretty r
         Or ty l r -> "or" <+> pretty ty <+> pretty l <> "," <+> pretty r
         Alloca ty -> "alloca" <+> pretty ty
-        Store l r -> "store" <+> pretty l <> "," <+> pretty r
-        Load op -> do
-            let ty = case typeOf op of
-                    Ptr ty -> ty
-                    _ -> error "Non-pointer"
-            "load" <+> pretty ty <> "," <+> pretty op
-        Ret op -> "ret" <+> pretty op
-        Label lbl -> indent (negate indentLevel) $ pretty lbl <> ":"
+        Store l r -> "store" <+> typed l <> "," <+> typed r
+        Load operand -> do
+                let ty = case typeOf operand of
+                        Ptr ty -> ty
+                        _ -> error "Non-pointer"
+                "load" <+> pretty ty <> "," <+> typed operand
+        Ret operand -> "ret" <+> typed operand
+        Label lbl -> pretty lbl <> ":"
         Comment cmnt -> ";" <+> pretty cmnt
-        Br op lbl1 lbl2 -> "br" <+> pretty op <> "," <+> "label %" <> pretty lbl1 <> "," <+> "label %" <> pretty lbl2
+        Br operand lbl1 lbl2 -> "br" <+> typed operand <> "," <+> "label %" <> pretty lbl1 <> "," <+> "label %" <> pretty lbl2
         Jump lbl -> "br label %" <> pretty lbl
         Unreachable -> "unreachable"
 
-tyLess :: Operand -> Doc ann
-tyLess = \case
-    Variable _ name -> "%" <> pretty name
-    Literal _ lit -> pretty lit
-    Global _ name -> "@" <> pretty name
+typed :: (Pretty a, Typed a) => a -> Doc ann
+typed a = pretty (typeOf a) <+> pretty a
 
 instance Pretty Label where
     pretty (L name) = pretty name
@@ -111,9 +108,9 @@ instance Pretty ArithOp where
 
 instance Pretty Operand where
     pretty = \case
-        Variable ty name -> pretty ty <+> "%" <> pretty name
-        Literal ty lit -> pretty ty <+> pretty lit
-        Global ty name -> pretty ty <+> "@" <> pretty name
+        Variable _ name -> "%" <> pretty name
+        Literal _ lit -> pretty lit
+        Global _ name -> "@" <> pretty name
 
 instance (Pretty a) => Pretty (Named a) where
     pretty (Named name a) = "%" <> pretty name <+> "=" <+> pretty a
