@@ -1,38 +1,41 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use concatMap" #-}
 
 module Compile where
 
+import Backend.Desugar.Desugar (desugar)
+import Backend.Desugar.Pretty (prettyDesugar)
+import Backend.Llvm.Llvm (assemble)
+import Backend.Llvm.ToLlvm (llvmOut)
 import Control.Arrow (left)
 import Control.Monad.Except (liftEither)
-import Control.Monad.Writer (tell, MonadWriter, Writer, runWriter)
+import Control.Monad.Writer (MonadWriter, Writer, runWriter, tell)
+import Data.Set qualified as Set
+import Data.Text (concat)
 import Frontend.Error (Report (..))
 import Frontend.Parser.Parse (parse)
 import Frontend.Renamer.Rn (rename)
 import Frontend.StatementCheck (check)
 import Frontend.Typechecker.Tc (tc)
-import Relude hiding (concat, intercalate)
-import Data.Text (intercalate)
-import Text.Pretty.Simple (pShow)
 import Frontend.Types (pPretty)
-import Backend.Desugar.Desugar (desugar)
-import Backend.Desugar.Pretty (prettyDesugar)
-import Backend.Llvm.Llvm (assemble)
-import Backend.Llvm.ToLlvm (llvmOut)
+import Relude hiding (concatMap, concat, intercalate)
+import Text.Pretty.Simple (pShow)
 
-data Phase = Parse | Rename | StCheck | TypeCheck | Desugar | Llvm
-    deriving Show
+data Pass = Parse | Rename | StCheck | TypeCheck | Desugar | Llvm
+    deriving (Show, Ord, Eq)
 
-data DebugOutput = Debug {phase :: Phase, prettyTxt :: Maybe Text, normalTxt :: Text}
+data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
 
 instance Semigroup DebugOutputs where
-  (<>) (Debugs l1 r1) (Debugs l2 r2) = Debugs (l1 <> l2) (r1 <> r2)
+    (<>) (Debugs l1 r1) (Debugs l2 r2) = Debugs (l1 <> l2) (r1 <> r2)
 
 instance Monoid DebugOutputs where
-  mempty = Debugs [] []
-  mappend = (<>)
+    mempty = Debugs [] []
+    mappend = (<>)
 
-log :: MonadWriter DebugOutputs m => DebugOutput -> [Text] -> m ()
+log :: (MonadWriter DebugOutputs m) => DebugOutput -> [Text] -> m ()
 log debug warnings = do
     tell (Debugs [debug] warnings)
 
@@ -59,16 +62,25 @@ compile fileName fileContents = do
             pure res
 
     case assemble res of
-           res -> do
+        res -> do
             log (Debug Llvm (Just $ llvmOut res) (toStrict $ pShow res)) []
             pure (llvmOut res)
 
 runCompile :: String -> Text -> (Either Text Text, DebugOutputs)
 runCompile fileName = runWriter . runExceptT . compile fileName
 
-showDebug :: DebugOutput -> Text
-showDebug (Debug phase pretty normal) =
-    unlines ["======== " <> show phase <> " output ========", "", normal, fromMaybe "" pretty, ""]
+showDebug :: Set Pass -> DebugOutput -> Text
+showDebug dumps (Debug phase pretty normal) =
+    if Set.member phase dumps
+        then
+            unlines
+                [ "======== " <> show phase <> " output ========"
+                , ""
+                , normal
+                , fromMaybe "" pretty
+                , ""
+                ]
+        else ""
 
-showDebugs :: DebugOutputs -> Text
-showDebugs (Debugs debugs warnings) = unlines [intercalate "\n" $ fmap showDebug debugs, intercalate "\n" warnings]
+showDebugs :: Set Pass -> DebugOutputs -> Text
+showDebugs dumps (Debugs debugs warnings) = concat (fmap (showDebug dumps) debugs) <> concat warnings

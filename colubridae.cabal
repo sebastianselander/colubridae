@@ -74,11 +74,13 @@ library
 
 executable colubridae
   import:           warnings, extensions
+  other-modules:    Options
   main-is:          Main.hs
   build-depends:
     , colubridae
     , pretty-simple
     , relude
+    , optparse-applicative
 
   hs-source-dirs:   app
   default-language: GHC2021
@@ -94,5 +96,5 @@ test-suite colubridae-test
     , colubridae
     , directory
     , filepath
-    , relude
     , process
+    , relude
