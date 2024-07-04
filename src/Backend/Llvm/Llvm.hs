@@ -72,7 +72,6 @@ assembleExpr (Typed taggedType' expr) =
                 unit
             Break -> do
                 lbl <- view breakLabel
-                comment "break"
                 jump lbl
                 unit
             If condition trueBlk falseBlk -> do

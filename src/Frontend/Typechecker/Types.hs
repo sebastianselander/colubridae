@@ -111,7 +111,7 @@ instance Pretty MetaTy where
     pPretty = \case
         AnyX -> "any"
         MutableX ty -> pPretty ty <> "?"
-        MetaTyVar n -> "#a" <> show n <> "#"
+        MetaTyVar n -> "a" <> show n
 
 pattern Int :: (XTyLit a ~ NoExtField) => TypeX a
 pattern Int <- TyLitX NoExtField IntX

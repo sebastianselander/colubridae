@@ -373,7 +373,7 @@ tcExpr expectedTy currentExpr = case currentExpr of
         pure $ EBlockX NoExtField block
     BreakX info expr -> do
         expr <- mapM infExpr expr
-        pure $ BreakX (info, Any) expr
+        pure $ BreakX (info, maybe Unit typeOf expr) expr
     IfX info cond true false -> do
         cond <- tcExpr Bool cond
         true <- tcBlock currentExpr expectedTy true
@@ -501,7 +501,7 @@ instance TypeOf TypeRn where
         TyFunX a b c -> TyFunX a (fmap typeOf b) (typeOf c)
 
 instance TypeOf LamArgTc where
-    typeOf (LamArgX ty name) = ty
+    typeOf (LamArgX ty _) = ty
 
 freshTy :: TcM TypeTc
 freshTy = do

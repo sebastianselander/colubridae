@@ -315,10 +315,10 @@ instance (ForallX Pretty a) => Pretty (BlockX a) where
 
 instance (ForallX Pretty a) => Pretty (SugarStmtX a) where
     pPretty (LoopX _ block) = "loop \n" <> pPretty block
-    pPretty (LamX _ args body) = "(" <> intercalate ", " (fmap pPretty args) <> ") -> " <> pPretty body
+    pPretty (LamX _ args body) = "\\" <> unwords (fmap pPretty args) <> " -> " <> pPretty body
 
 instance (ForallX Pretty a) => Pretty (LamArgX a) where
-    pPretty (LamArgX _ name) = pPretty name
+    pPretty (LamArgX ty name) = pPretty name
 
 prettyProgram :: (ForallX Pretty a) => ProgramX a -> Text
 prettyProgram (ProgramX _ defs) = Text.intercalate "\n\n" (fmap prettyDef defs)
@@ -344,7 +344,7 @@ prettyArg :: (ForallX Pretty a) => ArgX a -> Text
 prettyArg (ArgX a (Ident name) ty) = unwords [pPretty a, name, ":", prettyType1 ty]
 
 prettyType1 :: (ForallX Pretty a) => TypeX a -> Text
-prettyType1 (TyFunX _ l r) = unwords ["(" <> intercalate ", " (fmap prettyType1 l) <> ")", "->", prettyType1 r]
+prettyType1 (TyFunX _ l r) = unwords ["fn(" <> intercalate ", " (fmap prettyType1 l) <> ")", "->", prettyType1 r]
 prettyType1 ty = prettyType2 ty
 
 prettyType2 :: (ForallX Pretty a) => TypeX a -> Text

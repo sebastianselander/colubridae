@@ -98,6 +98,7 @@ dsDef names def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, ty) st
                         else void $ unnamed $ typed ty (Return tail)
             pure (args, returnType)
      in if isMain def
+           -- TODO: Make customMain and wrap it similaly to rustc
             then Main (toList emits)
             else Fn Top name args' returnType' (toList emits)
 
