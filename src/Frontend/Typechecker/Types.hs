@@ -89,27 +89,13 @@ pattern Mut :: (XType a ~ MetaTy) => TypeTc -> TypeX a
 pattern Mut ty <- TypeX (MutableX ty)
   where
     Mut ty = TypeX (MutableX ty)
-
-pattern Meta :: (XType a ~ MetaTy) => Int -> TypeX a
-pattern Meta n <- TypeX (MetaTyVar n)
-    where
-      Meta n = TypeX (MetaTyVar n)
  
-data MetaTy = MutableX TypeTc | MetaTyVar Int | AnyX
+data MetaTy = MutableX TypeTc | AnyX
     deriving (Show, Eq, Ord, Data)
 
 data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
     deriving (Show, Eq, Ord, Data, Typeable)
 $(makeLenses ''StmtType)
-
-instance Pretty StmtType where
-  pPretty ty = pPretty $ view varType ty
-
-instance Pretty MetaTy where
-    pPretty = \case
-        AnyX -> "any"
-        MutableX ty -> pPretty ty <> "?"
-        MetaTyVar n -> "a" <> show n
 
 pattern Int :: (XTyLit a ~ NoExtField) => TypeX a
 pattern Int <- TyLitX NoExtField IntX

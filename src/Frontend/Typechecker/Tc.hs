@@ -6,7 +6,7 @@
 module Frontend.Typechecker.Tc where
 
 import Control.Lens.Getter (use, uses, view, views)
-import Control.Lens.Setter (locally, modifying, (+=))
+import Control.Lens.Setter (locally, modifying)
 import Control.Lens.TH
 import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
@@ -18,28 +18,20 @@ import Frontend.Renamer.Types
 import Frontend.Typechecker.Subst
 import Frontend.Typechecker.Types
 import Frontend.Types
-import Names (Ident, Names, getOriginalName)
+import Names (Ident, Names, getOriginalName')
 import Relude hiding (Any, intercalate)
 import Relude.Unsafe (fromJust)
 import Utils (chain, listify')
+import Frontend.Typechecker.Ctx qualified as Ctx
+import Frontend.Typechecker.Ctx (Ctx)
 
 data Env = Env
     { _variables :: Map Ident (TypeTc, SourceInfo)
     , _subst :: Subst
-    , _freshCounter :: Int
-    }
-    deriving (Show)
-
-data Ctx = Ctx
-    { _functions :: Map Ident (TypeTc, SourceInfo)
-    , _returnType :: TypeTc
-    , _currentFun :: DefRn
-    , _names :: Names
     }
     deriving (Show)
 
 $(makeLenses ''Env)
-$(makeLenses ''Ctx)
 
 newtype TcM a = Tc {runTc :: StateT Env (ReaderT Ctx (ValidateT [TcError] (Writer [TcWarning]))) a}
     deriving (Functor, Applicative, Monad, MonadReader Ctx, MonadValidate [TcError], MonadState Env)
@@ -84,15 +76,15 @@ tcDefs names funTable fun@(Fn _ _ args rt _) =
                 )
                 mempty
                 args
-        ctx = Ctx (Map.union builtIns funTable) (typeOf rt) fun names
-        env = Env varTable nullSubst 0
+        ctx = Ctx.Ctx (Map.union builtIns funTable) (typeOf rt) fun [] names
+        env = Env varTable nullSubst
      in run ctx env $ go fun
   where
     go (Fn _ name args rt block) =
-        locally currentFun (const fun) $ do
+        locally Ctx.currentFun (const fun) $ do
             args <- mapM infArg args
             let retTy = typeOf rt
-            block <- locally returnType (const retTy) $ case block of
+            block <- locally Ctx.returnType (const retTy) $ case block of
                 BlockX info stmts (Just expr) -> do
                     stmts <- mapM infStmt stmts
                     expr <- tcExpr retTy expr
@@ -108,12 +100,12 @@ infBlock (BlockX info statements tailExpression) = do
     expr <- mapM infExpr tailExpression
     pure $ BlockX (info, maybe Unit typeOf expr) stmts expr
 
-tcBlock :: ExprRn -> TypeTc -> BlockX Rn -> TcM BlockTc
-tcBlock currentExpr expectedTy (BlockX info statements tailExpression) = do
+tcBlock :: TypeTc -> BlockX Rn -> TcM BlockTc
+tcBlock expectedTy (BlockX info statements tailExpression) = do
     stmts <- mapM infStmt statements
     expr <- case tailExpression of
         Nothing -> do
-            unless (expectedTy == Unit) (tyExpectedGot info currentExpr [expectedTy] Unit)
+            unless (expectedTy == Unit) (tyExpectedGot info [expectedTy] Unit)
             pure Nothing
         Just tail -> Just <$> tcExpr expectedTy tail
     pure $ BlockX (info, maybe Unit typeOf expr) stmts expr
@@ -145,9 +137,8 @@ breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e)
         LoopX {} -> []
         LamX {} -> []
 
-
 infExpr :: ExprRn -> TcM ExprTc
-infExpr currentExpr = case currentExpr of
+infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
     LitX info lit ->
         let (ty, b) = infLit lit
          in pure $ LitX (info, ty) b
@@ -159,20 +150,18 @@ infExpr currentExpr = case currentExpr of
             Argument -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
         pure $ VarX (info, ty, bind) name
-    PrefixX info op expr -> do
+    PrefixX info Neg expr -> do
+        expr <- tcExpr Int expr
+        pure $ PrefixX (info, Int) Neg expr
+    PrefixX info Not expr -> do
         expr <- tcExpr Bool expr
-        pure $ PrefixX (info, Bool) op expr
+        pure $ PrefixX (info, Bool) Neg expr
     BinOpX info l op r -> do
-        let types = operatorTypes op
-        l <- infExpr l
-        let ty = typeOf l
-        r <- tcExpr ty r
-        ty <- pure $ operatorReturnType ty op
-        if typeOf r `elem` types
-            then pure $ BinOpX (info, ty) l op r
-            else do
-                ty <- Any <$ invalidOperatorType info currentExpr op (typeOf r)
-                pure $ BinOpX (info, ty) l op r
+        let typeOfOp = operatorType op
+        l <- tcExpr typeOfOp l
+        r <- tcExpr typeOfOp r
+        let retty = operatorReturnType (operatorType op) op
+        applySt $ BinOpX (info, retty) l op r
     AppX info l r -> do
         l <- infExpr l
         case typeOf l of
@@ -185,7 +174,6 @@ infExpr currentExpr = case currentExpr of
                             Any
                                 <$ tooManyArguments
                                     info
-                                    currentExpr
                                     argTysLength
                                     rLength
                         r <- mapM infExpr r
@@ -195,7 +183,6 @@ infExpr currentExpr = case currentExpr of
                             Any
                                 <$ partiallyAppliedFunction
                                     info
-                                    currentExpr
                                     argTysLength
                                     rLength
                         r <- mapM infExpr r
@@ -205,7 +192,7 @@ infExpr currentExpr = case currentExpr of
                         r <- zipWithM tcExpr argTys r
                         pure $ AppX (info, retTy) l r
             ty -> do
-                retTy <- Any <$ applyNonFunction info currentExpr ty
+                retTy <- Any <$ applyNonFunction info ty
                 r <- mapM infExpr r
                 pure $ AppX (info, retTy) l r
     LetX (info, mut, mbty) name expr -> do
@@ -218,46 +205,46 @@ infExpr currentExpr = case currentExpr of
     AssX (info, bind) name op expr -> do
         (ty, info) <- case bind of
             Toplevel ->
-                assignNonVariable @TcM info currentExpr
-                    <$> views names (getOriginalName name)
+                assignNonVariable @TcM info 
+                    <$> views Ctx.names (getOriginalName' name)
                     >> pure (Any, info)
             _ -> lookupVar name
         ty <- case ty of
             Mut ty -> pure ty
             _ -> do
-                name <- views names (getOriginalName name)
-                Any <$ immutableVariable @TcM info currentExpr name
+                name <- views Ctx.names (getOriginalName' name)
+                Any <$ immutableVariable @TcM info name
         expr <- tcExpr ty expr
-        unify info currentExpr ty expr
+        unify info ty expr
         ty <- applySt ty
         case op of
             AddAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info currentExpr [Int, Double] ty)
+                    (void $ tyExpectedGot info [Int, Double] ty)
             SubAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info currentExpr [Int, Double] ty)
+                    (void $ tyExpectedGot info [Int, Double] ty)
             MulAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info currentExpr [Int, Double] ty)
+                    (void $ tyExpectedGot info [Int, Double] ty)
             DivAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info currentExpr [Int, Double] ty)
+                    (void $ tyExpectedGot info [Int, Double] ty)
             ModAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info currentExpr [Int, Double] ty)
+                    (void $ tyExpectedGot info [Int, Double] ty)
             Assign -> pure ()
         pure $ AssX (StmtType Unit ty info, bind) name op expr
     RetX info mbExpr -> do
-        returnType <- view returnType
+        returnType <- view Ctx.returnType
         case mbExpr of
             Nothing -> do
-                unless (returnType == Unit) (void $ emptyReturnNonUnit info currentExpr returnType)
+                unless (returnType == Unit) (void $ emptyReturnNonUnit info returnType)
                 pure $ RetX (info, Unit) Nothing
             Just expr -> do
                 expr <- tcExpr returnType expr
@@ -270,25 +257,25 @@ infExpr currentExpr = case currentExpr of
         condition <- tcExpr Bool condition
         true <- infBlock true
         let ty = typeOf true
-        false <- mapM (tcBlock currentExpr ty) false
+        false <- mapM (tcBlock ty) false
         pure $ IfX (info, ty) condition true false
     WhileX info expr block -> do
         expr <- tcExpr Bool expr
-        block <- tcBlock currentExpr Unit block
+        block <- tcBlock Unit block
         case block of
             block@(BlockX _ _ tail) -> do
                 let breakExprs = breaks block
-                maybe (pure ()) (unify info currentExpr Unit) tail
-                mapM_ (\expr -> unify (hasInfo expr) currentExpr Unit expr) breakExprs
+                maybe (pure ()) (unify info Unit) tail
+                mapM_ (\expr -> unify (hasInfo expr) Unit expr) breakExprs
         pure $ WhileX (info, Unit) expr block
     LoopX info block -> do
-        block <- tcBlock currentExpr Unit block
+        block <- tcBlock Unit block
         ty <- case breaks block of
             [] -> pure Any
             (x : xs) -> do
                 sequence_
                     $ chain
-                        (\expr1 expr2 -> unify (hasInfo expr2) currentExpr (typeOf expr1) expr2)
+                        (\expr1 expr2 -> unify (hasInfo expr2) (typeOf expr1) expr2)
                         x
                         xs
                 typeOf <$> applySt x
@@ -298,7 +285,7 @@ infExpr currentExpr = case currentExpr of
                 let ty' = case mut of
                         Mutable -> fmap (Mut . typeOf) ty
                         Immutable -> fmap typeOf ty
-                ty <- maybe freshTy pure ty'
+                ty <- maybe (Any <$ typeMustBeKnown info name) pure ty'
                 insertVar name ty info
                 pure $ LamArgX ty name
         args <- mapM insertArg args
@@ -308,11 +295,11 @@ infExpr currentExpr = case currentExpr of
         pure $ LamX (info, ty) args body
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
-tcExpr expectedTy currentExpr = case currentExpr of
+tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
     LitX info lit -> do
         let (ty, lit') = infLit lit
         let literal = LitX (info, ty) lit'
-        void $ unify info currentExpr expectedTy literal
+        void $ unify info expectedTy literal
         applySt literal
     VarX (info, bind) name -> do
         (ty, _declaredAtInfo) <- case bind of
@@ -322,73 +309,95 @@ tcExpr expectedTy currentExpr = case currentExpr of
             Argument -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
         let expr = VarX (info, ty, bind) name
-        unify info currentExpr expectedTy expr
+        unify info expectedTy expr
         applySt expr
     PrefixX info op expr -> do
         case op of
             Not -> do
                 expr <- tcExpr Bool expr
                 let expr' = PrefixX (info, Bool) op expr
-                unify info currentExpr expectedTy expr'
+                unify info expectedTy expr'
                 pure expr'
             Neg -> do
                 expr <- infExpr expr
                 let ty = typeOf expr
-                unless (ty `elem` [Int, Double]) (tyExpectedGot info currentExpr [Int, Double] ty)
+                unless (ty `elem` [Int, Double]) (tyExpectedGot info [Int, Double] ty)
                 pure $ PrefixX (info, ty) op expr
     BinOpX info l op r -> do
-        l <- infExpr l
-        r <- tcExpr (typeOf l) r
-        let ty = operatorReturnType (typeOf r) op
-        let expr = BinOpX (info, ty) l op r
-        unify info currentExpr expectedTy expr
+        let typeOfOp = operatorType op
+        l <- tcExpr typeOfOp l
+        r <- tcExpr typeOfOp r
+        let retty = operatorReturnType (operatorType op) op
+        let expr = BinOpX (info, retty) l op r
+        unify info expectedTy expr
         applySt expr
     AppX info fun args -> do
         expr <- infExpr (AppX info fun args)
-        unify info currentExpr expectedTy expr
+        unify info expectedTy expr
         applySt expr
     LetX (info, mut, mbty) name expr -> do
         expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
         let ty = case mut of
                 Mutable -> Mut (typeOf expr)
                 Immutable -> typeOf expr
-        unify' info currentExpr expectedTy Unit
+        unify' info expectedTy Unit
         insertVar name ty info
         applySt $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         expr <- infExpr (AssX (info, bind) name op expr)
-        unify info currentExpr expectedTy expr
+        unify info expectedTy expr
         applySt expr
     RetX info expr -> do
-        returnType <- view returnType
+        returnType <- view Ctx.returnType
         case expr of
             Nothing -> do
-                unify' info currentExpr returnType Unit
+                unify' info returnType Unit
                 pure $ RetX (info, Any) Nothing
             Just expr -> do
                 expr <- tcExpr returnType expr
                 applySt $ RetX (info, Any) (Just expr)
     EBlockX NoExtField block -> do
-        block <- tcBlock currentExpr expectedTy block
+        block <- tcBlock expectedTy block
         pure $ EBlockX NoExtField block
     BreakX info expr -> do
         expr <- mapM infExpr expr
         pure $ BreakX (info, maybe Unit typeOf expr) expr
     IfX info cond true false -> do
         cond <- tcExpr Bool cond
-        true <- tcBlock currentExpr expectedTy true
-        false <- mapM (tcBlock currentExpr expectedTy) false
+        true <- tcBlock expectedTy true
+        false <- mapM (tcBlock expectedTy) false
         pure $ IfX (info, expectedTy) cond true false
     while@(WhileX info _ _) -> do
         while <- infExpr while
-        unify info currentExpr expectedTy while
+        unify info expectedTy while
         pure while
     loop@(LoopX info _) -> do
         loop <- infExpr loop
-        unify info currentExpr expectedTy loop
+        unify info expectedTy loop
         pure loop
-    -- TODO: Type checking for lambdas
-    LamX info args body -> undefined 
+    LamX info args body -> do
+        case expectedTy of
+            TyFunX NoExtField argtys retty
+                | length argtys == length args -> do
+                    lamArgs <- unifyLambdaArgs (zip argtys args)
+                    body <- tcExpr retty body
+                    pure $ LamX (info, expectedTy) lamArgs body
+                | otherwise -> expectedLambdaNArgs' info (length argtys) (length args)
+            _ -> expectedTyGotLambda' info expectedTy
+
+-- | Unify the arguments of a lambda with the the given types
+unifyLambdaArgs ::
+    (MonadReader Ctx m, MonadValidate [TcError] m, MonadState Env m) => [(TypeTc, LamArgRn)] -> m [LamArgTc]
+unifyLambdaArgs [] = pure []
+unifyLambdaArgs
+    ((expectedType, LamArgX (loc, mut, mbArgumentType) argumentName) : xs) = do
+        mapM_ (unify loc expectedType) mbArgumentType
+        let (LamArgX ty name) = case mut of
+                Mutable -> LamArgX @Tc (Mut expectedType) argumentName
+                Immutable -> LamArgX expectedType argumentName
+        insertVar name ty loc
+        rest <- unifyLambdaArgs xs
+        pure (LamArgX ty name : rest)
 
 hasInfo :: ExprTc -> SourceInfo
 hasInfo = \case
@@ -423,21 +432,21 @@ operatorReturnType inputTy = \case
     Eq -> Bool
     Neq -> Bool
 
-operatorTypes :: BinOp -> [TypeTc]
-operatorTypes = \case
-    Mul -> [Int, Double]
-    Div -> [Int, Double]
-    Add -> [Int, Double]
-    Sub -> [Int, Double]
-    Mod -> [Int, Double]
-    Or -> [Bool]
-    And -> [Bool]
-    Lt -> [Int, Double, Bool, String]
-    Gt -> [Int, Double, Bool, String]
-    Lte -> [Int, Double, Bool, String]
-    Gte -> [Int, Double, Bool, String]
-    Eq -> [Int, Double, Bool, String]
-    Neq -> [Int, Double, Bool, String]
+operatorType :: BinOp -> TypeTc
+operatorType = \case
+    Mul -> Int
+    Div -> Int
+    Add -> Int
+    Sub -> Int
+    Mod -> Int
+    Or -> Bool
+    And -> Bool
+    Lt -> Int
+    Gt -> Int
+    Lte -> Int
+    Gte -> Int
+    Eq -> Int
+    Neq -> Int
 
 infLit :: LitRn -> (TypeTc, LitTc)
 infLit = \case
@@ -458,7 +467,7 @@ lookupVarTy :: (MonadState Env m) => Ident -> m TypeTc
 lookupVarTy = fmap fst . lookupVar
 
 lookupFun :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
-lookupFun name = views functions (fromJust . Map.lookup name)
+lookupFun name = views Ctx.functions (fromJust . Map.lookup name)
 
 putSubst :: (MonadState Env m) => Subst -> m ()
 putSubst sub = modifying subst (`compose` sub)
@@ -503,43 +512,34 @@ instance TypeOf TypeRn where
 instance TypeOf LamArgTc where
     typeOf (LamArgX ty _) = ty
 
-freshTy :: TcM TypeTc
-freshTy = do
-    n <- use freshCounter
-    freshCounter += 1
-    pure $ Meta n
-
 unify ::
-    (MonadState Env m, MonadValidate [TcError] m, TypeOf a) =>
+    (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m, TypeOf a) =>
     SourceInfo ->
-    ExprRn ->
     TypeTc ->
     a ->
     m ()
-unify info currentExpr ty1 a = unify' info currentExpr ty1 (typeOf a)
+unify info ty1 a = unify' info ty1 (typeOf a)
 
 -- | Unify two types. The first argument type *must* the expected one!
 unify' ::
-    (MonadState Env m, MonadValidate [TcError] m) =>
+    (MonadState Env m, MonadValidate [TcError] m, MonadReader Ctx m) =>
     SourceInfo ->
-    ExprRn ->
     TypeTc ->
     TypeTc ->
     m ()
-unify' info currentExpr ty1 ty2 = case (ty1, ty2) of
-    (TyLitX _ lit1, TyLitX _ lit2)
-        | lit1 == lit2 -> pure ()
-        | otherwise -> void $ tyExpectedGot info currentExpr [ty1] ty2
-    (TyFunX _ l1 r1, TyFunX _ l2 r2) -> do
-        unless (length l1 == length l2) (void $ tyExpectedGot info currentExpr [ty1] ty2)
-        zipWithM_ (unify' info currentExpr) l1 l2
-        r1 <- applySt r1
-        r2 <- applySt r2
-        unify' info currentExpr r1 r2
-    (TypeX AnyX, _) -> pure ()
-    (_, TypeX AnyX) -> pure ()
-    (ty1, TypeX (MutableX ty2)) -> unify' info currentExpr ty1 ty2
-    (TypeX (MutableX ty1), ty2) -> unify' info currentExpr ty1 ty2
-    (TypeX (MetaTyVar n), ty1) -> putSubst $ singleton (MetaTyVar n) ty1
-    (ty1, TypeX (MetaTyVar n)) -> putSubst $ singleton (MetaTyVar n) ty1
-    (ty1, ty2) -> void $ tyExpectedGot info currentExpr [ty1] ty2
+unify' info ty1 ty2 = do
+    case (ty1, ty2) of
+        (TyLitX _ lit1, TyLitX _ lit2)
+            | lit1 == lit2 -> pure ()
+            | otherwise -> void $ tyExpectedGot info [ty1] ty2
+        (TyFunX _ l1 r1, TyFunX _ l2 r2) -> do
+            unless (length l1 == length l2) (void $ tyExpectedGot info [ty1] ty2)
+            zipWithM_ (unify' info) l1 l2
+            r1 <- applySt r1
+            r2 <- applySt r2
+            unify' info r1 r2
+        (TypeX AnyX, _) -> pure ()
+        (_, TypeX AnyX) -> pure ()
+        (ty1, TypeX (MutableX ty2)) -> unify' info ty1 ty2
+        (TypeX (MutableX ty1), ty2) -> unify' info ty1 ty2
+        (ty1, ty2) -> void $ tyExpectedGot info [ty1] ty2

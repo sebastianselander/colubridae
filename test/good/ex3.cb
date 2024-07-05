@@ -1,6 +1,7 @@
 def main () {
     let x = 10;
     let fibres = fib(x);
+    printInt(fibres);
 }
 
 def fib(n:int)    -> int {

@@ -3,9 +3,8 @@ module Main where
 import Compile (runCompile, showDebugs)
 import Data.Text.IO (hPutStrLn)
 import Relude hiding (null)
-import Options (cmdlineParser, Options (..))
 import Data.Text (null)
-
+import Options ( Options(..), cmdlineParser )
 main :: IO ()
 main = do
     Options {input, dumps} <- cmdlineParser

@@ -27,7 +27,6 @@ instance Substitution TypeTc where
         TyFunX info l r -> TyFunX info (fmap (apply sub) l) (apply sub r)
         TypeX AnyX -> Any
         TypeX (MutableX ty) -> Mut (apply sub ty)
-        TypeX (MetaTyVar n) -> fromMaybe (Meta n) $ findSubst (MetaTyVar n) sub
 
 instance Substitution ExprTc where
     apply :: Subst -> ExprTc -> ExprTc

@@ -42,15 +42,20 @@ library
     Frontend.Renamer.Monad
     Frontend.Renamer.Rn
     Frontend.Renamer.Types
+    Frontend.Renamer.Pretty
     Frontend.StatementCheck
     Frontend.TH
     Frontend.Typechecker.Subst
     Frontend.Typechecker.Tc
     Frontend.Typechecker.Types
+    Frontend.Typechecker.Ctx
+    Frontend.Typechecker.Pretty
     Frontend.Types
     Names
+    Rename
     Origin
     Utils
+    Options
 
   build-depends:
     , base
@@ -68,19 +73,18 @@ library
     , string-interpolate
     , syb
     , template-haskell
+    , optparse-applicative
 
   hs-source-dirs:   src
   default-language: GHC2021
 
 executable colubridae
   import:           warnings, extensions
-  other-modules:    Options
   main-is:          Main.hs
   build-depends:
     , colubridae
     , pretty-simple
     , relude
-    , optparse-applicative
 
   hs-source-dirs:   app
   default-language: GHC2021

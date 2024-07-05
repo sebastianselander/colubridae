@@ -18,12 +18,9 @@ import Frontend.Parser.Parse (parse)
 import Frontend.Renamer.Rn (rename)
 import Frontend.StatementCheck (check)
 import Frontend.Typechecker.Tc (tc)
-import Frontend.Types (pPretty)
 import Relude hiding (concatMap, concat, intercalate)
 import Text.Pretty.Simple (pShow)
-
-data Pass = Parse | Rename | StCheck | TypeCheck | Desugar | Llvm
-    deriving (Show, Ord, Eq)
+import Options(Pass(..))
 
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
@@ -42,18 +39,18 @@ log debug warnings = do
 compile :: String -> Text -> ExceptT Text (Writer DebugOutputs) Text
 compile fileName fileContents = do
     res <- liftEither $ left report $ parse fileName fileContents
-    log (Debug Parse (Just $ pPretty res) (toStrict $ pShow res)) []
+    log (Debug Parse Nothing (toStrict $ pShow res)) []
 
     (res, names) <- liftEither $ left report $ rename res
-    log (Debug Rename (Just $ pPretty res) (toStrict $ pShow res)) []
+    log (Debug Rename Nothing (toStrict $ pShow res)) []
 
     res <- liftEither $ left report $ check res
-    log (Debug StCheck (Just $ pPretty res) (toStrict $ pShow res)) []
+    log (Debug StCheck Nothing (toStrict $ pShow res)) []
 
     res <- case tc names res of
         (res, warnings) -> do
             res <- liftEither $ left report res
-            log (Debug TypeCheck (Just $ pPretty res) (toStrict $ pShow res)) (fmap report warnings)
+            log (Debug TypeCheck Nothing (toStrict $ pShow res)) (fmap report warnings)
             pure res
 
     res <- case desugar names res of

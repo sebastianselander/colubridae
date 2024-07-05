@@ -1,11 +1,13 @@
 {-# LANGUAGE ApplicativeDo #-}
 
-module Options (cmdlineParser, Options(..)) where
+module Options (cmdlineParser, Options(..), Pass(..)) where
 
-import Compile (Pass (..))
 import Data.Set qualified as Set
 import Options.Applicative
 import Relude
+
+data Pass = Parse | Rename | StCheck | TypeCheck | Desugar | Llvm
+    deriving (Show, Ord, Eq)
 
 data Options = Options
     { dumps :: Set Pass

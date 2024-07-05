@@ -104,7 +104,7 @@ rnExpr = \case
         pure $ WhileX a b stmts
     LoopX info block -> LoopX info <$> rnBlock block
     LamX info args body -> do
-        args <- rnLamArgs args
+        args <- reverse <$> rnLamArgs args
         body <- newContext $ rnExpr body
         pure $ LamX info args body
 

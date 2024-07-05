@@ -41,7 +41,7 @@ pArg :: Parser ArgPar
 pArg = do
     gs <- spanStart
     mut <- P.option Immutable $ lexeme (keyword "mut") $> Mutable
-    name <- identifier
+    name <- lexeme identifier
     lexeme (keyword ":")
     (ty, info) <- span gs pType
     pure (ArgX (info, mut) name ty)

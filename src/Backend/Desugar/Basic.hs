@@ -248,7 +248,6 @@ dsType = \case
     Tc.TyFunX NoExtField l r -> TyFun <$> mapM dsType l <*> dsType r
     Tc.TypeX (Tc.MutableX ty) -> Mut <$> dsType ty
     Tc.TypeX Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type of `return` and `break` so that they can be placed anywhere.
-    Tc.TypeX (Tc.MetaTyVar _) -> pure Unit -- TODO: Should not exist here
 
 true :: TyExpr
 true = Typed Bool $ Lit $ BoolLit True

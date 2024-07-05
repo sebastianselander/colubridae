@@ -1,4 +1,4 @@
-module Names (Ident (..), Names, mkNames, getOriginalName, existName, insertName) where
+module Names (Ident (..), Names, mkNames, getOriginalName, existName, insertName, getOriginalName') where
 
 import Data.Data (Data)
 import Data.Map qualified as Map
@@ -19,8 +19,11 @@ newtype Ident = Ident Text
 instance Pretty Ident where
   pretty (Ident name) = pretty name
 
-getOriginalName :: Ident -> Names -> Ident
-getOriginalName name names = fromJust $ Map.lookup name (unNames names)
+getOriginalName' :: Ident -> Names -> Ident
+getOriginalName' name names = fromJust $ Map.lookup name (unNames names)
+
+getOriginalName :: Ident -> Names -> Maybe Ident
+getOriginalName name names = Map.lookup name (unNames names)
 
 existName :: Ident -> Names -> Bool
 existName name names = Map.member name (unNames names)

@@ -7,12 +7,13 @@ import Data.Data (Data)
 import Frontend.Parser.Types
 import Relude
 import Frontend.Types
+import Prettyprinter
 
 data Boundedness = Free | Bound | Toplevel | Lambda | Argument
     deriving (Show, Eq, Ord, Data)
 
 instance Pretty Boundedness where
-    pPretty = show
+    pretty = show
 
 data Rn
     deriving (Data)

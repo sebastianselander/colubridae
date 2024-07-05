@@ -9,8 +9,7 @@ import Relude
 import System.Directory (listDirectory)
 import System.FilePath (dropExtensions)
 import Data.Text (pack, unpack)
-import System.Process (readProcess, readProcessWithExitCode)
-import System.Exit (ExitCode(..))
+import System.Process (readProcessWithExitCode)
 
 main :: IO ()
 main = do
@@ -42,7 +41,7 @@ testFile _ (input, Just output) = do
     let (a,_) = runCompile input content
     putStrLn "=========================================================="
     case a of
-        Left _ -> putStrLn ("Test: '" <> input <> "' failed.") >> pure False
+        Left err -> putStrLn ("Test: '" <> input <> "' failed with message: " <> unpack err) >> pure False
         Right res -> do
             content <- decodeUtf8 <$> readFileBS output
             putStrLn ("Running test for '" <> input <> "'")
