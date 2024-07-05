@@ -12,7 +12,7 @@ import Data.DList
 import Frontend.Renamer.Types qualified as Rn (Boundedness (..))
 import Frontend.Typechecker.Types (stmtType, varType)
 import Frontend.Typechecker.Types qualified as Tc
-import Frontend.Types (NoExtField (NoExtField), SugarStmtX (LoopX))
+import Frontend.Types (NoExtField (NoExtField))
 import Frontend.Types qualified as Tc
 import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
@@ -173,13 +173,13 @@ dsExpr = \case
         block <- dsBlock (emit . Typed Unit . Ass var ty') var block
         unnamed $ typed ty (While cond block)
         named $ pure $ Typed Unit (Var Bound var)
-    Tc.ExprX (LoopX (_info, ty) block) -> do
+    Tc.LoopX (_info, ty) block -> do
         ty' <- dsType ty
         var <- declare ty'
         block <- dsBlock (emit . Typed Unit . Ass var ty') var block
         unnamed $ typed ty (While true block)
         named $ pure $ Typed ty' (Var Bound var)
-    Tc.ExprX (Tc.LamX {}) -> pure $ Typed Unit Break
+    Tc.LamX {} -> pure $ Typed Unit Break
 
 dsBlock :: (TyExpr -> DsM ()) -> Ident -> Tc.BlockX Tc.Tc -> DsM [TyExpr]
 dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do

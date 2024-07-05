@@ -24,14 +24,12 @@ type TypeTc = TypeX Tc
 type LitTc = LitX Tc
 type StmtTc = StmtX Tc
 type BlockTc = BlockX Tc
-type SugarStmtTc = SugarStmtX Tc
 type LamArgTc = LamArgX Tc
 
 type TcInfo = (SourceInfo, TypeTc)
 type TcInfoBound = (SourceInfo, TypeTc, Boundedness)
 
 deriving instance Data StmtTc
-deriving instance Data SugarStmtTc
 deriving instance Data BlockTc
 deriving instance Data ExprTc
 deriving instance Data LitTc
@@ -62,7 +60,7 @@ type instance XPrefix Tc = TcInfo
 type instance XBinOp Tc = TcInfo
 type instance XExprStmt Tc = NoExtField
 type instance XApp Tc = TcInfo
-type instance XExpr Tc = SugarStmtTc
+type instance XExpr Tc = DataConCantHappen
 
 type instance XIntLit Tc = NoExtField
 type instance XDoubleLit Tc = NoExtField

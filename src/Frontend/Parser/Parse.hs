@@ -114,7 +114,7 @@ pLoop = P.label "loop" $ do
     lexeme (keyword "loop")
     body <- pBlock
     info <- spanEnd gs
-    pure $ Loop info body
+    pure $ LoopX info body
 
 pRet :: Parser ExprPar
 pRet = P.label "return" $ do
@@ -194,7 +194,7 @@ pLam = do
     args <- P.many lamArg
     keyword "->"
     info <- spanEnd gs
-    pure $ Lam info args
+    pure $ LamX info args
   where
     lamArg :: Parser LamArgPar
     lamArg =
@@ -342,5 +342,5 @@ putInfo p = do
         BreakX _ expr -> BreakX pos expr
         IfX _ cond true false -> IfX pos cond true false
         WhileX _ cond block -> WhileX pos cond block
-        Loop _ block -> Loop pos block
-        Lam _ args body -> Lam pos args body
+        LoopX _ block -> LoopX pos block
+        LamX _ args body -> LamX pos args body

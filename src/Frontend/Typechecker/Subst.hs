@@ -45,8 +45,8 @@ instance Substitution ExprTc where
         IfX ty condition true false ->
             IfX (apply sub ty) (apply sub condition) (apply sub true) (fmap (apply sub) false)
         WhileX ty condition block -> WhileX (apply sub ty) (apply sub condition) (apply sub block)
-        Loop ty block -> ExprX $ LoopX (apply sub ty) (apply sub block)
-        Lam ty args body -> Lam (apply sub ty) (apply sub args) (apply sub body)
+        LoopX ty block -> LoopX (apply sub ty) (apply sub block)
+        LamX ty args body -> LamX (apply sub ty) (apply sub args) (apply sub body)
 
 instance Substitution StmtTc where
     apply sub stmt = case stmt of

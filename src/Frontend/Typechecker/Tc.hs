@@ -142,8 +142,8 @@ breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e)
         RetX _ expr -> maybe [] breakExpr expr
         EBlockX _ block -> breaks block
         WhileX {} -> []
-        Loop {} -> []
-        Lam {} -> []
+        LoopX {} -> []
+        LamX {} -> []
 
 
 infExpr :: ExprRn -> TcM ExprTc
@@ -281,7 +281,7 @@ infExpr currentExpr = case currentExpr of
                 maybe (pure ()) (unify info currentExpr Unit) tail
                 mapM_ (\expr -> unify (hasInfo expr) currentExpr Unit expr) breakExprs
         pure $ WhileX (info, Unit) expr block
-    Loop info block -> do
+    LoopX info block -> do
         block <- tcBlock currentExpr Unit block
         ty <- case breaks block of
             [] -> pure Any
@@ -292,8 +292,8 @@ infExpr currentExpr = case currentExpr of
                         x
                         xs
                 typeOf <$> applySt x
-        applySt $ ExprX $ LoopX (info, ty) block
-    Lam info args body -> do
+        applySt $ LoopX (info, ty) block
+    LamX info args body -> do
         let insertArg (LamArgX (info, mut, ty) name) = do
                 let ty' = case mut of
                         Mutable -> fmap (Mut . typeOf) ty
@@ -305,7 +305,7 @@ infExpr currentExpr = case currentExpr of
         body <- infExpr body
         let ty = TyFunX NoExtField (fmap typeOf args) (typeOf body)
         args <- applySt args
-        pure $ Lam (info, ty) args body
+        pure $ LamX (info, ty) args body
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
 tcExpr expectedTy currentExpr = case currentExpr of
@@ -383,12 +383,12 @@ tcExpr expectedTy currentExpr = case currentExpr of
         while <- infExpr while
         unify info currentExpr expectedTy while
         pure while
-    loop@(Loop info _) -> do
+    loop@(LoopX info _) -> do
         loop <- infExpr loop
         unify info currentExpr expectedTy loop
         pure loop
     -- TODO: Type checking for lambdas
-    Lam info args body -> undefined 
+    LamX info args body -> undefined 
 
 hasInfo :: ExprTc -> SourceInfo
 hasInfo = \case
@@ -404,8 +404,8 @@ hasInfo = \case
     BreakX info _ -> fst info
     IfX info _ _ _ -> fst info
     WhileX info _ _ -> fst info
-    Loop info _ -> fst info
-    Lam info _ _ -> fst info
+    LoopX info _ -> fst info
+    LamX info _ _ -> fst info
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
@@ -489,8 +489,8 @@ instance TypeOf ExprTc where
         BreakX ty _ -> snd ty
         IfX ty _ _ _ -> snd ty
         WhileX ty _ _ -> snd ty
-        Loop ty _ -> snd ty
-        Lam ty _ _ -> snd ty
+        LoopX ty _ -> snd ty
+        LamX ty _ _ -> snd ty
 
 instance TypeOf BlockTc where
     typeOf (BlockX ty _ _) = snd ty

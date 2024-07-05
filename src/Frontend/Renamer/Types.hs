@@ -25,7 +25,6 @@ type TypeRn = TypeX Rn
 type LitRn = LitX Rn
 type StmtRn = StmtX Rn
 type BlockRn = BlockX Rn
-type SugarStmtRn = SugarStmtX Rn
 type LamArgRn = LamArgX Rn
 
 deriving instance Data ExprRn
@@ -36,7 +35,6 @@ deriving instance Data DefRn
 deriving instance Data TypeRn
 deriving instance Data BlockRn
 deriving instance Data StmtRn
-deriving instance Data SugarStmtRn
 deriving instance Data LamArgRn
 
 type instance XProgram Rn = XProgram Par
@@ -63,7 +61,7 @@ type instance XBinOp Rn = XBinOp Par
 type instance XPrefix Rn = XBinOp Par
 type instance XExprStmt Rn = XExprStmt Par
 type instance XApp Rn = XApp Par
-type instance XExpr Rn = SugarStmtX Rn
+type instance XExpr Rn = DataConCantHappen
 
 type instance XIntLit Rn = NoExtField
 type instance XDoubleLit Rn = NoExtField

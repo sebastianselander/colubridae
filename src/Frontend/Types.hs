@@ -1,7 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -139,6 +138,8 @@ data ExprX a
     | BreakX !(XBreak a) (Maybe (ExprX a))
     | IfX !(XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
     | WhileX !(XWhile a) (ExprX a) (BlockX a)
+    | LoopX !(XLoop a) (BlockX a)
+    | LamX !(XLam a) [LamArgX a] (ExprX a)
     | ExprX !(XExpr a)
 type family XExprStmt a
 type family XLit a
@@ -154,6 +155,15 @@ type family XBreak a
 type family XIf a
 type family XWhile a
 type family XExpr a
+
+data LamArgX a = LamArgX !(XLamArg a) Ident
+type family XLamArg a
+
+deriving instance (ForallX Show a) => Show (LamArgX a)
+deriving instance (ForallX Typeable a) => Typeable (LamArgX a)
+
+type family XLoop a
+type family XLam a
 
 deriving instance (ForallX Show a) => Show (ExprX a)
 deriving instance (ForallX Typeable a) => Typeable (ExprX a)
@@ -191,33 +201,6 @@ type family XStringLit a
 type family XCharLit a
 type family XBoolLit a
 type family XUnitLit a
-
-data SugarStmtX a
-    = LoopX (XLoop a) (BlockX a)
-    | LamX (XLam a) [LamArgX a] (ExprX a)
-
-data LamArgX a = LamArgX !(XLamArg a) Ident
-type family XLamArg a
-
-deriving instance (ForallX Show a) => Show (LamArgX a)
-deriving instance (ForallX Typeable a) => Typeable (LamArgX a)
-
-type family XLoop a
-type family XLam a
-deriving instance (ForallX Show a) => Show (SugarStmtX a)
-deriving instance (ForallX Typeable a) => Typeable (SugarStmtX a)
-
-pattern Loop :: (XExpr a1 ~ SugarStmtX a2) => XLoop a2 -> BlockX a2 -> ExprX a1
-pattern Loop info block <- ExprX (LoopX info block)
-    where
-        Loop info block = ExprX (LoopX info block)
-
-pattern Lam :: (XExpr a1 ~ SugarStmtX a2) => XLam a2 -> [LamArgX a2] -> ExprX a2 -> ExprX a1
-pattern Lam info args body <- ExprX (LamX info args body)
-    where
-        Lam info args body = ExprX (LamX info args body)
-
-{-# COMPLETE Lam, Loop #-}
 
 deriving instance (ForallX Show a) => Show (LitX a)
 deriving instance (ForallX Typeable a) => Typeable (LitX a)
@@ -313,12 +296,8 @@ instance (ForallX Pretty a) => Pretty (LitX a) where
 instance (ForallX Pretty a) => Pretty (BlockX a) where
     pPretty = prettyBlock
 
-instance (ForallX Pretty a) => Pretty (SugarStmtX a) where
-    pPretty (LoopX _ block) = "loop \n" <> pPretty block
-    pPretty (LamX _ args body) = "\\" <> unwords (fmap pPretty args) <> " -> " <> pPretty body
-
 instance (ForallX Pretty a) => Pretty (LamArgX a) where
-    pPretty (LamArgX ty name) = pPretty name
+    pPretty (LamArgX _ name) = pPretty name
 
 prettyProgram :: (ForallX Pretty a) => ProgramX a -> Text
 prettyProgram (ProgramX _ defs) = Text.intercalate "\n\n" (fmap prettyDef defs)
@@ -428,9 +407,14 @@ prettyExpr7 (WhileX _ cond block) =
         , prettyExpr1 cond
         , prettyBlock block
         ]
+prettyExpr7 (LoopX _ block) = "loop \n" <> pPretty block
+prettyExpr7 (LamX _ args body) = "\\" <> unwords (fmap pPretty args) <> " -> " <> pPretty body
+
+
 prettyStmt :: (ForallX Pretty a) => StmtX a -> Text
 prettyStmt (SExprX _ e) = prettyExpr1 e
 prettyStmt (StmtX a) = pPretty a
+
 
 prettyAssignOp :: AssignOp -> Text
 prettyAssignOp = \case

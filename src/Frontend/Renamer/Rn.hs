@@ -102,11 +102,11 @@ rnExpr = \case
         b <- rnExpr b
         stmts <- newContext $ rnBlock block
         pure $ WhileX a b stmts
-    Loop info block -> Loop info <$> rnBlock block
-    Lam info args body -> do
+    LoopX info block -> LoopX info <$> rnBlock block
+    LamX info args body -> do
         args <- rnLamArgs args
         body <- newContext $ rnExpr body
-        pure $ Lam info args body
+        pure $ LamX info args body
 
 rnLamArgs :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgPar] -> m [LamArgRn]
 rnLamArgs = foldM f mempty

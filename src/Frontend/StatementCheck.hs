@@ -67,8 +67,8 @@ breakExpr = \case
         breakBlock true
         mapM_ breakBlock false
     WhileX _ expr block -> breakExpr expr >> locally inLoop (const True) (breakBlock block)
-    Loop _ block -> locally inLoop (const True) (breakBlock block)
-    Lam _ _ body -> breakExpr body
+    LoopX _ block -> locally inLoop (const True) (breakBlock block)
+    LamX _ _ body -> breakExpr body
 
 
 returnBlock :: BlockRn -> ChM Bool
@@ -110,7 +110,7 @@ returnExpr = \case
                 unreachableStatement info >> maybe (pure False) returnBlock false
             | otherwise -> (&&) <$> returnBlock true <*> maybe (pure False) returnBlock false
     WhileX _ expr block -> if alwaysTrue expr then returnBlock block else pure False
-    ExprX (LoopX _ block) -> returnBlock block
+    LoopX _ block -> returnBlock block
 
 -- TODO: Make mini evaluator
 alwaysTrue :: ExprRn -> Bool
@@ -138,4 +138,4 @@ hasInfoExpr = \case
     BreakX info _ -> info
     IfX info _ _ _ -> info
     WhileX info _ _ -> info
-    ExprX (LoopX info _) -> info
+    LoopX info _ -> info

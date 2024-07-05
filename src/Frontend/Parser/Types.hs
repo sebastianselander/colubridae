@@ -53,7 +53,7 @@ type instance XIf Par = SourceInfo
 type instance XWhile Par = SourceInfo
 type instance XLet Par = (SourceInfo, Mutability, Maybe TypePar)
 type instance XAss Par = SourceInfo
-type instance XExpr Par = SugarStmtX Par
+type instance XExpr Par = DataConCantHappen
 
 type instance XIntLit Par = NoExtField
 type instance XDoubleLit Par = NoExtField
@@ -70,6 +70,5 @@ type instance XLoop Par = SourceInfo
 type instance XLam Par = SourceInfo
 type instance XLamArg Par = (SourceInfo, Mutability, Maybe TypePar)
 
-deriving instance Data (SugarStmtX Par)
 deriving instance Data (LamArgX Par)
     
