@@ -179,7 +179,7 @@ dsExpr = \case
         block <- dsBlock (emit . Typed Unit . Ass var ty') var block
         unnamed $ typed ty (While true block)
         named $ pure $ Typed ty' (Var Bound var)
-    Tc.LamX {} -> pure $ Typed Unit Break
+    Tc.LamX (info, ty) args body -> undefined
 
 dsBlock :: (TyExpr -> DsM ()) -> Ident -> Tc.BlockX Tc.Tc -> DsM [TyExpr]
 dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
@@ -284,5 +284,4 @@ dsBound = \case
     Rn.Free -> Free
     Rn.Bound -> Bound
     Rn.Toplevel -> Toplevel
-    Rn.Lambda -> Lambda
     Rn.Argument -> Argument

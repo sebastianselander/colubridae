@@ -9,7 +9,7 @@ import Relude
 import Frontend.Types
 import Prettyprinter
 
-data Boundedness = Free | Bound | Toplevel | Lambda | Argument
+data Boundedness = Free | Bound | Toplevel | Argument
     deriving (Show, Eq, Ord, Data)
 
 instance Pretty Boundedness where

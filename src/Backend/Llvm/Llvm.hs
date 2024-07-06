@@ -39,7 +39,6 @@ assembleExpr (Typed taggedType' expr) =
                     Free -> load taggedType $ Variable (Ptr taggedType) name
                     Bound -> load taggedType $ Variable (Ptr taggedType) name
                     Toplevel -> pure $ Global taggedType name
-                    Lambda -> pure $ Global taggedType name
                     Argument -> pure $ Variable taggedType name
             BinOp leftExpr operator rightExpr -> do
                 left <- assembleExpr leftExpr
