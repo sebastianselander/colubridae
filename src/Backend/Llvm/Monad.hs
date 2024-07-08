@@ -61,7 +61,7 @@ fresh = do
     pure $ Ident ("_" <> show n)
 
 call :: LlvmType -> Operand -> [Operand] -> IRBuilder Operand
-call ty function args = Variable ty <$> named (Call ty function args)
+call ty function args = LocalReference ty <$> named (Call ty function args)
 
 voidCall :: Operand -> [Operand] -> IRBuilder ()
 voidCall function args = emit $ Nameless $ Call I1 function args
@@ -82,7 +82,7 @@ rem :: LlvmType -> Operand -> Operand -> IRBuilder Operand
 rem = arith LlvmRem
 
 arith :: ArithOp -> LlvmType -> Operand -> Operand -> IRBuilder Operand
-arith op ty l r = Variable ty <$> named (Arith op ty l r)
+arith op ty l r = LocalReference ty <$> named (Arith op ty l r)
 
 named :: Instruction -> IRBuilder Ident
 named instr = do
@@ -94,7 +94,7 @@ unnamed :: Instruction -> IRBuilder ()
 unnamed instr = emit (Nameless instr)
 
 cmp :: CmpOp -> LlvmType -> Operand -> Operand -> IRBuilder Operand
-cmp op ty l r = Variable ty <$> named (Cmp op ty l r)
+cmp op ty l r = LocalReference ty <$> named (Cmp op ty l r)
 
 eq :: LlvmType -> Operand -> Operand -> IRBuilder Operand
 eq = cmp LlvmEq
@@ -115,21 +115,27 @@ le :: LlvmType -> Operand -> Operand -> IRBuilder Operand
 le = cmp LlvmLe
 
 and :: LlvmType -> Operand -> Operand -> IRBuilder Operand
-and ty l r = Variable ty <$> named (And ty l r)
+and ty l r = LocalReference ty <$> named (And ty l r)
 
 or :: LlvmType -> Operand -> Operand -> IRBuilder Operand
-or ty l r = Variable ty <$> named (Or ty l r)
+or ty l r = LocalReference ty <$> named (Or ty l r)
 
 alloca :: Ident -> LlvmType -> IRBuilder Operand
 alloca name ty = do
     emit $ Named name (Alloca ty)
-    pure $ Variable (Ptr ty) name
+    pure $ LocalReference (ptr ty) name
+
+malloc :: Operand -> IRBuilder Operand
+malloc operand = do
+    name <- fresh
+    emit $ Named name (Malloc operand)
+    pure $ LocalReference (ptr (typeOf operand)) name
 
 store :: Operand -> Operand -> IRBuilder ()
 store lop rop = unnamed (Store lop rop)
 
 load :: LlvmType -> Operand -> IRBuilder Operand
-load ty operand = Variable ty <$> named (Load operand)
+load ty operand = LocalReference ty <$> named (Load operand)
 
 ret :: Operand -> IRBuilder ()
 ret operand = unnamed (Ret operand)
@@ -157,3 +163,28 @@ br operand leftLbl rightLbl = unnamed (Br operand leftLbl rightLbl)
 
 jump :: Label -> IRBuilder ()
 jump lbl = unnamed (Jump lbl)
+
+-- | Does not work correctly for structure if gep is used nested
+gep :: Operand -> [Operand] -> IRBuilder Operand
+gep op ops = LocalReference (typeOf op) <$> named (GetElementPtr op ops)
+
+extractValue :: Operand -> [Word32] -> IRBuilder Operand
+extractValue operand indices = LocalReference (extractValueType (typeOf operand) indices) <$> named (ExtractValue operand indices)
+
+extractValueType :: LlvmType -> [Word32] -> LlvmType
+extractValueType ty [] = ty
+extractValueType ty (x:xs) = case ty of
+    ArrayType tys -> case maybeAt (fromIntegral x) tys of
+        Nothing -> error "Extract value: indexing outside structure"
+        Just ty -> extractValueType ty xs
+    ty -> error $ "Extract value: indexing in non-indexable structure" <> show ty
+
+
+ptr :: LlvmType -> LlvmType
+ptr = PointerType
+
+global :: LlvmType -> Ident -> Operand
+global ty = ConstantOperand . GlobalReference ty
+
+null :: LlvmType -> Operand
+null ty = ConstantOperand (LNull ty)

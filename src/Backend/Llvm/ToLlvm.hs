@@ -12,7 +12,7 @@ import Prettyprinter.Render.Text (renderStrict)
 import Relude
 
 llvmOut :: (Pretty a) => a -> Text
-llvmOut = (prelude <>) . renderStrict . layoutPretty defaultLayoutOptions . pretty
+llvmOut = (prelude <>) . renderStrict . layoutPretty (LayoutOptions {layoutPageWidth=Unbounded}) . pretty
 
 indentLevel :: Int
 indentLevel = 4
@@ -48,19 +48,24 @@ instance Pretty Decl where
 instance Pretty LlvmType where
     pretty = \case
         I64 -> "i64"
+        I32 -> "i32"
         I1 -> "i1"
         Float -> "double"
         I8 -> "i8"
-        Ptr ty -> pretty ty <> "*"
-        FunPtr ty tys -> pretty ty <> tupled (fmap pretty tys) <> "*"
+        PointerType ty -> pretty ty <> "*"
+        FunPtr ty tys ->  pretty ty <> tupled (fmap pretty tys) <> "*"
+        LlvmVoidPtr -> "ptr"
+        ArrayType tys -> braces $ concatWith (surround (comma <> space)) $ fmap pretty tys
 
-instance Pretty Literal where
+instance Pretty Constant where
     pretty = \case
-        LInt int -> show int
-        LDouble double -> show double
-        LBool bool -> show $ fromEnum bool
-        LChar _ -> error "TODO"
+        LInt _ int -> show int
+        LDouble _ double -> show double
+        LBool _ bool -> show (fromEnum bool)
+        LChar _ _ -> error "TODO"
         LUnit -> "1"
+        LNull _ -> "null"
+        GlobalReference _ name -> "@" <> pretty name
 
 instance Pretty Instruction where
     pretty = \case
@@ -73,15 +78,23 @@ instance Pretty Instruction where
         Store l r -> "store" <+> typed l <> "," <+> typed r
         Load operand -> do
                 let ty = case typeOf operand of
-                        Ptr ty -> ty
-                        _ -> error "Non-pointer"
+                            PointerType ty -> ty
+                            _ -> error "Non-pointer"
                 "load" <+> pretty ty <> "," <+> typed operand
         Ret operand -> "ret" <+> typed operand
         Label lbl -> pretty lbl <> ":"
         Comment cmnt -> ";" <+> pretty cmnt
         Br operand lbl1 lbl2 -> "br" <+> typed operand <> "," <+> "label %" <> pretty lbl1 <> "," <+> "label %" <> pretty lbl2
         Jump lbl -> "br label %" <> pretty lbl
+        GetElementPtr op ops -> case typeOf op of
+            PointerType ty -> "getelementptr" <+> pretty ty <> "," <+> typed op <> "," <+> commasep (fmap typed ops)
+            ty -> error $ "Non-pointer: '" <> show (pretty ty) <> "' can not be used in GEP"
+        ExtractValue operand indices -> "extractvalue" <+> typed operand <> "," <+> commasep (fmap pretty indices)
+        Malloc _ -> undefined
         Unreachable -> "unreachable"
+
+commasep :: [Doc ann] -> Doc ann
+commasep = concatWith (surround (comma <> space))
 
 typed :: (Pretty a, Typed a) => a -> Doc ann
 typed a = pretty (typeOf a) <+> pretty a
@@ -108,9 +121,8 @@ instance Pretty ArithOp where
 
 instance Pretty Operand where
     pretty = \case
-        Variable _ name -> "%" <> pretty name
-        Literal _ lit -> pretty lit
-        Global _ name -> "@" <> pretty name
+        LocalReference _ name -> "%" <> pretty name
+        ConstantOperand constant -> pretty constant
 
 instance (Pretty a) => Pretty (Named a) where
     pretty (Named name a) = "%" <> pretty name <+> "=" <+> pretty a

@@ -23,6 +23,8 @@ pType = \case
     Double -> "double"
     Bool -> "bool"
     Mut ty -> pType ty <> "?"
+    VoidPtr -> "void*"
+    Tuple tys -> braces (concatWith (surround (comma <> space)) (fmap pType tys))
     TyFun args ret ->
         sep
             [ "fn" <> parens (hcat (punctuate comma (fmap pType args)))
@@ -34,11 +36,11 @@ pLit :: Lit -> Doc ann
 pLit = \case
     IntLit lit -> show lit
     DoubleLit lit -> show lit
-    StringLit lit -> show lit
     CharLit lit -> show lit
     BoolLit True -> "true"
     BoolLit False -> "false"
     UnitLit -> "()"
+    NullLit -> "null"
 
 pBinOp :: BinOp -> Doc ann
 pBinOp = \case
@@ -88,7 +90,7 @@ pArg :: Arg -> Doc ann
 pArg (Arg name ty) = pIdent name <> ":" <+> pType ty
 
 pExpr :: TyExpr -> Doc ann
-pExpr (Typed _ expr) = go expr
+pExpr (Typed ty expr) = go expr
   where
     go = \case
         Lit lit -> pLit lit
@@ -125,3 +127,6 @@ pExpr (Typed _ expr) = go expr
                 <> "{"
                 <> indent 4 (hcat $ punctuate hardline (fmap pExpr exprs))
                 <> "}"
+        Closure fun freeVars -> braces (pExpr fun <> "," <+> brackets (concatWith (surround (comma <> space)) (fmap pExpr freeVars)))
+        PtrIndexing expr n -> pExpr expr <> brackets (show n)
+        StructIndexing expr n -> "get" <> parens (pExpr expr <> "," <+> show n)

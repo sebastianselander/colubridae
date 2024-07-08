@@ -24,6 +24,8 @@ data Type
     | Bool
     | Mut Type
     | TyFun [Type] Type
+    | Tuple [Type]
+    | VoidPtr
     deriving (Show, Eq, Ord, Data)
 
 data TyExpr = Typed Type Expr
@@ -41,9 +43,12 @@ data Expr
     | Break
     | If TyExpr [TyExpr] (Maybe [TyExpr])
     | While TyExpr [TyExpr]
+    | Closure TyExpr [TyExpr]
+    | PtrIndexing TyExpr Integer
+    | StructIndexing TyExpr Integer
     deriving (Show, Eq, Ord, Data)
 
-data Binding = Free | Bound | Toplevel | Argument
+data Binding = Free | Bound | Toplevel | Argument | GlblConst | Lambda
     deriving (Show, Eq, Ord, Data)
 
 data BinOp
@@ -68,8 +73,8 @@ data PrefixOp = Not | Neg
 data Lit
     = IntLit !Integer
     | DoubleLit !Double
-    | StringLit !Text
     | CharLit !Char
     | BoolLit !Bool
     | UnitLit
+    | NullLit
     deriving (Show, Eq, Ord, Data)
