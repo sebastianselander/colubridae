@@ -123,7 +123,7 @@ assembleExpr (Typed taggedType' expr) =
                 environmentPointer <- gep declaration [i64 1]
                 functionOperand <- assembleExpr fun
                 store functionOperand functionPointer
-                store (null LlvmVoidPtr) environmentPointer
+                store (null (PointerType LlvmVoid)) environmentPointer
                 -- TODO: Store all free variables in the malloc
                 -- TODO: 1. Calculate size needed for malloc
                 load taggedType declaration
@@ -138,6 +138,7 @@ assembleExpr (Typed taggedType' expr) =
 
 llvmType :: Type -> LlvmType
 llvmType = \case
+    Void -> LlvmVoid
     Unit -> I1
     String -> PointerType I8
     Char -> I8
@@ -147,7 +148,7 @@ llvmType = \case
     Mut ty -> llvmType ty
     TyFun args ret -> FunPtr (llvmType ret) (fmap llvmType args)
     Tuple tys -> ArrayType (fmap llvmType tys)
-    VoidPtr -> LlvmVoidPtr
+    Ptr ty -> PointerType (llvmType ty)
 
 assembleLit :: (Monad m) => Lit -> m Operand
 assembleLit = \case
@@ -156,7 +157,7 @@ assembleLit = \case
     CharLit char -> pure $ ConstantOperand (LChar I8 char)
     BoolLit bool -> pure $ ConstantOperand (LBool I1 bool)
     UnitLit -> pure $ ConstantOperand LUnit
-    NullLit -> pure $ ConstantOperand (LNull LlvmVoidPtr)
+    NullLit -> pure $ ConstantOperand (LNull (PointerType LlvmVoid))
 
 unit :: (Monad m) => m Operand
 unit = pure $ ConstantOperand LUnit

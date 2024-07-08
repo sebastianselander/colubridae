@@ -16,6 +16,7 @@ prettyDesugar = renderStrict . layoutPretty defaultLayoutOptions . pProgram
 
 pType :: Type -> Doc ann
 pType = \case
+    Void -> "void"
     Unit -> "()"
     String -> "string"
     Char -> "char"
@@ -23,7 +24,7 @@ pType = \case
     Double -> "double"
     Bool -> "bool"
     Mut ty -> pType ty <> "?"
-    VoidPtr -> "void*"
+    Ptr ty -> pType ty <> "*"
     Tuple tys -> braces (concatWith (surround (comma <> space)) (fmap pType tys))
     TyFun args ret ->
         sep

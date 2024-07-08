@@ -52,9 +52,11 @@ instance Pretty LlvmType where
         I1 -> "i1"
         Float -> "double"
         I8 -> "i8"
+        LlvmVoid -> "void"
+        PointerType (PointerType _) -> "ptr"
+        PointerType LlvmVoid -> "ptr"
         PointerType ty -> pretty ty <> "*"
         FunPtr ty tys ->  pretty ty <> tupled (fmap pretty tys) <> "*"
-        LlvmVoidPtr -> "ptr"
         ArrayType tys -> braces $ concatWith (surround (comma <> space)) $ fmap pretty tys
 
 instance Pretty Constant where

@@ -104,7 +104,7 @@ isMain _ = False
 dsDef :: Tc.DefTc -> DsM Def
 dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, ty) stmts tail)) = do
     assign nameCounter 0 -- Start the name counter from 0 for each local scope
-    args <- (Arg env VoidPtr :) <$> mapM dsArg args
+    args <- (Arg env (Ptr Void) :) <$> mapM dsArg args
     returnType <- dsType returnType
     case tail of
         Nothing -> mapM_ dsStmt stmts
@@ -146,19 +146,18 @@ dsExpr = \case
         l <- dsExpr l
         rs <- mapM dsExpr rs
         case l of
-            Typed _ (Var Toplevel _) -> do
-                named $ typed ty (App l (Typed VoidPtr (Lit NullLit) : rs))
+            Typed _ (Var Toplevel _) -> named $ typed ty (App l (Typed (Ptr Void) (Lit NullLit) : rs))
             Typed lty l -> do
-                let tupleTy = Tuple [lty, VoidPtr]
+                let tupleTy = Tuple [lty, Ptr Void]
                 let function = StructIndexing (Typed tupleTy l) 0
                 let env = StructIndexing (Typed tupleTy l) 1
-                named $ typed ty (App (Typed tupleTy function) (Typed VoidPtr env : rs))
+                named $ typed ty (App (Typed tupleTy function) (Typed (Ptr Void) env : rs))
     Tc.LetX info name expr -> do
         (list, expr) <- contextually $ dsExpr expr
         case expr of
             Typed _ (Var Toplevel _) -> do
                 varty <- dsType $ view varType info
-                let tupleTy = Tuple [varty, VoidPtr]
+                let tupleTy = Tuple [varty, Ptr Void]
                 unnamed
                     $ typed
                         (view stmtType info)
@@ -235,7 +234,7 @@ dsExpr = \case
                 Fn
                     Lifted
                     freshName
-                    (Arg env VoidPtr : args)
+                    (Arg env (Ptr Void) : args)
                     returnType
                     (declareFrees <> toList (lambdaBody `snoc` Typed returnType (Return expr)))
         modifying liftedLambdas (`snoc` liftedLambda)
@@ -253,7 +252,7 @@ env = Ident "env"
 lookupFree :: Ident -> Integer -> (Type, Ident) -> TyExpr
 lookupFree env n (ty, var) =
     Typed Unit
-        $ Let var ty (Just (Typed ty $ PtrIndexing (Typed VoidPtr (Var Argument env)) n))
+        $ Let var ty (Just (Typed ty $ PtrIndexing (Typed (Ptr (Ptr Void)) (Var Argument env)) n))
 
 freeVars :: TyExpr -> [(Type, Ident)]
 freeVars = listify' free
@@ -336,7 +335,7 @@ dsType = \case
     Tc.TyFunX NoExtField l r -> do
         ls <- mapM dsType l
         r <- dsType r
-        pure $ TyFun (VoidPtr : ls) r
+        pure $ TyFun (Ptr Void : ls) r
     Tc.TypeX (Tc.MutableX ty) -> Mut <$> dsType ty
     Tc.TypeX Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type of `return` and `break` so that they can be placed anywhere.
 
@@ -385,5 +384,5 @@ contextually m = do
     e <- m
     emits <- use expressions
     assign nameCounter nc
-    assign expressions exprs 
+    assign expressions exprs
     pure (emits, e)

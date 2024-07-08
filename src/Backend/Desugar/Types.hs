@@ -25,7 +25,8 @@ data Type
     | Mut Type
     | TyFun [Type] Type
     | Tuple [Type]
-    | VoidPtr
+    | Void
+    | Ptr Type
     deriving (Show, Eq, Ord, Data)
 
 data TyExpr = Typed Type Expr

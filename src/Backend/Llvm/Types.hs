@@ -54,7 +54,7 @@ data LlvmType
     | Float
     | I8
     | PointerType LlvmType
-    | LlvmVoidPtr
+    | LlvmVoid
     | ArrayType [LlvmType]
     | FunPtr LlvmType [LlvmType]
     deriving (Show)
