@@ -163,37 +163,39 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
         applySt $ BinOpX (info, retty) l op r
     AppX info l r -> do
         l <- infExpr l
-        case typeOf l of
-            TyFunX NoExtField argTys retTy -> do
-                let argTysLength = length argTys
-                let rLength = length r
-                if
-                    | argTysLength < rLength -> do
-                        retTy <-
-                            Any
-                                <$ tooManyArguments
-                                    info
-                                    argTysLength
-                                    rLength
-                        r <- mapM infExpr r
-                        pure $ AppX (info, retTy) l r
-                    | argTysLength > rLength -> do
-                        retTy <-
-                            Any
-                                <$ partiallyAppliedFunction
-                                    info
-                                    argTysLength
-                                    rLength
-                        r <- mapM infExpr r
-                        pure $ AppX (info, retTy) l r
-                    | otherwise -> do
-                        -- NOTE: argTys and r are of equal length
-                        r <- zipWithM tcExpr argTys r
-                        pure $ AppX (info, retTy) l r
-            ty -> do
-                retTy <- Any <$ applyNonFunction info ty
-                r <- mapM infExpr r
-                pure $ AppX (info, retTy) l r
+        let tcApp ty = case ty of
+                Mut ty -> tcApp ty
+                TyFunX NoExtField argTys retTy -> do
+                    let argTysLength = length argTys
+                    let rLength = length r
+                    if
+                        | argTysLength < rLength -> do
+                            retTy <-
+                                Any
+                                    <$ tooManyArguments
+                                        info
+                                        argTysLength
+                                        rLength
+                            r <- mapM infExpr r
+                            pure $ AppX (info, retTy) l r
+                        | argTysLength > rLength -> do
+                            retTy <-
+                                Any
+                                    <$ partiallyAppliedFunction
+                                        info
+                                        argTysLength
+                                        rLength
+                            r <- mapM infExpr r
+                            pure $ AppX (info, retTy) l r
+                        | otherwise -> do
+                            -- NOTE: argTys and r are of equal length
+                            r <- zipWithM tcExpr argTys r
+                            pure $ AppX (info, retTy) l r
+                ty -> do
+                    retTy <- Any <$ applyNonFunction info ty
+                    r <- mapM infExpr r
+                    pure $ AppX (info, retTy) l r
+        tcApp (typeOf l)
     LetX (info, mut, mbty) name expr -> do
         expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
         let ty = case mut of
