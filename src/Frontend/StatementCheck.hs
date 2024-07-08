@@ -70,7 +70,6 @@ breakExpr = \case
     LoopX _ block -> locally inLoop (const True) (breakBlock block)
     LamX _ _ body -> breakExpr body
 
-
 returnBlock :: BlockRn -> ChM Bool
 returnBlock (BlockX _ statements _) = returnStmts statements
 
@@ -111,6 +110,7 @@ returnExpr = \case
             | otherwise -> (&&) <$> returnBlock true <*> maybe (pure False) returnBlock false
     WhileX _ expr block -> if alwaysTrue expr then returnBlock block else pure False
     LoopX _ block -> returnBlock block
+    LamX {} -> pure False
 
 -- TODO: Make mini evaluator
 alwaysTrue :: ExprRn -> Bool
@@ -139,3 +139,4 @@ hasInfoExpr = \case
     IfX info _ _ _ -> info
     WhileX info _ _ -> info
     LoopX info _ -> info
+    LamX info _ _ -> info
