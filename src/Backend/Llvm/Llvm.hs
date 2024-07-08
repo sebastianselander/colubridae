@@ -44,7 +44,7 @@ assembleExpr (Typed taggedType' expr) =
                         op <- gep (global (ptr taggedType) name) [i32 0]
                         load taggedType op
                     Argument -> pure $ LocalReference taggedType name
-                    Lambda -> undefined
+                    Lambda -> error $ "TODO: lambda variable"
             BinOp leftExpr operator rightExpr -> do
                 left <- assembleExpr leftExpr
                 right <- assembleExpr rightExpr
@@ -126,6 +126,8 @@ assembleExpr (Typed taggedType' expr) =
                 store (null (PointerType LlvmVoid)) environmentPointer
                 -- TODO: Store all free variables in the malloc
                 -- TODO: 1. Calculate size needed for malloc
+                -- TODO: New constructor for the free variables, separate the
+                -- by the largest type, thus no extra pointer indirection 
                 load taggedType declaration
             PtrIndexing expr n -> do
                 -- TODO: Use this only for free varibles

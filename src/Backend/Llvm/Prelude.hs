@@ -10,6 +10,7 @@ prelude = [i|
 target triple = "x86_64-pc-linux-gnu"
 
 declare i32 @printf(ptr, ...)
+declare ptr @malloc(i64)
 
 @#{globalUnit} = internal constant i1 1
 
