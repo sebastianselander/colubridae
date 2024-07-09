@@ -135,8 +135,8 @@ assembleExpr (Typed taggedType' expr) =
                         mem <- malloc (ptr blindPtr) (i64 (length env * 8))
                         forM_ (zip [0..] env) $ \(index, Typed ty expr) -> do
                             gepOperand <- gep mem [i32 @Integer index]
-                            name <- fresh
-                            alloced <- alloca name (llvmType ty)
+                            comment "Hard coded to 8 size for now, will not work for any type larger at the moment"
+                            alloced <- malloc (ptr (llvmType ty)) (i32 $ sizeOf $ llvmType ty) -- TODO: Adapt size to the structure stored
                             operand <- assembleExpr (Typed ty expr)
                             store operand alloced
                             store alloced gepOperand
@@ -153,11 +153,27 @@ assembleExpr (Typed taggedType' expr) =
                 extractValue operand [fromInteger n]
             ExtractFree bindName envName index -> do
                 operand <- gep (localRef (ptr blindPtr) envName) [i32 index]
+                operand <- gep operand [i32 @Integer 0]
                 operand <- load (ptr taggedType) operand
                 operand <- load taggedType operand
                 variable <- alloca bindName taggedType 
                 store operand variable
                 pure variable
+
+
+sizeOf :: LlvmType -> Integer
+sizeOf = \case
+    I64 -> 8
+    I32 -> 8
+    I1 -> 8
+    Float -> 8
+    I8 -> 8
+    PointerType _ -> 8
+    BlindPointerType -> 8
+    LlvmVoid -> 8
+    StructType types -> sum (fmap sizeOf types)
+    ArrayType n ty -> n * sizeOf ty
+    FunPtr _ _ -> 8
 
 llvmType :: Type -> LlvmType
 llvmType = \case
