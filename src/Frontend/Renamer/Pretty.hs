@@ -30,10 +30,11 @@ instance Pretty BlockRn where
                 <> Pretty.indent
                     4
                     ( Pretty.concatWith (Pretty.surround Pretty.hardline) (fmap Pretty.pretty stmts)
-                        <> maybe Pretty.emptyDoc Pretty.pretty tail
+                        <> maybe Pretty.emptyDoc (\x -> Pretty.hardline <> Pretty.pretty x) tail
                     )
                 <> Pretty.hardline
             )
+
 instance Pretty DataConCantHappen where
     pretty _ = error "absurd"
 
