@@ -154,7 +154,7 @@ combineRn info msg = mconcat [reportSourceInfo info, ":\n", indent 2 ("* " <> ms
 combineTc :: SourceInfo -> [ExprRn] -> Text -> Text
 combineTc info expr msg =
     let lastExpr = viaNonEmpty last expr
-        line = fmap (subtract 1 . unPos . fst . start) info.spanInfo
+        line = Nothing --fmap (subtract 1 . unPos . fst . start) info.spanInfo
      in mconcat
             [ "\n"
             , reportSourceInfo info
