@@ -191,7 +191,7 @@ pLam :: Parser (ExprPar -> ExprPar)
 pLam = do
     gs <- spanStart
     keyword "\\"
-    args <- P.many lamArg
+    args <- lexeme $ P.many lamArg
     keyword "->"
     info <- spanEnd gs
     pure $ LamX info args
@@ -266,6 +266,7 @@ pExprAtom =
         , pRet
         , pLoop
         , pBreak
+        , EBlockX NoExtField <$> pBlock
         , pLit
         , pLet
         , pVar
