@@ -5,7 +5,7 @@
 
 module Frontend.Typechecker.Tc where
 
-import Control.Lens.Getter (use, uses, view, views)
+import Control.Lens.Getter (uses, view, views)
 import Control.Lens.Setter (locally, modifying)
 import Control.Lens.TH
 import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
@@ -15,7 +15,6 @@ import Data.Map.Strict qualified as Map
 import Frontend.Builtin (builtIns)
 import Frontend.Error
 import Frontend.Renamer.Types
-import Frontend.Typechecker.Subst
 import Frontend.Typechecker.Types
 import Frontend.Types
 import Names (Ident, Names, getOriginalName')
@@ -25,9 +24,8 @@ import Utils (chain, listify')
 import Frontend.Typechecker.Ctx qualified as Ctx
 import Frontend.Typechecker.Ctx (Ctx)
 
-data Env = Env
+newtype Env = Env
     { _variables :: Map Ident (TypeTc, SourceInfo)
-    , _subst :: Subst
     }
     deriving (Show)
 
@@ -77,7 +75,7 @@ tcDefs names funTable fun@(Fn _ _ args rt _) =
                 mempty
                 args
         ctx = Ctx.Ctx (Map.union builtIns funTable) (typeOf rt) fun [] names
-        env = Env varTable nullSubst
+        env = Env varTable
      in run ctx env $ go fun
   where
     go (Fn _ name args rt block) =
@@ -92,7 +90,7 @@ tcDefs names funTable fun@(Fn _ _ args rt _) =
                 BlockX info stmts Nothing -> do
                     stmts <- mapM infStmt stmts
                     pure $ BlockX (info, Any) stmts Nothing
-            Fn NoExtField name args retTy <$> applySt block
+            pure (Fn NoExtField name args retTy block)
 
 infBlock :: BlockRn -> TcM BlockTc
 infBlock (BlockX info statements tailExpression) = do
@@ -160,7 +158,7 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
         l <- tcExpr typeOfOp l
         r <- tcExpr typeOfOp r
         let retty = operatorReturnType (operatorType op) op
-        applySt $ BinOpX (info, retty) l op r
+        pure $ BinOpX (info, retty) l op r
     AppX info l r -> do
         l <- infExpr l
         let tcApp ty = case ty of
@@ -202,11 +200,11 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                 Mutable -> Mut (typeOf expr)
                 Immutable -> typeOf expr
         insertVar name ty info
-        applySt $ LetX (StmtType Unit ty info) name expr
+        pure $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         (ty, info) <- case bind of
             Toplevel ->
-                assignNonVariable @TcM info 
+                assignNonVariable @TcM info
                     <$> views Ctx.names (getOriginalName' name)
                     >> pure (Any, info)
             _ -> lookupVar name
@@ -217,7 +215,7 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                 Any <$ immutableVariable @TcM info name
         expr <- tcExpr ty expr
         unify info ty expr
-        ty <- applySt ty
+        ty <- pure ty
         case op of
             AddAssign ->
                 unless
@@ -279,8 +277,8 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                         (\expr1 expr2 -> unify (hasInfo expr2) (typeOf expr1) expr2)
                         x
                         xs
-                typeOf <$> applySt x
-        applySt $ LoopX (info, ty) block
+                pure (typeOf x)
+        pure $ LoopX (info, ty) block
     LamX info args body -> do
         let insertArg (LamArgX (info, mut, ty) name) = do
                 let ty' = case mut of
@@ -292,7 +290,6 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
         args <- mapM insertArg args
         body <- infExpr body
         let ty = TyFunX NoExtField (fmap typeOf args) (typeOf body)
-        args <- applySt args
         pure $ LamX (info, ty) args body
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
@@ -301,7 +298,7 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
         let (ty, lit') = infLit lit
         let literal = LitX (info, ty) lit'
         void $ unify info expectedTy literal
-        applySt literal
+        pure literal
     VarX (info, bind) name -> do
         (ty, _declaredAtInfo) <- case bind of
             Free -> lookupVar name
@@ -310,7 +307,7 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
         let expr = VarX (info, ty, bind) name
         unify info expectedTy expr
-        applySt expr
+        pure expr
     PrefixX info op expr -> do
         case op of
             Not -> do
@@ -330,11 +327,11 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
         let retty = operatorReturnType (operatorType op) op
         let expr = BinOpX (info, retty) l op r
         unify info expectedTy expr
-        applySt expr
+        pure expr
     AppX info fun args -> do
         expr <- infExpr (AppX info fun args)
         unify info expectedTy expr
-        applySt expr
+        pure expr
     LetX (info, mut, mbty) name expr -> do
         expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
         let ty = case mut of
@@ -342,11 +339,11 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
                 Immutable -> typeOf expr
         unify' info expectedTy Unit
         insertVar name ty info
-        applySt $ LetX (StmtType Unit ty info) name expr
+        pure $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
         expr <- infExpr (AssX (info, bind) name op expr)
         unify info expectedTy expr
-        applySt expr
+        pure expr
     RetX info expr -> do
         returnType <- view Ctx.returnType
         case expr of
@@ -355,7 +352,7 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
                 pure $ RetX (info, Any) Nothing
             Just expr -> do
                 expr <- tcExpr returnType expr
-                applySt $ RetX (info, Any) (Just expr)
+                pure $ RetX (info, Any) (Just expr)
     EBlockX NoExtField block -> do
         block <- tcBlock expectedTy block
         pure $ EBlockX NoExtField block
@@ -371,10 +368,10 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
         while <- infExpr while
         unify info expectedTy while
         pure while
-    loop@(LoopX info _) -> do
-        loop <- infExpr loop
-        unify info expectedTy loop
-        pure loop
+    LoopX info block -> do
+        block <- tcBlock expectedTy block
+        mapM_ (unify info expectedTy) (breaks block)
+        pure $ LoopX (info, expectedTy) block
     LamX info args body -> do
         case expectedTy of
             TyFunX NoExtField argtys retty
@@ -469,14 +466,6 @@ lookupVarTy = fmap fst . lookupVar
 lookupFun :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
 lookupFun name = views Ctx.functions (fromJust . Map.lookup name)
 
-putSubst :: (MonadState Env m) => Subst -> m ()
-putSubst sub = modifying subst (`compose` sub)
-
-applySt :: (MonadState Env m, Substitution a) => a -> m a
-applySt a = do
-    sub <- use subst
-    pure $ apply sub a
-
 class TypeOf a where
     typeOf :: a -> TypeTc
 
@@ -535,8 +524,6 @@ unify' info ty1 ty2 = do
         (TyFunX _ l1 r1, TyFunX _ l2 r2) -> do
             unless (length l1 == length l2) (void $ tyExpectedGot info [ty1] ty2)
             zipWithM_ (unify' info) l1 l2
-            r1 <- applySt r1
-            r2 <- applySt r2
             unify' info r1 r2
         (TypeX AnyX, _) -> pure ()
         (_, TypeX AnyX) -> pure ()

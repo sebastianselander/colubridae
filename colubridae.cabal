@@ -45,7 +45,6 @@ library
     Frontend.Renamer.Pretty
     Frontend.StatementCheck
     Frontend.TH
-    Frontend.Typechecker.Subst
     Frontend.Typechecker.Tc
     Frontend.Typechecker.Types
     Frontend.Typechecker.Ctx
