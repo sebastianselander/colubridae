@@ -11,6 +11,10 @@ import Prettyprinter (Doc, Pretty, (<+>))
 import Prettyprinter qualified as Pretty
 import Relude
 
+prettyRenamer :: Pretty a => a -> Text
+prettyRenamer = show . Pretty.pretty
+
+
 instance Pretty ProgramRn where
     pretty (ProgramX NoExtField defs) = Pretty.concatWith (Pretty.surround Pretty.hardline) (fmap Pretty.pretty defs)
 

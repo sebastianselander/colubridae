@@ -63,7 +63,7 @@ rnExpr = \case
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
-                =<< maybe (fmap (Argument,) <$> boundArg variable) (pure . Just)
+                =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
         pure $ VarX (info, bind) name
     PrefixX info op expr -> PrefixX info op <$> rnExpr expr
@@ -149,7 +149,6 @@ eqAlphaArg (ArgX _ name1 _) (ArgX _ name2 _) = name1 == name2
 
 eqAlphaLamArg :: forall a b. LamArgX a -> LamArgX b -> Bool
 eqAlphaLamArg (LamArgX _ name1) (LamArgX _ name2) = name1 == name2
-
 
 rnType :: (Monad m) => TypePar -> m TypeRn
 rnType = pure . coerceType

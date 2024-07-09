@@ -13,7 +13,7 @@ data Def = Fn !Origin Ident [Arg] Type [TyExpr]
          | StaticString Ident Type Text
     deriving (Show, Eq, Ord, Data)
 
-data Arg = Arg Ident Type
+data Arg = Arg Ident Type | EnvArg Type
     deriving (Show, Eq, Ord, Data)
 
 data Type

@@ -9,6 +9,7 @@ import Backend.Llvm.Types
 import Control.Lens.Getter (view)
 import Control.Lens.Setter (assign, locally)
 import Relude hiding (null, Type, and, div, or, rem)
+import Names (Ident (..))
 
 assemble :: Program -> Ir
 assemble (Program defs) = Ir <$> runAssembler $ mapM assembleDecl defs
@@ -22,13 +23,21 @@ assembleDecl (Main block) = do
     LlvmMain <$> extractInstructions
 assembleDecl (Fn origin name arguments returnType' block) = do
     assign instructions emptyInstructions
-    args <- mapM assembleArg arguments
     let returnType = llvmType returnType'
+    args <- mapM assembleArg arguments
     mapM_ assembleExpr block
     Define origin name args returnType <$> extractInstructions
 
-assembleArg :: (Monad m) => Arg -> m Operand
-assembleArg (Arg name ty) = pure $ LocalReference (llvmType ty) name
+assembleArg :: Arg -> IRBuilder Operand
+assembleArg (EnvArg ty) = pure $ LocalReference (llvmType ty) (Ident "env")
+assembleArg (Arg name ty) = do
+    let arg = LocalReference (llvmType ty) (mkArgName name)
+    fakeArg <- alloca name (llvmType ty)
+    store arg fakeArg
+    pure arg
+
+mkArgName :: Ident -> Ident
+mkArgName (Ident name) = Ident $ name <> ".arg"
 
 assembleExpr :: TyExpr -> IRBuilder Operand
 assembleExpr (Typed taggedType' expr) =

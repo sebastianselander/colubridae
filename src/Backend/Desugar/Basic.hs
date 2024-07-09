@@ -10,7 +10,7 @@ import Control.Lens (makeLenses)
 import Control.Lens.Getter (use, view)
 import Control.Lens.Setter (assign, modifying)
 import Data.DList
-import Data.List (nub)
+import Data.List (nub, (\\))
 import Data.Text qualified as Text
 import Frontend.Renamer.Types qualified as Rn (Boundedness (..))
 import Frontend.Typechecker.Types (stmtType, varType)
@@ -21,7 +21,6 @@ import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify')
-import Language.Haskell.TH (staticE)
 import Data.Tuple.Extra (uncurry3)
 
 data Env = Env
@@ -106,9 +105,9 @@ isMain (Tc.Fn NoExtField (Ident "main") _ _ _) = True
 isMain _ = False
 
 dsDef :: Tc.DefTc -> DsM Def
-dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, ty) stmts tail)) = do
+dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, _) stmts tail)) = do
     assign nameCounter 0 -- Start the name counter from 0 for each local scope
-    args <- (Arg env (Ptr Void) :) <$> mapM dsArg args
+    args <- (EnvArg (Ptr Void) :) <$> mapM dsArg args
     returnType <- mkClosureType returnType
     case tail of
         Nothing -> mapM_ dsStmt stmts
@@ -145,11 +144,11 @@ dsExpr = \case
         l <- dsExpr l
         let op' = dsBinOp op
         r <- dsExpr r
-        named $ typed ty (BinOp l op' r)
+        typed ty (BinOp l op' r)
     Tc.PrefixX (_info, ty) op expr -> do
         let op' = dsPrefixOp op
         expr <- dsExpr expr
-        named $ typed ty (PrefixOp op' expr)
+        typed ty (PrefixOp op' expr)
     Tc.AppX (_info, ty) l rs -> do
         l <- dsExpr l
         rs <- mapM dsExpr rs
@@ -236,7 +235,7 @@ dsExpr = \case
                     <> show nonFunTy
                     <> "' on lambda when lifting"
         (lambdaBody, expr) <- contextually $ dsExpr body
-        let freeVariables = sort $ nub $ concatMap freeVars (expr : toList lambdaBody)
+        let freeVariables = sort $ nub $ concatMap (freeVars (boundArgs args)) (expr : toList lambdaBody)
         let declareFrees = zipWith (lookupFree env) [0 ..] freeVariables
         closureTy <- mkClosureType ty
         modifying
@@ -245,7 +244,7 @@ dsExpr = \case
                 Fn
                     Lifted
                     freshName
-                    (Arg env (Ptr Void) : args)
+                    (EnvArg (Ptr Void) : args)
                     returnType
                     (declareFrees <> toList (lambdaBody `snoc` Typed returnType (Return expr)))
             )
@@ -256,6 +255,12 @@ dsExpr = \case
                     (Typed ty' (Var Toplevel freshName))
                     (fmap (\(ty, name) -> Typed ty (Var Free name)) freeVariables)
                 )
+
+boundArgs :: [Arg] -> [(Type, Ident)]
+boundArgs [] = []
+boundArgs (x:xs) = case x of
+    Arg name ty -> (ty,name) : boundArgs xs
+    _ -> boundArgs xs
 
 mkClosureType :: Monad m => Tc.TypeTc -> m Type
 mkClosureType (Tc.TyFunX NoExtField ls r) = do
@@ -287,10 +292,11 @@ env = Ident "env"
 lookupFree :: Ident -> Integer -> (Type, Ident) -> TyExpr
 lookupFree env n (ty, var) = Typed ty $ ExtractFree var env n
 
-freeVars :: TyExpr -> [(Type, Ident)]
-freeVars = listify' free
+freeVars :: [(Type, Ident)] -> TyExpr -> [(Type, Ident)]
+freeVars xs expr = listify' free expr \\ xs
   where
     free (Typed ty (Var Free name)) = Just (ty, name)
+    free (Typed ty (Var Argument name)) = Just (ty, name)
     free _ = Nothing
 
 mkArg :: (Monad m) => Tc.LamArgTc -> m Arg
@@ -398,7 +404,6 @@ dsBound = \case
     Rn.Free -> Free
     Rn.Bound -> Bound
     Rn.Toplevel -> Toplevel
-    Rn.Argument -> Argument
 
 contextually :: DsM a -> DsM (DList TyExpr, a)
 contextually m = do

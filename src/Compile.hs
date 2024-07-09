@@ -21,6 +21,7 @@ import Frontend.Typechecker.Tc (tc)
 import Relude hiding (concatMap, concat, intercalate)
 import Text.Pretty.Simple (pShow)
 import Options(Pass(..))
+import Frontend.Renamer.Pretty (prettyRenamer)
 
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
@@ -42,7 +43,7 @@ compile fileName fileContents = do
     log (Debug Parse Nothing (toStrict $ pShow res)) []
 
     (res, names) <- liftEither $ left report $ rename res
-    log (Debug Rename Nothing (toStrict $ pShow res)) []
+    log (Debug Rename (Just $ prettyRenamer res) (toStrict $ pShow res)) []
 
     res <- liftEither $ left report $ check res
     log (Debug StCheck Nothing (toStrict $ pShow res)) []

@@ -144,7 +144,6 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
         (ty, _declaredAtInfo) <- case bind of
             Free -> lookupVar name
             Bound -> lookupVar name
-            Argument -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
         pure $ VarX (info, ty, bind) name
     PrefixX info Neg expr -> do
@@ -303,7 +302,6 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
         (ty, _declaredAtInfo) <- case bind of
             Free -> lookupVar name
             Bound -> lookupVar name
-            Argument -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
         let expr = VarX (info, ty, bind) name
         unify info expectedTy expr
