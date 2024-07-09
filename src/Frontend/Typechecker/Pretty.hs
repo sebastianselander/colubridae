@@ -32,7 +32,7 @@ instance Pretty BlockTc where
         Pretty.braces
             ( Pretty.hardline
                 <> Pretty.concatWith (Pretty.surround Pretty.hardline) (fmap Pretty.pretty stmts)
-                <> maybe Pretty.emptyDoc Pretty.pretty tail
+                <> maybe Pretty.emptyDoc (\x -> Pretty.hardline <> Pretty.pretty x) tail
             )
 instance Pretty DataConCantHappen where
   pretty _ = error "absurd"
