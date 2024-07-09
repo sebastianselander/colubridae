@@ -25,7 +25,8 @@ pType = \case
     Bool -> "bool"
     Mut ty -> pType ty <> "?"
     Ptr ty -> pType ty <> "*"
-    Tuple tys -> braces (concatWith (surround (comma <> space)) (fmap pType tys))
+    Struct tys -> braces (concatWith (surround (comma <> space)) (fmap pType tys))
+    Array size ty -> brackets $ show size <+> "x" <+> pType ty
     TyFun args ret ->
         sep
             [ "fn" <> parens (hcat (punctuate comma (fmap pType args)))
@@ -68,6 +69,7 @@ pProgram :: Program -> Doc ann
 pProgram (Program defs) = hcat (punctuate hardline (fmap pDef defs))
 
 pDef :: Def -> Doc ann
+pDef (StaticString name ty str) = "const" <+> pretty name <> ":" <+> pType ty <+> "=" <+> pretty str
 pDef (Main exprs) = pDef (Fn Top (Ident "main") [] Unit exprs)
 pDef (Fn _ name args typ exprs) =
     concatWith
@@ -129,5 +131,5 @@ pExpr (Typed ty expr) = go expr
                 <> indent 4 (hcat $ punctuate hardline (fmap pExpr exprs))
                 <> "}"
         Closure fun freeVars -> braces (pExpr fun <> "," <+> brackets (concatWith (surround (comma <> space)) (fmap pExpr freeVars)))
-        PtrIndexing expr n -> pExpr expr <> brackets (show n)
         StructIndexing expr n -> "get" <> parens (pExpr expr <> "," <+> show n)
+        ExtractFree bindName envName index -> "let" <+> pretty bindName <+> "=" <+> pretty envName <> brackets (show index)

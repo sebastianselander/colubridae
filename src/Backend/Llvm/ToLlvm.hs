@@ -24,6 +24,7 @@ instance Pretty Ir where
     pretty (Ir decls) = hcat $ punctuate (hardline <> hardline) $ fmap pretty decls
 
 instance Pretty Decl where
+    pretty (GlobalString name ty string) = "@" <> pretty name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
     pretty (LlvmMain instr) =
         "define void @main()"
             <+> lbrace
@@ -52,12 +53,15 @@ instance Pretty LlvmType where
         I1 -> "i1"
         Float -> "double"
         I8 -> "i8"
+        ArrayType size ty -> brackets $ show size <+> "x" <+> pretty ty
         LlvmVoid -> "void"
-        PointerType (PointerType _) -> "ptr"
+        PointerType BlindPointerType -> "ptr"
         PointerType LlvmVoid -> "ptr"
+        PointerType (PointerType _) -> "ptr"
         PointerType ty -> pretty ty <> "*"
+        BlindPointerType -> "ptr"
         FunPtr ty tys ->  pretty ty <> tupled (fmap pretty tys) <> "*"
-        ArrayType tys -> braces $ concatWith (surround (comma <> space)) $ fmap pretty tys
+        StructType tys -> braces $ concatWith (surround (comma <> space)) $ fmap pretty tys
 
 instance Pretty Constant where
     pretty = \case
@@ -71,6 +75,7 @@ instance Pretty Constant where
 
 instance Pretty Instruction where
     pretty = \case
+        Blankline -> hardline
         Call ty fun args -> "call" <+> pretty ty <+> pretty fun <> tupled (fmap typed args)
         Arith operator ty l r -> pretty operator <+> pretty ty <+> pretty l <> "," <+> pretty r
         Cmp operator _ l r -> "icmp" <+> pretty operator <+> pretty (typeOf l) <+> pretty l <> "," <+> pretty r
@@ -81,6 +86,7 @@ instance Pretty Instruction where
         Load operand -> do
                 let ty = case typeOf operand of
                             PointerType ty -> ty
+                            BlindPointerType -> BlindPointerType
                             _ -> error "Non-pointer"
                 "load" <+> pretty ty <> "," <+> typed operand
         Ret operand -> "ret" <+> typed operand
@@ -92,7 +98,7 @@ instance Pretty Instruction where
             PointerType ty -> "getelementptr" <+> pretty ty <> "," <+> typed op <> "," <+> commasep (fmap typed ops)
             ty -> error $ "Non-pointer: '" <> show (pretty ty) <> "' can not be used in GEP"
         ExtractValue operand indices -> "extractvalue" <+> typed operand <> "," <+> commasep (fmap pretty indices)
-        Malloc _ -> undefined
+        Malloc operand -> "call ptr @malloc" <> parens (typed operand)
         Unreachable -> "unreachable"
 
 commasep :: [Doc ann] -> Doc ann

@@ -21,12 +21,15 @@ import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify')
+import Language.Haskell.TH (staticE)
+import Data.Tuple.Extra (uncurry3)
 
 data Env = Env
     { _expressions :: DList TyExpr
     , _names :: Names
     , _nameCounter :: Int
-    , _liftedLambdas :: DList Def
+    , _lifted :: DList Def
+    , _staticStrings :: [(Ident, Type, Text)]
     }
 
 $(makeLenses ''Env)
@@ -35,7 +38,7 @@ newtype DsM a = DsM {runDsm :: StateT Env (Reader (TyExpr -> DsM ())) a}
     deriving (Functor, Applicative, Monad, MonadState Env, MonadReader (TyExpr -> DsM ()))
 
 run :: (TyExpr -> DsM ()) -> Names -> Int -> DsM a -> (a, Env)
-run f names n = flip runReader f . flip runStateT (Env mempty names n mempty) . runDsm
+run f names n = flip runReader f . flip runStateT (Env mempty names n mempty mempty) . runDsm
 
 emit :: TyExpr -> DsM ()
 emit expr = modifying expressions (`snoc` expr)
@@ -94,8 +97,9 @@ basicDesugar names = fst . run (const $ pure ()) names 0 . dsProgram
 dsProgram :: Tc.ProgramTc -> DsM Program
 dsProgram (Tc.ProgramX Tc.NoExtField defs) = do
     defs <- mapM dsDef defs
-    lifteds <- use liftedLambdas
-    pure $ Program $ toList lifteds <> defs
+    lifteds <- use lifted
+    strings <- use staticStrings
+    pure $ Program $ fmap (uncurry3 StaticString) strings <> toList lifteds <> defs
 
 isMain :: Tc.DefTc -> Bool
 isMain (Tc.Fn NoExtField (Ident "main") _ _ _) = True
@@ -105,7 +109,7 @@ dsDef :: Tc.DefTc -> DsM Def
 dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, ty) stmts tail)) = do
     assign nameCounter 0 -- Start the name counter from 0 for each local scope
     args <- (Arg env (Ptr Void) :) <$> mapM dsArg args
-    returnType <- dsType returnType
+    returnType <- mkClosureType returnType
     case tail of
         Nothing -> mapM_ dsStmt stmts
         Just tail -> do
@@ -113,7 +117,7 @@ dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, ty) stmts ta
             tail <- dsExpr tail
             if isMain def
                 then void (unnamed (pure tail))
-                else void $ unnamed $ typed ty (Return tail)
+                else void $ unnamed $ pure $ Typed returnType (Return tail)
     emits <- use expressions
     assign expressions mempty
     if isMain def
@@ -123,7 +127,7 @@ dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, ty) stmts ta
             _ -> pure $ Fn Top name args returnType (toList emits)
 
 dsArg :: Tc.ArgX Tc.Tc -> DsM Arg
-dsArg (Tc.ArgX NoExtField name ty) = Arg name <$> dsType ty
+dsArg (Tc.ArgX NoExtField name ty) = Arg name <$> mkClosureType ty
 
 dsStmt :: Tc.StmtTc -> DsM TyExpr
 dsStmt = \case
@@ -131,8 +135,12 @@ dsStmt = \case
 
 dsExpr :: Tc.ExprTc -> DsM TyExpr
 dsExpr = \case
-    Tc.LitX (_info, ty) lit -> named $ typed ty (Lit (dsLit lit))
-    Tc.VarX (_info, ty, binding) name -> typed ty (Var (dsBound binding) name)
+    Tc.LitX (_info, ty) lit -> do
+        lit <- dsLit lit
+        named $ typed ty lit
+    Tc.VarX (_info, ty, binding) name -> do
+        ty <- mkClosureType ty
+        pure $ Typed ty (Var (dsBound binding) name)
     Tc.BinOpX (_, ty) l op r -> do
         l <- dsExpr l
         let op' = dsBinOp op
@@ -145,19 +153,19 @@ dsExpr = \case
     Tc.AppX (_info, ty) l rs -> do
         l <- dsExpr l
         rs <- mapM dsExpr rs
+        ty <- mkClosureType ty
         case l of
-            Typed _ (Var Toplevel _) -> named $ typed ty (App l (Typed (Ptr Void) (Lit NullLit) : rs))
+            Typed _ (Var Toplevel _) -> named $ pure $ Typed ty (App l (Typed (Ptr Void) (Lit NullLit) : rs))
             Typed lty l -> do
-                let tupleTy = Tuple [lty, Ptr Void]
-                let function = StructIndexing (Typed tupleTy l) 0
-                let env = StructIndexing (Typed tupleTy l) 1
-                named $ typed ty (App (Typed tupleTy function) (Typed (Ptr Void) env : rs))
+                let function = StructIndexing (Typed lty l) 0
+                let env = StructIndexing (Typed lty l) 1
+                named $ pure $ Typed ty (App (Typed lty function) (Typed (Ptr Void) env : rs))
     Tc.LetX info name expr -> do
         (list, expr) <- contextually $ dsExpr expr
         case expr of
             Typed _ (Var Toplevel _) -> do
                 varty <- dsType $ view varType info
-                let tupleTy = Tuple [varty, Ptr Void]
+                let tupleTy = Struct [varty, Ptr Void]
                 unnamed
                     $ typed
                         (view stmtType info)
@@ -167,7 +175,7 @@ dsExpr = \case
                 mapM_ emit list
                 let letTy = view stmtType info
                 let exprTy = view varType info
-                exprTy <- dsType exprTy
+                exprTy <- mkClosureType exprTy
                 unnamed $ typed letTy (Let name exprTy (Just expr))
                 unitGlobalVariable
     Tc.AssX (info, binding) name op expr -> do
@@ -177,7 +185,7 @@ dsExpr = \case
         unnamed $ typed ty (Return (fromMaybe unit expr))
         unitGlobalVariable
     Tc.EBlockX NoExtField block@(Tc.BlockX (_, ty) _ _) -> do
-        ty <- dsType ty
+        ty <- mkClosureType ty
         var <- declare ty
         f <- ask
         block <- dsBlock f var block
@@ -195,7 +203,7 @@ dsExpr = \case
                 unnamed $ typed ty Break
                 unitGlobalVariable
     Tc.IfX (_info, ty) cond trueBlk mbFalseBlk -> do
-        ty' <- dsType ty
+        ty' <- mkClosureType ty
         var <- declare ty'
         cond <- dsExpr cond
         f <- ask
@@ -205,13 +213,13 @@ dsExpr = \case
         named $ pure $ Typed ty' (Var Bound var)
     Tc.WhileX (_info, ty) cond block -> do
         cond <- dsExpr cond
-        ty' <- dsType ty
+        ty' <- mkClosureType ty
         var <- declare ty'
         block <- dsBlock (emit . Typed Unit . Ass var ty') var block
         unnamed $ typed ty (While cond block)
         named $ pure $ Typed Unit (Var Bound var)
     Tc.LoopX (_info, ty) block -> do
-        ty' <- dsType ty
+        ty' <- mkClosureType ty
         var <- declare ty'
         block <- dsBlock (emit . Typed Unit . Ass var ty') var block
         unnamed $ typed ty (While true block)
@@ -230,99 +238,32 @@ dsExpr = \case
         (lambdaBody, expr) <- contextually $ dsExpr body
         let freeVariables = sort $ nub $ concatMap freeVars (expr : toList lambdaBody)
         let declareFrees = zipWith (lookupFree env) [0 ..] freeVariables
-        let liftedLambda =
+        closureTy <- mkClosureType ty
+        modifying
+            lifted
+            ( `snoc`
                 Fn
                     Lifted
                     freshName
                     (Arg env (Ptr Void) : args)
                     returnType
                     (declareFrees <> toList (lambdaBody `snoc` Typed returnType (Return expr)))
-        modifying liftedLambdas (`snoc` liftedLambda)
+            )
         pure
             $ Typed
-                ty'
+                closureTy
                 ( Closure
                     (Typed ty' (Var Toplevel freshName))
                     (fmap (\(ty, name) -> Typed ty (Var Free name)) freeVariables)
                 )
 
-env :: Ident
-env = Ident "env"
-
-lookupFree :: Ident -> Integer -> (Type, Ident) -> TyExpr
-lookupFree env n (ty, var) =
-    Typed Unit
-        $ Let var ty (Just (Typed ty $ PtrIndexing (Typed (Ptr (Ptr Void)) (Var Argument env)) n))
-
-freeVars :: TyExpr -> [(Type, Ident)]
-freeVars = listify' free
-  where
-    free (Typed ty (Var Free name)) = Just (ty, name)
-    free _ = Nothing
-
-mkArg :: (Monad m) => Tc.LamArgTc -> m Arg
-mkArg (Tc.LamArgX ty name) = do
-    ty <- dsType ty
-    pure (Arg name ty)
-
-dsBlock :: (TyExpr -> DsM ()) -> Ident -> Tc.BlockX Tc.Tc -> DsM [TyExpr]
-dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
-    names' <- use names
-    n <- use nameCounter
-    let ((), Env emits names'' n' lifteds) =
-            run f names' n $ mapM_ dsStmt (stmts <> maybe [] (\x -> [Tc.SExprX NoExtField x]) tail)
-    assign names names''
-    assign nameCounter n'
-    assign liftedLambdas lifteds
-    pure (toList emits)
-dsBlock f _ (Tc.BlockX _ stmts Nothing) = do
-    names' <- use names
-    n <- use nameCounter
-    let ((), Env emits names'' n' lifteds) = run f names' n $ mapM_ dsStmt stmts
-    assign names names''
-    assign nameCounter n'
-    assign liftedLambdas lifteds
-    pure (toList emits)
-dsBlock f variable (Tc.BlockX (_, ty) stmts (Just tail)) = do
-    names' <- use names
-    n <- use nameCounter
-    let ((), Env emits names'' n' lifteds) =
-            run f names' n $ do
-                ty <- dsType ty
-                mapM_ dsStmt stmts
-                tail <- dsExpr tail
-                emit $ Typed Unit $ Ass variable ty tail
-    assign names names''
-    assign nameCounter n'
-    assign liftedLambdas lifteds
-    pure (toList emits)
-
-dsLit :: Tc.LitX Tc.Tc -> Lit
-dsLit = \case
-    Tc.IntLitX _ int -> IntLit int
-    Tc.DoubleLitX _ double -> DoubleLit double
-    Tc.StringLitX _ _ -> error "TODO: String literal"
-    Tc.CharLitX _ char -> CharLit char
-    Tc.BoolLitX _ bool -> BoolLit bool
-    Tc.UnitLitX _ -> UnitLit
-
-ass :: Ident -> Tc.TypeTc -> Rn.Boundedness -> Tc.AssignOp -> Tc.ExprX Tc.Tc -> DsM Expr
-ass name typ binding op xpr = do
-    expr <- dsExpr xpr
-    ty <- dsType typ
-    let assignment operator =
-            pure
-                $ Ass
-                    name
-                    ty
-                    (Typed ty $ BinOp (Typed ty $ Var (dsBound binding) name) operator expr)
-     in case op of
-            Tc.Assign -> pure $ Ass name ty expr
-            Tc.DivAssign -> assignment Div
-            Tc.MulAssign -> assignment Mul
-            Tc.AddAssign -> assignment Add
-            Tc.SubAssign -> assignment Sub
-            Tc.ModAssign -> assignment Mod
+mkClosureType :: Monad m => Tc.TypeTc -> m Type
+mkClosureType (Tc.TyFunX NoExtField ls r) = do
+    ls <- mapM mkClosureType ls
+    r <- mkClosureType r
+    pure $ Struct [TyFun ls r, Ptr Void]
+mkClosureType (Tc.TypeX (Tc.MutableX ty)) = Mut <$> mkClosureType ty
+mkClosureType ty = dsType ty
 
 dsType :: (Monad m) => Tc.TypeTc -> m Type
 dsType = \case
@@ -338,6 +279,89 @@ dsType = \case
         pure $ TyFun (Ptr Void : ls) r
     Tc.TypeX (Tc.MutableX ty) -> Mut <$> dsType ty
     Tc.TypeX Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type of `return` and `break` so that they can be placed anywhere.
+
+
+env :: Ident
+env = Ident "env"
+
+lookupFree :: Ident -> Integer -> (Type, Ident) -> TyExpr
+lookupFree env n (ty, var) = Typed ty $ ExtractFree var env n
+
+freeVars :: TyExpr -> [(Type, Ident)]
+freeVars = listify' free
+  where
+    free (Typed ty (Var Free name)) = Just (ty, name)
+    free _ = Nothing
+
+mkArg :: (Monad m) => Tc.LamArgTc -> m Arg
+mkArg (Tc.LamArgX ty name) = do
+    ty <- mkClosureType ty
+    pure (Arg name ty)
+
+dsBlock :: (TyExpr -> DsM ()) -> Ident -> Tc.BlockX Tc.Tc -> DsM [TyExpr]
+dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
+    names' <- use names
+    n <- use nameCounter
+    let ((), Env emits names'' n' lifteds strings) =
+            run f names' n $ mapM_ dsStmt (stmts <> maybe [] (\x -> [Tc.SExprX NoExtField x]) tail)
+    assign names names''
+    assign nameCounter n'
+    modifying lifted (<> lifteds)
+    modifying staticStrings (<> strings)
+    pure (toList emits)
+dsBlock f _ (Tc.BlockX _ stmts Nothing) = do
+    names' <- use names
+    n <- use nameCounter
+    let ((), Env emits names'' n' lifteds strings) = run f names' n $ mapM_ dsStmt stmts
+    assign names names''
+    assign nameCounter n'
+    modifying lifted (<> lifteds)
+    modifying staticStrings (<> strings)
+    pure (toList emits)
+dsBlock f variable (Tc.BlockX (_, ty) stmts (Just tail)) = do
+    names' <- use names
+    n <- use nameCounter
+    let ((), Env emits names'' n' lifteds strings) =
+            run f names' n $ do
+                ty <- mkClosureType ty
+                mapM_ dsStmt stmts
+                tail <- dsExpr tail
+                emit $ Typed Unit $ Ass variable ty tail
+    assign names names''
+    assign nameCounter n'
+    modifying lifted (<> lifteds)
+    modifying staticStrings (<> strings)
+    pure (toList emits)
+
+dsLit :: Tc.LitTc -> DsM Expr
+dsLit = \case
+    Tc.IntLitX NoExtField int -> pure $ Lit $ IntLit int
+    Tc.DoubleLitX NoExtField double -> pure $ Lit $ DoubleLit double
+    Tc.StringLitX NoExtField string -> do
+        name <- fresh "static_string"
+        modifying staticStrings ((name, Array (Text.length string + 1) Char, string <> "\\00") :)
+        pure (Var Toplevel name)
+    Tc.CharLitX NoExtField char -> pure $ Lit $ CharLit char
+    Tc.BoolLitX NoExtField bool -> pure $ Lit $ BoolLit bool
+    Tc.UnitLitX NoExtField -> pure $ Lit UnitLit
+
+ass :: Ident -> Tc.TypeTc -> Rn.Boundedness -> Tc.AssignOp -> Tc.ExprX Tc.Tc -> DsM Expr
+ass name typ binding op xpr = do
+    expr <- dsExpr xpr
+    ty <- mkClosureType typ
+    let assignment operator =
+            pure
+                $ Ass
+                    name
+                    ty
+                    (Typed ty $ BinOp (Typed ty $ Var (dsBound binding) name) operator expr)
+     in case op of
+            Tc.Assign -> pure $ Ass name ty expr
+            Tc.DivAssign -> assignment Div
+            Tc.MulAssign -> assignment Mul
+            Tc.AddAssign -> assignment Add
+            Tc.SubAssign -> assignment Sub
+            Tc.ModAssign -> assignment Mod
 
 true :: TyExpr
 true = Typed Bool $ Lit $ BoolLit True

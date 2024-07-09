@@ -1,5 +1,12 @@
+def foo() -> fn() -> (){
+    let free1 = "wowee this is a free varible";
+    let free2 = 42069;
+    let f: fn() -> () = \ -> {
+        printString(free1); printInt(free2);
+    };
+    return f
+}
+
 def main() {
-    let y = 123;
-    let f = \(x: int) -> printInt(y);
-    f(113);
+    foo()()
 }

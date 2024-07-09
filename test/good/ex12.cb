@@ -1,0 +1,9 @@
+def apply(f: fn(int) -> int) -> fn(int) -> int {
+    return {
+        f
+    }
+}
+
+def main() {
+    printInt(apply(\x -> x)(123));
+}

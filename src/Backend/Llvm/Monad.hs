@@ -125,11 +125,11 @@ alloca name ty = do
     emit $ Named name (Alloca ty)
     pure $ LocalReference (ptr ty) name
 
-malloc :: Operand -> IRBuilder Operand
-malloc operand = do
+malloc :: LlvmType -> Operand -> IRBuilder Operand
+malloc ty operand = do
     name <- fresh
     emit $ Named name (Malloc operand)
-    pure $ LocalReference (ptr (typeOf operand)) name
+    pure $ LocalReference ty name
 
 store :: Operand -> Operand -> IRBuilder ()
 store lop rop = unnamed (Store lop rop)
@@ -166,15 +166,25 @@ jump lbl = unnamed (Jump lbl)
 
 -- | Does not work correctly for structure if gep is used nested
 gep :: Operand -> [Operand] -> IRBuilder Operand
-gep op ops = LocalReference (typeOf op) <$> named (GetElementPtr op ops)
+gep op ops = LocalReference (gepType (typeOf op) ops) <$> named (GetElementPtr op ops)
 
 extractValue :: Operand -> [Word32] -> IRBuilder Operand
 extractValue operand indices = LocalReference (extractValueType (typeOf operand) indices) <$> named (ExtractValue operand indices)
 
+gepType :: LlvmType -> [Operand] -> LlvmType
+gepType ty [] = ptr ty
+gepType BlindPointerType _ = BlindPointerType
+gepType (PointerType ty) (_:is) = gepType ty is
+gepType (StructType ty) ((ConstantOperand (LInt I32 n):is)) = case maybeAt (fromIntegral n) ty of
+    Nothing -> error "gep: index out of bounds"
+    Just ty -> gepType ty is
+gepType (StructType ty) (i : _) = error $ "gep: indices into structures must be 32-bit constants. " <> show i
+gepType ty (_:_) = error $ "gep: can't index into a " <> show ty
+
 extractValueType :: LlvmType -> [Word32] -> LlvmType
 extractValueType ty [] = ty
 extractValueType ty (x:xs) = case ty of
-    ArrayType tys -> case maybeAt (fromIntegral x) tys of
+    StructType tys -> case maybeAt (fromIntegral x) tys of
         Nothing -> error "Extract value: indexing outside structure"
         Just ty -> extractValueType ty xs
     ty -> error $ "Extract value: indexing in non-indexable structure" <> show ty
@@ -188,3 +198,13 @@ global ty = ConstantOperand . GlobalReference ty
 
 null :: LlvmType -> Operand
 null ty = ConstantOperand (LNull ty)
+
+localRef :: LlvmType -> Ident -> Operand
+localRef = LocalReference
+
+blindPtr :: LlvmType
+blindPtr = BlindPointerType
+
+blankline :: IRBuilder ()
+blankline = unnamed Blankline
+

@@ -1,4 +1,6 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+
 module Backend.Llvm.Types where
 
 import Data.Data (Data)
@@ -9,8 +11,10 @@ import Relude hiding (Type)
 newtype Ir = Ir [Decl]
     deriving (Show)
 
-data Decl = Define !Origin !Ident [Operand] !LlvmType [Named Instruction]
-          | LlvmMain [Named Instruction]
+data Decl
+    = Define !Origin !Ident [Operand] !LlvmType [Named Instruction]
+    | LlvmMain [Named Instruction]
+    | GlobalString !Ident !LlvmType !Text
     deriving (Show)
 
 data Operand
@@ -44,6 +48,7 @@ data Instruction
     | Jump !Label
     | GetElementPtr !Operand [Operand]
     | ExtractValue !Operand [Word32]
+    | Blankline
     | Unreachable
     deriving (Show)
 
@@ -54,8 +59,10 @@ data LlvmType
     | Float
     | I8
     | PointerType LlvmType
+    | BlindPointerType
     | LlvmVoid
-    | ArrayType [LlvmType]
+    | StructType [LlvmType]
+    | ArrayType Integer LlvmType
     | FunPtr LlvmType [LlvmType]
     deriving (Show)
 
@@ -73,19 +80,31 @@ data Named a = Named Ident a | Nameless a
     deriving (Show, Functor, Traversable, Foldable, Generic, Data)
 
 class Typed a where
-  typeOf :: a -> LlvmType
+    typeOf :: a -> LlvmType
+    setType :: LlvmType -> a -> a
 
 instance Typed Operand where
-  typeOf = \case
-    LocalReference ty _ -> ty
-    ConstantOperand constant -> typeOf constant
+    typeOf = \case
+        LocalReference ty _ -> ty
+        ConstantOperand constant -> typeOf constant
+    setType ty = \case
+        LocalReference _ v -> LocalReference ty v
+        ConstantOperand constant -> ConstantOperand $ setType ty constant
 
 instance Typed Constant where
-  typeOf = \case
-   LInt ty _ -> ty
-   LDouble ty _ -> ty
-   LBool ty _ -> ty
-   LChar ty _ -> ty
-   LUnit -> I1
-   LNull ty -> ty
-   GlobalReference ty _ -> ty
+    setType ty = \case
+        LInt _ v -> LInt ty v
+        LDouble _ v -> LDouble ty v
+        LBool _ v -> LBool ty v
+        LChar _ v -> LChar ty v
+        LUnit -> error "Setting type of Unit is not possible"
+        LNull _ -> LNull ty
+        GlobalReference _ v -> GlobalReference ty v
+    typeOf = \case
+        LInt ty _ -> ty
+        LDouble ty _ -> ty
+        LBool ty _ -> ty
+        LChar ty _ -> ty
+        LUnit -> I1
+        LNull ty -> ty
+        GlobalReference ty _ -> ty

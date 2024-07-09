@@ -10,6 +10,7 @@ newtype Program = Program [Def]
 
 data Def = Fn !Origin Ident [Arg] Type [TyExpr]
          | Main [TyExpr]
+         | StaticString Ident Type Text
     deriving (Show, Eq, Ord, Data)
 
 data Arg = Arg Ident Type
@@ -24,7 +25,8 @@ data Type
     | Bool
     | Mut Type
     | TyFun [Type] Type
-    | Tuple [Type]
+    | Struct [Type]
+    | Array Int Type
     | Void
     | Ptr Type
     deriving (Show, Eq, Ord, Data)
@@ -45,7 +47,7 @@ data Expr
     | If TyExpr [TyExpr] (Maybe [TyExpr])
     | While TyExpr [TyExpr]
     | Closure TyExpr [TyExpr]
-    | PtrIndexing TyExpr Integer
+    | ExtractFree Ident Ident Integer -- ^ `ident = ident[integer]`
     | StructIndexing TyExpr Integer
     deriving (Show, Eq, Ord, Data)
 

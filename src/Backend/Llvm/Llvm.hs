@@ -15,6 +15,7 @@ assemble (Program defs) = Ir <$> runAssembler $ mapM assembleDecl defs
 
 -- NOTE: Very imperative
 assembleDecl :: Def -> IRBuilder Decl
+assembleDecl (StaticString name ty text) = pure $ GlobalString name (llvmType ty) text
 assembleDecl (Main block) = do
     assign instructions emptyInstructions
     mapM_ assembleExpr block
@@ -41,10 +42,10 @@ assembleExpr (Typed taggedType' expr) =
                     Toplevel -> pure $ global taggedType name
                     GlblConst -> do
                         -- NOTE: This will not work with global strings
-                        op <- gep (global (ptr taggedType) name) [i32 0]
+                        op <- gep (global (ptr taggedType) name) [i32 @Integer 0]
                         load taggedType op
                     Argument -> pure $ LocalReference taggedType name
-                    Lambda -> error $ "TODO: lambda variable"
+                    Lambda -> load taggedType $ LocalReference (ptr taggedType) name
             BinOp leftExpr operator rightExpr -> do
                 left <- assembleExpr leftExpr
                 right <- assembleExpr rightExpr
@@ -117,26 +118,37 @@ assembleExpr (Typed taggedType' expr) =
                 label exit
                 unit
             Closure fun env -> do
+                -- TODO: Test more with types of different sizes
                 name <- fresh
+                mem <- case env of
+                    [] -> pure $ null (ptr blindPtr)
+                    _ -> do
+                        mem <- malloc (ptr blindPtr) (i64 (length env * 8))
+                        forM_ (zip [0..] env) $ \(index, Typed ty expr) -> do
+                            gepOperand <- gep mem [i32 @Integer index]
+                            name <- fresh
+                            alloced <- alloca name (llvmType ty)
+                            operand <- assembleExpr (Typed ty expr)
+                            store operand alloced
+                            store alloced gepOperand
+                        pure mem
                 declaration <- alloca name taggedType
-                functionPointer <- gep declaration [i64 0]
-                environmentPointer <- gep declaration [i64 1]
+                functionPointer <- gep declaration [i32 @Integer 0, i32 @Integer 0]
+                environmentPointer <- gep declaration [i32 @Integer 0, i32 @Integer 1]
                 functionOperand <- assembleExpr fun
                 store functionOperand functionPointer
-                store (null (PointerType LlvmVoid)) environmentPointer
-                -- TODO: Store all free variables in the malloc
-                -- TODO: 1. Calculate size needed for malloc
-                -- TODO: New constructor for the free variables, separate the
-                -- by the largest type, thus no extra pointer indirection 
+                store mem environmentPointer
                 load taggedType declaration
-            PtrIndexing expr n -> do
-                -- TODO: Use this only for free varibles
-                operand <- assembleExpr expr
-                gep operand [i32 n]
             StructIndexing expr n  -> do
                 operand <- assembleExpr expr
                 extractValue operand [fromInteger n]
-
+            ExtractFree bindName envName index -> do
+                operand <- gep (localRef (ptr blindPtr) envName) [i32 index]
+                operand <- load (ptr taggedType) operand
+                operand <- load taggedType operand
+                variable <- alloca bindName taggedType 
+                store operand variable
+                pure variable
 
 llvmType :: Type -> LlvmType
 llvmType = \case
@@ -149,7 +161,8 @@ llvmType = \case
     Bool -> I1
     Mut ty -> llvmType ty
     TyFun args ret -> FunPtr (llvmType ret) (fmap llvmType args)
-    Tuple tys -> ArrayType (fmap llvmType tys)
+    Struct tys -> StructType (fmap llvmType tys)
+    Array size ty -> ArrayType (fromIntegral size) (llvmType ty)
     Ptr ty -> PointerType (llvmType ty)
 
 assembleLit :: (Monad m) => Lit -> m Operand
@@ -189,8 +202,8 @@ llvmLit ty = \case
     UnitLit -> LUnit
     NullLit -> LNull ty
 
-i32 :: Integer -> Operand
-i32 = ConstantOperand . LInt I32
+i32 :: Integral a => a -> Operand
+i32 = ConstantOperand . LInt I32 . fromIntegral
 
-i64 :: Integer -> Operand
-i64 = ConstantOperand . LInt I64
+i64 :: Integral a => a -> Operand
+i64 = ConstantOperand . LInt I64 . fromIntegral
