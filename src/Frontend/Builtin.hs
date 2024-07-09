@@ -14,4 +14,8 @@ builtInNames :: Set Ident
 builtInNames = Set.fromList $ Map.keys (builtIns @Rn)
 
 builtIns :: (XTyFun a ~ NoExtField, XTyLit a ~ NoExtField) => Map Ident (TypeX a, SourceInfo)
-builtIns = Map.singleton (Ident "printInt") (TyFunX NoExtField [Int] Unit, SourceInfo Nothing "")
+builtIns =
+    Map.fromList
+        [ (Ident "printInt", (TyFunX NoExtField [Int] Unit, SourceInfo Nothing ""))
+        , (Ident "printString", (TyFunX NoExtField [String] Unit, SourceInfo Nothing ""))
+        ]
