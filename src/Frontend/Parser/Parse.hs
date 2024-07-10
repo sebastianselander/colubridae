@@ -7,6 +7,7 @@ module Frontend.Parser.Parse where
 import Control.Monad.Combinators.Expr (Operator (..))
 import Control.Monad.Combinators.Expr qualified as P
 import Data.List (foldr1)
+import Data.Map qualified as Map
 import Data.Tuple.Extra (uncurry3)
 import Frontend.Parser.Types
 import Frontend.Parser.Utils
@@ -16,14 +17,27 @@ import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
+import Text.Pretty.Simple (pPrint)
+
+parse' ::
+    BindingPowerTable PrefixOp BinOp Void ->
+    String ->
+    Text ->
+    Either (ParseErrorBundle Text CustomParseError) ProgramPar
+parse' table file =
+    flip runReader table
+        . P.runParserT (ProgramX NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof)) file
 
 parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
-parse = P.runParser (ProgramX NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof))
+parse = parse' defaultBindingPowerTable
+
+runP' :: (Show a) => BindingPowerTable PrefixOp BinOp Void -> Parser a -> Text -> IO ()
+runP' table p input = case flip runReader table $ P.runParserT (p <* P.eof) "" input of
+    Left err -> putStrLn $ P.errorBundlePretty err
+    Right res -> pPrint res
 
 runP :: (Show a) => Parser a -> Text -> IO ()
-runP p input = case P.runParser (p <* P.eof) "" input of
-    Left err -> putStrLn $ P.errorBundlePretty err
-    Right res -> print res
+runP = runP' defaultBindingPowerTable
 
 pDef :: Parser DefPar
 pDef = do
@@ -78,7 +92,7 @@ pType = P.choice [pAtom, pFunTy, parens pType] <?> "type"
 
 -- TODO: Remove needing semicolon after if, loop, while!
 pStmtColon :: Parser (Maybe StmtPar)
-pStmtColon = do
+pStmtColon =
     lexeme
         $ P.choice
             [ Just <$> pSExp <* semicolon
@@ -302,7 +316,7 @@ pLit =
     pNumber :: Parser ExprPar
     pNumber = do
         gs <- spanStart
-        res <- (DoubleLitX NoExtField <$> P.try P.float) <|> (IntLitX NoExtField <$> P.decimal)
+        res <- DoubleLitX NoExtField <$> P.try P.float <|> IntLitX NoExtField <$> P.decimal
         info <- spanEnd gs
         pure (LitX info res)
 
@@ -339,3 +353,85 @@ putInfo p = do
         WhileX _ cond block -> WhileX pos cond block
         LoopX _ block -> LoopX pos block
         LamX _ args body -> LamX pos args body
+
+pPrefix :: Parser PrefixOp
+pPrefix =
+    P.choice
+        [ keyword "!" $> Not
+        , keyword "-" $> Neg
+        ]
+
+pInfix :: Parser BinOp
+pInfix =
+    P.choice
+        [ keyword "+" $> Add
+        , keyword "-" $> Sub
+        , keyword "*" $> Mul
+        , keyword "/" $> Div
+        , keyword "%" $> Mod
+        , keyword "<=" $> Lte
+        , keyword ">=" $> Gte
+        , keyword "<" $> Lt
+        , keyword ">" $> Gt
+        , keyword "==" $> Eq
+        , keyword "!=" $> Neq
+        , keyword "&&" $> And
+        , keyword "||" $> Or
+        ]
+
+defaultBindingPowerTable :: BindingPowerTable PrefixOp BinOp Void
+defaultBindingPowerTable =
+    let _infixTable =
+            Map.fromList
+                [ (Add, (6, 7))
+                , (Sub, (6, 7))
+                , (Mul, (7, 8))
+                , (Div, (7, 8))
+                , (Mod, (7, 8))
+                , (Lte, (4, 4))
+                , (Gte, (4, 4))
+                , (Lt, (4, 4))
+                , (Gt, (4, 4))
+                , (Eq, (4, 4))
+                , (Neq, (4, 4))
+                , (And, (4, 3))
+                , (Or, (3, 2))
+                ]
+        _prefixTable = Map.fromList [(Not, 9), (Neg, 9)]
+        _postfixTable = Map.empty
+     in BindingPowerTable
+            { _prefixTable
+            , _infixTable
+            , _postfixTable
+            }
+
+prattExpr :: Parser PrefixOp -> Parser BinOp -> Parser ExprPar -> Parser ExprPar
+prattExpr prefixParser infixParser atomParser = exprbp 0
+  where
+    exprbp :: Int -> Parser ExprPar
+    exprbp minBp = do
+        gs <- spanStart
+        l <- P.eitherP atomParser prefixParser
+        case l of
+            Left l -> go gs minBp l
+            Right r -> do
+                bp <- prefixBindingPower r
+                rhs <- exprbp bp
+                info <- spanEnd gs
+                gs <- spanStart
+                go gs minBp $ PrefixX info r rhs
+      where
+        go :: GhostSpan Before -> Int -> ExprPar -> Parser ExprPar
+        go gs minBp l = P.withRecovery (\_ -> pure l) $ do
+            operator <- P.lookAhead infixParser
+            (lbp, rbp) <- infixBindingPower operator
+            if lbp < minBp
+                then pure l
+                else do
+                    _ <- pInfix
+                    r <- exprbp rbp
+                    info <- spanEnd gs
+                    go gs minBp (BinOpX info l operator r)
+
+testPratt :: Text -> IO ()
+testPratt = runP (prattExpr pPrefix pInfix pExprAtom)

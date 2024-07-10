@@ -1,10 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
 module Frontend.Parser.Utils where
 
+import Control.Lens (makeLenses)
+import Control.Lens.Getter (views)
+import Data.Map qualified as Map
+import Data.Maybe (fromJust)
 import Data.Text (pack)
 import Frontend.Error (Report, report)
 import Frontend.Types
@@ -16,7 +21,7 @@ import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 import Text.Megaparsec.Error (errorBundlePretty)
 
-type Parser = P.Parsec CustomParseError Text
+type Parser = P.ParsecT CustomParseError Text (Reader (BindingPowerTable PrefixOp BinOp Void))
 
 {-| The order of the errors matters here, the one with the 'greatest' ord
 takes priority if more than one error is thrown *I think*
@@ -69,7 +74,7 @@ semicolon :: Parser Char
 semicolon = P.char ';'
 
 optionallyEndedBy :: (P.MonadParsec e s m) => m a -> m end -> m ([a], Maybe end)
-optionallyEndedBy aP endP = do
+optionallyEndedBy aP endP =
     P.optional (P.try endP) >>= \case
         Nothing -> do
             a <- aP
@@ -130,3 +135,24 @@ span gs p = do
 
 emptyInfo :: SourceInfo
 emptyInfo = SourceInfo {sourceFile = "", spanInfo = Nothing}
+
+data BindingPowerTable pre inf post = BindingPowerTable
+    { _prefixTable :: Map pre Int
+    , _infixTable :: Map inf (Int, Int)
+    , _postfixTable :: Map post Int
+    }
+
+emptyBindingPowerTable :: (Ord a, Ord b, Ord c) => BindingPowerTable a b c
+emptyBindingPowerTable = BindingPowerTable mempty mempty mempty
+
+$(makeLenses ''BindingPowerTable)
+
+prefixBindingPower :: (Ord pre, MonadReader (BindingPowerTable pre inf post) m) => pre -> m Int
+prefixBindingPower op = views prefixTable (fromJust . Map.lookup op)
+
+postfixBindingPower :: (Ord post, MonadReader (BindingPowerTable pre inf post) m) => post -> m Int
+postfixBindingPower op = views postfixTable (fromJust . Map.lookup op)
+
+infixBindingPower ::
+    (Ord inf, MonadReader (BindingPowerTable pre inf post) m) => inf -> m (Int, Int)
+infixBindingPower op = views infixTable (fromJust . Map.lookup op)
