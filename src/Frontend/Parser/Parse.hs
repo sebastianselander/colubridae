@@ -12,7 +12,6 @@ import Frontend.Parser.Types
 import Frontend.Parser.Utils
 import Frontend.Parser.Utils qualified as P
 import Frontend.Types
-import Names (Ident)
 import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
@@ -217,8 +216,8 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
             [ Postfix $ foldr1 (>>>) <$> P.some pApp
             ]
         ,
-            [ Prefix (keyword "!" $> PrefixX emptyInfo Not)
-            , Prefix (keyword "-" $> PrefixX emptyInfo Neg)
+            [ Prefix $ foldr1 (>>>) <$> P.some (keyword "!" $> PrefixX emptyInfo Not)
+            , Prefix $ foldr1 (>>>) <$> P.some (keyword "-" $> PrefixX emptyInfo Neg)
             ]
         ,
             [ binaryL "*" (binOp Mul)
@@ -246,10 +245,9 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
             [ binaryL "||" (binOp Or)
             ]
         ,
-            [ Prefix pAss
-            , Prefix pLam
+            [ Prefix $ foldr1 (>>>) <$> P.some pAss
+            , Prefix $ foldr1 (>>>) <$> P.some pLam
             ]
-        , []
         ]
 
     binaryL :: Text -> (a -> a -> a) -> Operator Parser a
