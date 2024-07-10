@@ -228,7 +228,7 @@ dsExpr = \case
         freshName <- fresh "lambda"
         ty' <- dsType ty
         returnType <- case ty of
-            Tc.TyFunX Tc.NoExtField _ retty -> dsType retty
+            Tc.TyFunX Tc.NoExtField _ retty -> mkClosureType retty
             nonFunTy ->
                 error
                     $ "Internal compiler bug: non-function type '"
