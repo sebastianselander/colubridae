@@ -1,0 +1,11 @@
+def main() {
+    let mut x = 0;
+    let g = loop {
+        if x > 10 {
+            break "done"
+        };
+        printInt(x);
+        x += 1;
+    };
+    printString(g);
+}
