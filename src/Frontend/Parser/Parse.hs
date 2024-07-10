@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
 
-module Frontend.Parser.Parse (parse) where
+module Frontend.Parser.Parse where
 
 import Control.Monad.Combinators.Expr (Operator (..))
 import Control.Monad.Combinators.Expr qualified as P
@@ -143,7 +143,7 @@ pLet = P.label "let" $ do
     info <- spanEnd gs
     pure (LetX (info, mut, ty) name expr)
 
-pAss :: Parser (ExprPar -> ExprPar)
+pAss :: Parser ExprPar
 pAss = P.label "assignment" $ do
     gs <- spanStart
     (name, op) <- P.try $ do
@@ -151,7 +151,7 @@ pAss = P.label "assignment" $ do
         assignOp <- lexeme pAssignOp
         pure (name, assignOp)
     info <- spanEnd gs
-    pure $ \l -> AssX info name op l
+    AssX info name op <$> pExpr
 
 pAssignOp :: Parser AssignOp
 pAssignOp =
@@ -186,14 +186,14 @@ pApp = do
     info <- spanEnd gs
     pure $ \l -> AppX info l args
 
-pLam :: Parser (ExprPar -> ExprPar)
+pLam :: Parser ExprPar
 pLam = do
     gs <- spanStart
     keyword "\\"
     args <- lexeme $ P.many lamArg
     keyword "->"
     info <- spanEnd gs
-    pure $ LamX info args
+    LamX info args <$> pExpr
   where
     lamArg :: Parser LamArgPar
     lamArg =
@@ -209,7 +209,7 @@ pLam = do
                 )
 
 pExpr :: Parser ExprPar
-pExpr = putInfo (P.makeExprParser pExprAtom table)
+pExpr = pLam <|> pAss <|> putInfo (P.makeExprParser pExprAtom table)
   where
     table =
         [
@@ -243,10 +243,6 @@ pExpr = putInfo (P.makeExprParser pExprAtom table)
             ]
         ,
             [ binaryL "||" (binOp Or)
-            ]
-        ,
-            [ Prefix $ foldr1 (>>>) <$> P.some pAss
-            , Prefix $ foldr1 (>>>) <$> P.some pLam
             ]
         ]
 
