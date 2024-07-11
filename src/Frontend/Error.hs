@@ -16,9 +16,8 @@ import Frontend.Typechecker.Ctx (Ctx, exprStack, names)
 import Frontend.Typechecker.Pretty (pThing)
 import Frontend.Typechecker.Types
 import Frontend.Types (SourceInfo (..), Span (..))
-import Names (Ident, getOriginalName')
+import Names (Ident, getOriginalName', renameBack)
 import Relude hiding (All, First, intercalate)
-import Rename (renameBack)
 import Text.Megaparsec (unPos)
 import Utils (indent, quote)
 

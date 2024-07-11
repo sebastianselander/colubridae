@@ -51,7 +51,6 @@ library
     Frontend.Typechecker.Pretty
     Frontend.Types
     Names
-    Rename
     Origin
     Utils
     Options
