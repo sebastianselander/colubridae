@@ -20,6 +20,7 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 import Text.Megaparsec.Error (errorBundlePretty)
+import qualified Text.Megaparsec.Char.Lexer as P
 
 type Parser = P.ParsecT CustomParseError Text (Reader (BindingPowerTable PrefixOp BinOp Void))
 
@@ -62,16 +63,19 @@ keywords =
     ]
 
 keyword :: Text -> Parser ()
-keyword = void . P.string
+keyword = void . lexeme . P.string
 
 parens :: Parser a -> Parser a
-parens = lexeme . P.between (P.hidden $ P.char '(') (P.hidden $ P.char ')')
+parens = lexeme . P.between (P.hidden $ char '(') (P.hidden $ char ')')
+
+char :: Char -> Parser Char
+char = lexeme . P.char
 
 angles :: Parser a -> Parser a
-angles = lexeme . P.between (P.hidden $ P.char '<') (P.hidden $ P.char '>')
+angles = lexeme . P.between (P.hidden $ char '<') (P.hidden $ char '>')
 
 semicolon :: Parser Char
-semicolon = P.char ';'
+semicolon = char ';'
 
 optionallyEndedBy :: (P.MonadParsec e s m) => m a -> m end -> m ([a], Maybe end)
 optionallyEndedBy aP endP =
@@ -83,7 +87,7 @@ optionallyEndedBy aP endP =
             pure ([], Just res)
 
 curlyBrackets :: Parser a -> Parser a
-curlyBrackets = P.between (lexeme $ P.hidden $ P.char '{') (P.hidden $ P.char '}')
+curlyBrackets = P.between (lexeme $ P.hidden $ char '{') (P.hidden $ char '}')
 
 lexeme :: Parser a -> Parser a
 lexeme =
@@ -93,7 +97,7 @@ string :: Text -> Parser Text
 string txt = lexeme (P.string txt)
 
 commaSep :: Parser a -> Parser [a]
-commaSep p = P.sepBy p (P.hidden $ lexeme $ P.char ',')
+commaSep p = P.sepBy p (P.hidden $ lexeme $ char ',')
 
 stringLiteral :: Parser Text
 stringLiteral = P.hidden (P.char '"') >> pack <$> P.manyTill L.charLiteral (P.hidden (P.char '"'))
