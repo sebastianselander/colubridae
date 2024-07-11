@@ -2,16 +2,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
 
-module Frontend.Parser.Parse where
+module Frontend.Parser.Parse (parse) where
 
-import Control.Monad.Combinators.Expr (Operator (..))
-import Control.Monad.Combinators.Expr qualified as P
-import Data.List (foldr1)
 import Data.Map qualified as Map
 import Data.Tuple.Extra (uncurry3)
 import Frontend.Parser.Types
 import Frontend.Parser.Utils
-import Frontend.Parser.Utils qualified as P
 import Frontend.Types
 import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
@@ -186,19 +182,12 @@ pBlock' = do
     gs <- spanStart
     (stmts, tail) <-
         curlyBrackets
-            (P.optionallyEndedBy pStmtColon (pExpr <* P.notFollowedBy semicolon) <|> return ([], Nothing))
+            (optionallyEndedBy pStmtColon (pExpr <* P.notFollowedBy semicolon) <|> return ([], Nothing))
     info <- spanEnd gs
     pure (info, catMaybes stmts, tail)
 
 pSExp :: Parser StmtPar
 pSExp = SExprX NoExtField <$> pExpr
-
-pApp :: Parser (ExprPar -> ExprPar)
-pApp = do
-    gs <- spanStart
-    args <- parens $ commaSep pExpr
-    info <- spanEnd gs
-    pure $ \l -> AppX info l args
 
 pLam :: Parser ExprPar
 pLam = do
@@ -222,49 +211,16 @@ pLam = do
                     pure $ LamArgX (info, Immutable, Nothing) name
                 )
 
-pExpr :: Parser ExprPar
-pExpr = pLam <|> pAss <|> putInfo (P.makeExprParser pExprAtom table)
-  where
-    table =
-        [
-            [ Postfix $ foldr1 (>>>) <$> P.some pApp
-            ]
-        ,
-            [ Prefix $ foldr1 (>>>) <$> P.some (keyword "!" $> PrefixX emptyInfo Not)
-            , Prefix $ foldr1 (>>>) <$> P.some (keyword "-" $> PrefixX emptyInfo Neg)
-            ]
-        ,
-            [ binaryL "*" (binOp Mul)
-            , binaryL "/" (binOp Div)
-            , binaryL "%" (binOp Mod)
-            ]
-        ,
-            [ binaryL "+" (binOp Add)
-            , binaryL "-" (binOp Sub)
-            ]
-        ,
-            [ binaryL "<=" (binOp Lte)
-            , binaryL ">=" (binOp Gte)
-            , binaryL "<" (binOp Lt)
-            , binaryL ">" (binOp Gt)
-            ]
-        ,
-            [ binaryL "==" (binOp Eq)
-            , binaryL "!=" (binOp Neq)
-            ]
-        ,
-            [ binaryL "&&" (binOp And)
-            ]
-        ,
-            [ binaryL "||" (binOp Or)
-            ]
-        ]
+pApp :: Parser ExprPar
+pApp = do
+    gs <- spanStart
+    expr <- pExprAtom
+    args <- P.many $ (,) <$> spanEnd gs <*> parens (commaSep pExpr)
+    let res = foldl' (\l (info, rs) -> AppX info l rs) expr args
+    pure res
 
-    binaryL :: Text -> (a -> a -> a) -> Operator Parser a
-    binaryL name f = InfixL (f <$ lexeme (keyword name))
-    binaryR name f = InfixR (f <$ lexeme (keyword name))
-    binaryN name f = InfixN (f <$ lexeme (keyword name))
-    binOp op l = BinOpX emptyInfo l op
+pExpr :: Parser ExprPar
+pExpr = pLam <|> pAss <|> prattExpr pPrefix pInfix pApp
 
 pExprAtom :: Parser ExprPar
 pExprAtom =
@@ -333,26 +289,6 @@ pLit =
         res <- CharLitX NoExtField <$> charLiteral
         info <- spanEnd gs
         pure (LitX info res)
-
-putInfo :: Parser ExprPar -> Parser ExprPar
-putInfo p = do
-    gs <- spanStart
-    (p, pos) <- span gs p
-    pure $ case p of
-        LitX _ l -> LitX pos l
-        VarX _ v -> VarX pos v
-        PrefixX _ op r -> PrefixX pos op r
-        BinOpX _ l op r -> BinOpX pos l op r
-        AppX _ l rs -> AppX pos l rs
-        LetX (_, mut, ty) name expr -> LetX (pos, mut, ty) name expr
-        AssX _ name op expr -> AssX pos name op expr
-        RetX _ expr -> RetX pos expr
-        EBlockX NoExtField (BlockX _ stmts tail) -> EBlockX NoExtField (BlockX pos stmts tail)
-        BreakX _ expr -> BreakX pos expr
-        IfX _ cond true false -> IfX pos cond true false
-        WhileX _ cond block -> WhileX pos cond block
-        LoopX _ block -> LoopX pos block
-        LamX _ args body -> LamX pos args body
 
 pPrefix :: Parser PrefixOp
 pPrefix =
@@ -433,5 +369,3 @@ prattExpr prefixParser infixParser atomParser = exprbp 0
                     info <- spanEnd gs
                     go gs minBp (BinOpX info l operator r)
 
-testPratt :: Text -> IO ()
-testPratt = runP (prattExpr pPrefix pInfix pExprAtom)
