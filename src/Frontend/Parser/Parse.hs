@@ -35,6 +35,8 @@ runP' table p input = case flip runReader table $ P.runParserT (p <* P.eof) "" i
 runP :: (Show a) => Parser a -> Text -> IO ()
 runP = runP' defaultBindingPowerTable
 
+pAdt = undefined
+
 pDef :: Parser DefPar
 pDef = do
     gs <- spanStart

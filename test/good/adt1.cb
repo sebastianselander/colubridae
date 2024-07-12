@@ -1,0 +1,8 @@
+type Example<a> {
+    Constructor1, // Example::Constructor1
+    Constructor2(a), // fn(a) -> Example::Constructor2
+    Constructor3(), // fn() -> Example::Constructor3
+}
+
+def main() {
+}
