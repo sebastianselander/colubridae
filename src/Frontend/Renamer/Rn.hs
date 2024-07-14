@@ -135,7 +135,7 @@ getDefinitions = listify' fnName
     fnName (Fn info name _ _ _) = Just (info, name)
 
 rnArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]
-rnArgs = foldM f mempty
+rnArgs = fmap reverse . foldlM f mempty
   where
     f :: (MonadState Env m, MonadValidate [RnError] m) => [ArgRn] -> ArgPar -> m [ArgRn]
     f seen arg@(ArgX (info, mut) name ty) = do
