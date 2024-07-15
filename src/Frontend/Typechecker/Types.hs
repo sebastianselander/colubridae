@@ -19,6 +19,7 @@ type ProgramTc = ProgramX Tc
 type DefTc = DefX Tc
 type FnTc = FnX Tc
 type AdtTc = AdtX Tc
+type ConstructorTc = ConstructorX Tc
 type ArgTc = ArgX Tc
 type ExprTc = ExprX Tc
 type TypeTc = TypeX Tc
@@ -43,7 +44,11 @@ type instance XArg Tc = NoExtField
 
 type instance XDef Tc = DataConCantHappen
 type instance XFn Tc = NoExtField
+
 type instance XAdt Tc = NoExtField
+type instance XConstructor Tc = DataConCantHappen
+type instance XEnumCons Tc = TcInfo
+type instance XFunCons Tc = TcInfo
 
 type instance XBlock Tc = TcInfo
 

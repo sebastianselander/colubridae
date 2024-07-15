@@ -17,6 +17,7 @@ type ArgPar = ArgX Par
 type DefPar = DefX Par
 type FnPar = FnX Par
 type AdtPar = AdtX Par
+type ConstructorPar = ConstructorX Par
 type TypePar = TypeX Par
 type BlockPar = BlockX Par
 type StmtPar = StmtX Par
@@ -29,6 +30,7 @@ deriving instance Data ArgPar
 deriving instance Data DefPar
 deriving instance Data FnPar
 deriving instance Data AdtPar
+deriving instance Data ConstructorPar
 deriving instance Data TypePar
 deriving instance Data StmtPar
 deriving instance Data BlockPar
@@ -39,7 +41,11 @@ type instance XArg Par = (SourceInfo, Mutability)
 
 type instance XDef Par = DataConCantHappen
 type instance XFn Par = SourceInfo
+
 type instance XAdt Par = SourceInfo
+type instance XFunCons Par = SourceInfo
+type instance XEnumCons Par = SourceInfo
+type instance XConstructor Par = DataConCantHappen
 
 type instance XBlock Par = SourceInfo
 

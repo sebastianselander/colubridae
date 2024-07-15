@@ -73,13 +73,21 @@ type family XFn a
 deriving instance (ForallX Show a) => Show (FnX a)
 deriving instance (ForallX Typeable a) => Typeable (FnX a)
 
-data AdtX a = Adt !(XAdt a) 
-
+data AdtX a = AdtX !(XAdt a) Ident [ConstructorX a]
 type family XAdt a
-
 deriving instance (ForallX Show a) => Show (AdtX a)
 deriving instance (ForallX Typeable a) => Typeable (AdtX a)
 
+data ConstructorX a 
+    = EnumCons (XEnumCons a) Ident 
+    | FunCons (XFunCons a) Ident [TypeX a]
+    | ConstructorX !(XConstructor a)
+
+type family XConstructor a
+type family XEnumCons a
+type family XFunCons a
+deriving instance (ForallX Show a) => Show (ConstructorX a)
+deriving instance (ForallX Typeable a) => Typeable (ConstructorX a)
 
 -- Argument
 data ArgX a = ArgX !(XArg a) Ident (TypeX a)
@@ -251,4 +259,7 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XLamArg a)
     , c (XFn a)
     , c (XAdt a)
+    , c (XConstructor a)
+    , c (XEnumCons a)
+    , c (XFunCons a)
     )
