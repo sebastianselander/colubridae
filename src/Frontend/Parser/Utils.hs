@@ -36,7 +36,7 @@ instance P.ShowErrorComponent CustomParseError where
 instance Report (ParseErrorBundle Text CustomParseError) where
     report = pack . errorBundlePretty
 
-keywords :: [String]
+keywords :: [Text]
 keywords =
     [ "def"
     , "="
@@ -54,8 +54,15 @@ keywords =
     , "string"
     , "char"
     , "fn"
+    , "loop"
+    , "!"
+    , "-"
+    , "type"
     , "{"
     , "}"
+    , "\\"
+    , "()"
+    , "->"
     , "("
     , ")"
     , "["
@@ -63,7 +70,10 @@ keywords =
     ]
 
 keyword :: Text -> Parser ()
-keyword = void . lexeme . P.string
+keyword t = if isKeyword t then void $ lexeme $ P.string t else error $ "keyword '" <> t <> "' not declared"
+
+isKeyword :: Text -> Bool
+isKeyword t = t `elem` keywords
 
 parens :: Parser a -> Parser a
 parens = lexeme . P.between (P.hidden $ char '(') (P.hidden $ char ')')
@@ -97,7 +107,10 @@ string :: Text -> Parser Text
 string txt = lexeme (P.string txt)
 
 commaSep :: Parser a -> Parser [a]
-commaSep p = P.sepBy p (P.hidden $ lexeme $ char ',')
+commaSep p = P.sepBy p (P.hidden $ char ',')
+
+commaSepEnd :: Parser a -> Parser [a]
+commaSepEnd p = P.sepEndBy p (P.hidden $ char ',')
 
 stringLiteral :: Parser Text
 stringLiteral = P.hidden (P.char '"') >> pack <$> P.manyTill L.charLiteral (P.hidden (P.char '"'))
@@ -105,12 +118,21 @@ stringLiteral = P.hidden (P.char '"') >> pack <$> P.manyTill L.charLiteral (P.hi
 charLiteral :: Parser Char
 charLiteral = P.between (P.hidden $ P.char '\'') (P.hidden $ P.char '\'') L.charLiteral
 
+upperIdentifier :: Parser Ident
+upperIdentifier = do
+    headLet <- P.upperChar <?> "upper case identifier"
+    tailLets <- many (P.char '_' <|> P.alphaNumChar)
+    let name = headLet : tailLets
+    if isKeyword (pack name)
+        then customFailure (Keyword (pack name))
+        else pure (Ident (pack (headLet : tailLets)))
+
 identifier :: Parser Ident
 identifier = do
     headLet <- P.char '_' <|> (P.lowerChar <?> "lower case identifier")
     tailLets <- many (P.char '_' <|> P.alphaNumChar)
     let name = headLet : tailLets
-    if name `elem` keywords
+    if isKeyword (pack name)
         then customFailure (Keyword (pack name))
         else pure (Ident (pack (headLet : tailLets)))
 

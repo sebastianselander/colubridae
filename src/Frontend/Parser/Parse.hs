@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Parser.Parse (parse) where
 
@@ -35,10 +36,28 @@ runP' table p input = case flip runReader table $ P.runParserT (p <* P.eof) "" i
 runP :: (Show a) => Parser a -> Text -> IO ()
 runP = runP' defaultBindingPowerTable
 
-pAdt = undefined
+pAdt :: Parser AdtPar
+pAdt = do
+    gs <- spanStart
+    keyword "type"
+    adtName <- lexeme upperIdentifier
+    constructors <- curlyBrackets (commaSepEnd pConstructor)
+    loc <- spanEnd gs
+    pure (AdtX loc adtName constructors)
+
+pConstructor :: Parser ConstructorPar
+pConstructor = do
+    gs <- spanStart
+    constructorName <- upperIdentifier
+    argumentTypes <- P.optional (parens (commaSep pType))
+    loc <- spanEnd gs
+    case argumentTypes of
+        Nothing -> pure $ EnumCons loc constructorName
+        Just tys -> pure $ FunCons loc constructorName tys
+    
 
 pDef :: Parser DefPar
-pDef = DefFn <$> pFunction
+pDef = DefFn <$> pFunction <|> DefAdt <$> pAdt
 
 pFunction :: Parser FnPar
 pFunction = do
