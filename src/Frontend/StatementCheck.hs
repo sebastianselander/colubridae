@@ -27,8 +27,8 @@ check prg@(ProgramX NoExtField defs) = case lefts $ map checkDef defs of
     [] -> pure prg
     xs -> Left $ concat xs
 
-checkDef :: DefRn -> Either [ChError] ()
-checkDef (Fn info name _ returnType block) = runCheck (Ctx False) $ case returnType of
+checkFunction :: FnRn -> Either [ChError] ()
+checkFunction (Fn info name _ returnType block) = runCheck (Ctx False) $ case returnType of
     TyLitX NoExtField UnitX -> breakBlock block
     _ -> case block of
         BlockX _ _ (Just _) -> breakBlock block
@@ -37,6 +37,10 @@ checkDef (Fn info name _ returnType block) = runCheck (Ctx False) $ case returnT
             returnBlock block >>= \case
                 True -> pure ()
                 False -> missingReturn info name
+
+checkDef :: DefRn -> Either [ChError] ()
+checkDef (DefFn fn) = checkFunction fn
+checkDef (DefAdt adt) = undefined
 
 breakBlock :: BlockRn -> ChM ()
 breakBlock (BlockX _ statements tail) = mapM_ breakStmt statements >> mapM_ breakExpr tail

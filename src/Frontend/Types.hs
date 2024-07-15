@@ -60,11 +60,26 @@ deriving instance (ForallX Typeable a) => Typeable (ProgramX a)
 
 -- Definition
 data DefX a
-    = Fn !(XDef a) Ident [ArgX a] (TypeX a) (BlockX a)
+    = DefFn (FnX a)
+    | DefAdt (AdtX a)
+    | DefX !(XDef a)
 type family XDef a
-
 deriving instance (ForallX Show a) => Show (DefX a)
 deriving instance (ForallX Typeable a) => Typeable (DefX a)
+
+data FnX a = Fn !(XFn a) Ident [ArgX a] (TypeX a) (BlockX a)
+type family XFn a
+
+deriving instance (ForallX Show a) => Show (FnX a)
+deriving instance (ForallX Typeable a) => Typeable (FnX a)
+
+data AdtX a = Adt !(XAdt a) 
+
+type family XAdt a
+
+deriving instance (ForallX Show a) => Show (AdtX a)
+deriving instance (ForallX Typeable a) => Typeable (AdtX a)
+
 
 -- Argument
 data ArgX a = ArgX !(XArg a) Ident (TypeX a)
@@ -234,4 +249,6 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XLoop a)
     , c (XLam a)
     , c (XLamArg a)
+    , c (XFn a)
+    , c (XAdt a)
     )

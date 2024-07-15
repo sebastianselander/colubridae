@@ -19,6 +19,13 @@ instance Pretty ProgramTc where
     pretty (ProgramX NoExtField defs) = Pretty.concatWith (Pretty.surround Pretty.hardline) (fmap Pretty.pretty defs)
 
 instance Pretty DefTc where
+  pretty (DefFn fn) = Pretty.pretty fn
+  pretty (DefAdt adt) = Pretty.pretty adt
+
+instance Pretty AdtTc where
+  pretty = undefined
+
+instance Pretty FnTc where
     pretty (Fn _ (Ident name) args ty block) =
         "def"
             <+> Pretty.pretty name

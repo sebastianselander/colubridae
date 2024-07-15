@@ -100,12 +100,12 @@ dsProgram (Tc.ProgramX Tc.NoExtField defs) = do
     strings <- use staticStrings
     pure $ Program $ fmap (uncurry3 StaticString) strings <> toList lifteds <> defs
 
-isMain :: Tc.DefTc -> Bool
+isMain :: Tc.FnTc -> Bool
 isMain (Tc.Fn NoExtField (Ident "main") _ _ _) = True
 isMain _ = False
 
-dsDef :: Tc.DefTc -> DsM Def
-dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, _) stmts tail)) = do
+dsFunction :: Tc.FnTc -> DsM Def
+dsFunction def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, _) stmts tail)) = do
     assign nameCounter 0 -- Start the name counter from 0 for each local scope
     args <- (EnvArg (Ptr Void) :) <$> mapM dsArg args
     returnType <- mkClosureType returnType
@@ -124,6 +124,10 @@ dsDef def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, _) stmts tai
         else case returnType of
             Unit -> pure $ Fn Top name args returnType (toList $ emits `snoc` Typed Unit (Return unit))
             _ -> pure $ Fn Top name args returnType (toList emits)
+
+dsDef :: Tc.DefTc -> DsM Def
+dsDef (Tc.DefFn fn) = dsFunction fn
+dsDef (Tc.DefAdt adt) = undefined
 
 dsArg :: Tc.ArgX Tc.Tc -> DsM Arg
 dsArg (Tc.ArgX NoExtField name ty) = Arg name <$> mkClosureType ty

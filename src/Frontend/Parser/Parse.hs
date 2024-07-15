@@ -38,7 +38,10 @@ runP = runP' defaultBindingPowerTable
 pAdt = undefined
 
 pDef :: Parser DefPar
-pDef = do
+pDef = DefFn <$> pFunction
+
+pFunction :: Parser FnPar
+pFunction = do
     gs <- spanStart
     lexeme (keyword "def")
     name <- lexeme identifier

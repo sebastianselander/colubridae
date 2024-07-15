@@ -39,12 +39,16 @@ uniqueDefs = go builtInNames
             then duplicateToplevels info name
             else go (Set.insert name seen) xs
 
-rnDef :: DefPar -> Gen DefRn
-rnDef (Fn pos name arguments returnType block) = do
+rnFunction :: FnPar -> Gen FnRn
+rnFunction (Fn pos name arguments returnType block) = do
     arguments <- rnArgs arguments
     returnType <- rnType returnType
     statements <- rnBlock block
     return $ Fn pos name arguments returnType statements
+
+rnDef :: DefPar -> Gen DefRn
+rnDef (DefFn fn) = DefFn <$> rnFunction fn
+rnDef (DefAdt adt) = undefined
 
 rnBlock :: BlockPar -> Gen BlockRn
 rnBlock (BlockX a stmts expr) =
@@ -131,7 +135,7 @@ rnLit = \case
 getDefinitions :: ProgramPar -> [(SourceInfo, Ident)]
 getDefinitions = listify' fnName
   where
-    fnName :: DefPar -> Maybe (SourceInfo, Ident)
+    fnName :: FnPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _) = Just (info, name)
 
 rnArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]

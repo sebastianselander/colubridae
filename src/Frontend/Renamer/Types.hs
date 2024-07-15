@@ -20,6 +20,8 @@ data Rn
 
 type ProgramRn = ProgramX Rn
 type DefRn = DefX Rn
+type FnRn = FnX Rn
+type AdtRn = AdtX Rn
 type ArgRn = ArgX Rn
 type ExprRn = ExprX Rn
 type TypeRn = TypeX Rn
@@ -33,6 +35,8 @@ deriving instance Data ProgramRn
 deriving instance Data LitRn
 deriving instance Data ArgRn
 deriving instance Data DefRn
+deriving instance Data FnRn
+deriving instance Data AdtRn
 deriving instance Data TypeRn
 deriving instance Data BlockRn
 deriving instance Data StmtRn
@@ -43,6 +47,8 @@ type instance XProgram Rn = XProgram Par
 type instance XArg Rn = XArg Par
 
 type instance XDef Rn = XDef Par
+type instance XFn Rn = XFn Par
+type instance XAdt Rn = XAdt Par
 
 type instance XBlock Rn = XBlock Par
 

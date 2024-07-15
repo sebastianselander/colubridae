@@ -40,7 +40,7 @@ run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT e
 getDefs :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
 getDefs = listify' f
   where
-    f :: DefRn -> Maybe (Ident, (TypeTc, SourceInfo))
+    f :: FnRn -> Maybe (Ident, (TypeTc, SourceInfo))
     f (Fn info name args returnType _) =
         let funTy = TyFunX NoExtField (fmap argTy args) (typeOf returnType)
          in Just (name, (funTy, info))
@@ -57,7 +57,11 @@ tc names (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap
     funTable = Map.fromList $ getDefs defs
 
 tcDefs :: Names -> Map Ident (TypeTc, SourceInfo) -> DefRn -> (Either [TcError] DefTc, [TcWarning])
-tcDefs names funTable fun@(Fn _ _ args rt _) =
+tcDefs names funTable (DefFn fn) = first (fmap DefFn) $ tcFunction names funTable fn
+tcDefs names funTable (DefAdt adt) = undefined
+
+tcFunction :: Names -> Map Ident (TypeTc, SourceInfo) -> FnRn -> (Either [TcError] FnTc, [TcWarning])
+tcFunction names funTable fun@(Fn _ _ args rt _) =
     let varTable =
             foldr
                 ( uncurry Map.insert

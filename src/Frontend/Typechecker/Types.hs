@@ -11,13 +11,14 @@ import Data.Data (Data)
 import Relude hiding (Any)
 import Frontend.Types
 import Control.Lens (makeLenses)
-import Control.Lens.Getter (view)
 import Frontend.Renamer.Types (Boundedness)
 
 data Tc deriving (Data)
 
 type ProgramTc = ProgramX Tc
 type DefTc = DefX Tc
+type FnTc = FnX Tc
+type AdtTc = AdtX Tc
 type ArgTc = ArgX Tc
 type ExprTc = ExprX Tc
 type TypeTc = TypeX Tc
@@ -40,7 +41,9 @@ type instance XProgram Tc = NoExtField
 
 type instance XArg Tc = NoExtField
 
-type instance XDef Tc = NoExtField
+type instance XDef Tc = DataConCantHappen
+type instance XFn Tc = NoExtField
+type instance XAdt Tc = NoExtField
 
 type instance XBlock Tc = TcInfo
 

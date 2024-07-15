@@ -4,7 +4,7 @@ module Frontend.Typechecker.Ctx where
 
 import Control.Lens (makeLenses)
 import Data.Map (Map)
-import Frontend.Renamer.Types (DefRn, ExprRn)
+import Frontend.Renamer.Types (ExprRn, FnRn)
 import Frontend.Typechecker.Types (TypeTc)
 import Frontend.Types (SourceInfo)
 import Names (Ident, Names)
@@ -15,7 +15,7 @@ import Control.Lens.Setter (locally)
 data Ctx = Ctx
     { _functions :: Map Ident (TypeTc, SourceInfo)
     , _returnType :: TypeTc
-    , _currentFun :: DefRn
+    , _currentFun :: FnRn
     , _exprStack :: [ExprRn]
     , _names :: Names
     }
