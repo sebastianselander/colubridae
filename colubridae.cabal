@@ -33,6 +33,7 @@ library
     Backend.Llvm.Prelude
     Backend.Llvm.ToLlvm
     Backend.Llvm.Types
+    Backend.Types
     Compile
     Frontend.Builtin
     Frontend.Error

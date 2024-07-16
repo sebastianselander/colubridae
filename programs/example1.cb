@@ -1,7 +1,12 @@
-def foo(x: int) -> fn(int, int, int, int) -> int {
-    return \a b c d -> a + b + c + d + x
+type Foo {
+    Bar,
+    Baz(string),
+    Qux(),
 }
 
 def main() {
-    printInt(foo(100)(1,1,1,1));
+    let a = Bar;
+    let b = Baz;
+    let c = Qux;
 }
+

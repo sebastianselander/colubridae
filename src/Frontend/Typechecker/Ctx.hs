@@ -14,6 +14,7 @@ import Control.Lens.Setter (locally)
 
 data Ctx = Ctx
     { _functions :: Map Ident (TypeTc, SourceInfo)
+    , _constructors :: Map Ident (TypeTc, SourceInfo)
     , _returnType :: TypeTc
     , _currentFun :: FnRn
     , _exprStack :: [ExprRn]

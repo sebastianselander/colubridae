@@ -10,6 +10,7 @@ import Prettyprinter
 import Prettyprinter.Render.Text (renderStrict)
 import Relude hiding (Text, Type)
 import Origin (Origin(Top))
+import Backend.Types
 
 prettyDesugar :: Program -> Text
 prettyDesugar = renderStrict . layoutPretty defaultLayoutOptions . pProgram
@@ -20,13 +21,17 @@ pType = \case
     Unit -> "()"
     String -> "string"
     Char -> "char"
-    Int -> "int"
-    Double -> "double"
+    Int32 -> "int32"
+    Int64 -> "int64"
+    Float -> "double"
     Bool -> "bool"
     Mut ty -> pType ty <> "?"
-    Ptr ty -> pType ty <> "*"
-    Struct tys -> braces (concatWith (surround (comma <> space)) (fmap pType tys))
-    Array size ty -> brackets $ show size <+> "x" <+> pType ty
+    I n -> "i" <> show n
+    TyCon name -> pretty name
+    PointerType ty -> pType ty <> "*"
+    OpaquePointer -> "ptr"
+    StructType tys -> braces (concatWith (surround (comma <> space)) (fmap pType tys))
+    ArrayType size ty -> brackets $ show size <+> "x" <+> pType ty
     TyFun args ret ->
         sep
             [ "fn" <> parens (hcat (punctuate comma (fmap pType args)))

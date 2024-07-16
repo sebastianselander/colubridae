@@ -6,12 +6,15 @@ module Backend.Desugar.Basic (basicDesugar) where
 
 import Backend.Desugar.Types
 import Backend.Llvm.Prelude (globalUnit)
+import Backend.Types
 import Control.Lens (makeLenses)
 import Control.Lens.Getter (use, view)
 import Control.Lens.Setter (assign, modifying)
+import Control.Monad.Extra (concatMapM)
 import Data.DList
 import Data.List (nub, (\\))
 import Data.Text qualified as Text
+import Data.Tuple.Extra (uncurry3)
 import Frontend.Renamer.Types qualified as Rn (Boundedness (..))
 import Frontend.Typechecker.Types (stmtType, varType)
 import Frontend.Typechecker.Types qualified as Tc
@@ -21,7 +24,6 @@ import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify')
-import Data.Tuple.Extra (uncurry3)
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -68,7 +70,7 @@ unnamed thing = do
     pure ()
 
 declare :: Type -> DsM Ident
-declare Unit = do
+declare (I 1) = do
     name <- fresh "declare"
     emit $ Typed Unit $ Let name Unit (Just unit)
     pure name
@@ -95,7 +97,7 @@ basicDesugar names = fst . run (const $ pure ()) names 0 . dsProgram
 
 dsProgram :: Tc.ProgramTc -> DsM Program
 dsProgram (Tc.ProgramX Tc.NoExtField defs) = do
-    defs <- mapM dsDef defs
+    defs <- concatMapM dsDef defs
     lifteds <- use lifted
     strings <- use staticStrings
     pure $ Program $ fmap (uncurry3 StaticString) strings <> toList lifteds <> defs
@@ -107,7 +109,7 @@ isMain _ = False
 dsFunction :: Tc.FnTc -> DsM Def
 dsFunction def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, _) stmts tail)) = do
     assign nameCounter 0 -- Start the name counter from 0 for each local scope
-    args <- (EnvArg (Ptr Void) :) <$> mapM dsArg args
+    args <- (EnvArg (PointerType Void) :) <$> mapM dsArg args
     returnType <- mkClosureType returnType
     case tail of
         Nothing -> mapM_ dsStmt stmts
@@ -122,12 +124,33 @@ dsFunction def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, _) stmt
     if isMain def
         then pure $ Main (toList emits)
         else case returnType of
-            Unit -> pure $ Fn Top name args returnType (toList $ emits `snoc` Typed Unit (Return unit))
+            (I 1) -> pure $ Fn Top name args returnType (toList $ emits `snoc` Typed (I 1) (Return unit))
             _ -> pure $ Fn Top name args returnType (toList emits)
 
-dsDef :: Tc.DefTc -> DsM Def
-dsDef (Tc.DefFn fn) = dsFunction fn
-dsDef (Tc.DefAdt adt) = pure $ Fn Top (Ident "adt_placeholder") [] Unit []
+dsDef :: Tc.DefTc -> DsM [Def]
+dsDef (Tc.DefFn fn) = pure <$> dsFunction fn
+dsDef (Tc.DefAdt adt) = dsAdt adt
+
+dsAdt :: Tc.AdtTc -> DsM [Def]
+dsAdt (Tc.AdtX _loc name constructors) = do
+    alloc <- constructorAllocSize constructors
+    funs <- mapM mkConstructorFunction constructors
+    case alloc of
+        0 -> pure $ TypeSyn name (StructType [Int64]) : funs
+        n -> pure $ TypeSyn name (StructType [Int64, ArrayType (n `div` 8 + 1) (I 8)]) : funs
+
+mkConstructorFunction :: Tc.ConstructorTc -> DsM Def
+mkConstructorFunction = \case
+    Tc.EnumCons (_loc, ty) name -> Con name <$> dsType ty <*> pure Nothing
+    Tc.FunCons (_loc, ty) name tys -> Con name <$> dsType ty <*> Just <$> mapM dsType tys
+
+constructorAllocSize :: (Monad m) => [Tc.ConstructorTc] -> m Int
+constructorAllocSize [] = pure 0
+constructorAllocSize (Tc.EnumCons (_loc, _) _ : cons) = fmap (max 0) (constructorAllocSize cons)
+constructorAllocSize (Tc.FunCons (_loc, _) _ tys : cons) = do
+    size <- sum <$> mapM (fmap sizeOf . dsType) tys
+    rest <- constructorAllocSize cons
+    pure (max (fromIntegral size) rest)
 
 dsArg :: Tc.ArgX Tc.Tc -> DsM Arg
 dsArg (Tc.ArgX NoExtField name ty) = Arg name <$> mkClosureType ty
@@ -142,7 +165,10 @@ dsExpr = \case
         lit <- dsLit lit
         named $ typed ty lit
     Tc.VarX (_info, ty, binding) name -> do
-        ty <- mkClosureType ty
+        ty <- case binding of
+            Rn.Toplevel -> dsType ty
+            Rn.Constructor -> dsType ty
+            _ -> mkClosureType ty
         pure $ Typed ty (Var (dsBound binding) name)
     Tc.BinOpX (_, ty) l op r -> do
         l <- dsExpr l
@@ -158,17 +184,17 @@ dsExpr = \case
         rs <- mapM dsExpr rs
         ty <- mkClosureType ty
         case l of
-            Typed _ (Var Toplevel _) -> named $ pure $ Typed ty (App l (Typed (Ptr Void) (Lit NullLit) : rs))
+            Typed _ (Var Toplevel _) -> named $ pure $ Typed ty (App l (Typed (PointerType Void) (Lit NullLit) : rs))
             Typed lty l -> do
                 let function = StructIndexing (Typed lty l) 0
                 let env = StructIndexing (Typed lty l) 1
-                named $ pure $ Typed ty (App (Typed lty function) (Typed (Ptr Void) env : rs))
+                named $ pure $ Typed ty (App (Typed lty function) (Typed (PointerType Void) env : rs))
     Tc.LetX info name expr -> do
         (list, expr) <- contextually $ dsExpr expr
         case expr of
             Typed _ (Var Toplevel _) -> do
                 varty <- dsType $ view varType info
-                let tupleTy = Struct [varty, Ptr Void]
+                let tupleTy = StructType [varty, PointerType Void]
                 unnamed
                     $ typed
                         (view stmtType info)
@@ -248,7 +274,7 @@ dsExpr = \case
                 Fn
                     Lifted
                     freshName
-                    (EnvArg (Ptr Void) : args)
+                    (EnvArg (PointerType Void) : args)
                     returnType
                     (declareFrees <> toList (lambdaBody `snoc` Typed returnType (Return expr)))
             )
@@ -262,33 +288,34 @@ dsExpr = \case
 
 boundArgs :: [Arg] -> [(Type, Ident)]
 boundArgs [] = []
-boundArgs (x:xs) = case x of
-    Arg name ty -> (ty,name) : boundArgs xs
+boundArgs (x : xs) = case x of
+    Arg name ty -> (ty, name) : boundArgs xs
     _ -> boundArgs xs
 
-mkClosureType :: Monad m => Tc.TypeTc -> m Type
+mkClosureType :: (Monad m) => Tc.TypeTc -> m Type
 mkClosureType (Tc.TyFunX NoExtField ls r) = do
     ls <- mapM mkClosureType ls
     r <- mkClosureType r
-    pure $ Struct [TyFun ls r, Ptr Void]
+    pure $ StructType [TyFun ls r, PointerType Void]
 mkClosureType (Tc.TypeX (Tc.MutableX ty)) = Mut <$> mkClosureType ty
 mkClosureType ty = dsType ty
 
 dsType :: (Monad m) => Tc.TypeTc -> m Type
 dsType = \case
+    Tc.TyConX NoExtField name -> pure (TyCon name)
     Tc.TyLitX NoExtField Tc.UnitX -> pure Unit
-    Tc.TyLitX NoExtField Tc.StringX -> pure String
-    Tc.TyLitX NoExtField Tc.CharX -> pure Char
-    Tc.TyLitX NoExtField Tc.DoubleX -> pure Double
-    Tc.TyLitX NoExtField Tc.IntX -> pure Int
-    Tc.TyLitX NoExtField Tc.BoolX -> pure Bool
+    Tc.TyLitX NoExtField Tc.StringX -> pure (PointerType (I 8))
+    Tc.TyLitX NoExtField Tc.CharX -> pure (I 8)
+    Tc.TyLitX NoExtField Tc.DoubleX -> pure Float
+    Tc.TyLitX NoExtField Tc.IntX -> pure (I 64)
+    Tc.TyLitX NoExtField Tc.BoolX -> pure (I 1)
     Tc.TyFunX NoExtField l r -> do
         ls <- mapM dsType l
         r <- dsType r
-        pure $ TyFun (Ptr Void : ls) r
+        pure $ TyFun (PointerType Void : ls) r
     Tc.TypeX (Tc.MutableX ty) -> Mut <$> dsType ty
-    Tc.TypeX Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type of `return` and `break` so that they can be placed anywhere.
-
+    Tc.TypeX Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type
+    -- of `return` and `break` so that they can be placed anywhere.
 
 env :: Ident
 env = Ident "env"
@@ -349,7 +376,7 @@ dsLit = \case
     Tc.DoubleLitX NoExtField double -> pure $ Lit $ DoubleLit double
     Tc.StringLitX NoExtField string -> do
         name <- fresh "static_string"
-        modifying staticStrings ((name, Array (Text.length string + 1) Char, string <> "\\00") :)
+        modifying staticStrings ((name, ArrayType (Text.length string + 1) (I 8), string <> "\\00") :)
         pure (Var Toplevel name)
     Tc.CharLitX NoExtField char -> pure $ Lit $ CharLit char
     Tc.BoolLitX NoExtField bool -> pure $ Lit $ BoolLit bool
@@ -374,10 +401,10 @@ ass name typ binding op xpr = do
             Tc.ModAssign -> assignment Mod
 
 true :: TyExpr
-true = Typed Bool $ Lit $ BoolLit True
+true = Typed (I 8) $ Lit $ BoolLit True
 
 unit :: TyExpr
-unit = Typed Unit $ Lit UnitLit
+unit = Typed (I 1) $ Lit UnitLit
 
 typed :: Tc.TypeTc -> Expr -> DsM TyExpr
 typed ty expr = Typed <$> dsType ty <*> pure expr
@@ -408,6 +435,7 @@ dsBound = \case
     Rn.Free -> Free
     Rn.Bound -> Bound
     Rn.Toplevel -> Toplevel
+    Rn.Constructor -> Toplevel
 
 contextually :: DsM a -> DsM (DList TyExpr, a)
 contextually m = do

@@ -9,7 +9,8 @@ import Prettyprinter
 import Backend.Llvm.Prelude (prelude)
 import Backend.Llvm.Types
 import Prettyprinter.Render.Text (renderStrict)
-import Relude
+import Relude hiding (Type)
+import Backend.Types (Type(..))
 
 llvmOut :: (Pretty a) => a -> Text
 llvmOut = (prelude <>) . renderStrict . layoutPretty (LayoutOptions {layoutPageWidth=Unbounded}) . pretty
@@ -24,6 +25,7 @@ instance Pretty Ir where
     pretty (Ir decls) = hcat $ punctuate (hardline <> hardline) $ fmap pretty decls
 
 instance Pretty Decl where
+    pretty (TypeDefinition name ty) = "%" <> pretty name <+> "= type" <+> pretty ty
     pretty (GlobalString name ty string) = "@" <> pretty name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
     pretty (LlvmMain instr) =
         "define void @main()"
@@ -46,22 +48,21 @@ instance Pretty Decl where
             <> hardline
             <> rbrace
 
-instance Pretty LlvmType where
+instance Pretty Type where
     pretty = \case
-        I64 -> "i64"
-        I32 -> "i32"
-        I1 -> "i1"
+        I n -> "i" <> show n
         Float -> "double"
-        I8 -> "i8"
         ArrayType size ty -> brackets $ show size <+> "x" <+> pretty ty
-        LlvmVoid -> "void"
-        PointerType BlindPointerType -> "ptr"
-        PointerType LlvmVoid -> "ptr"
+        Void -> "void"
+        OpaquePointer -> "ptr"
+        PointerType OpaquePointer -> "ptr"
+        PointerType Void -> "ptr"
         PointerType (PointerType _) -> "ptr"
         PointerType ty -> pretty ty <> "*"
-        BlindPointerType -> "ptr"
-        FunPtr ty tys ->  pretty ty <> tupled (fmap pretty tys) <> "*"
-        StructType tys -> braces $ concatWith (surround (comma <> space)) $ fmap pretty tys
+        TyFun tys ty ->  pretty ty <> tupled (fmap pretty tys) <> "*"
+        StructType tys -> braces $ space <> concatWith (surround (comma <> space)) (fmap pretty tys) <> space
+        Mut ty -> pretty ty
+        TyCon name -> "%" <> pretty name
 
 instance Pretty Constant where
     pretty = \case
@@ -86,7 +87,7 @@ instance Pretty Instruction where
         Load operand -> do
                 let ty = case typeOf operand of
                             PointerType ty -> ty
-                            BlindPointerType -> BlindPointerType
+                            OpaquePointer -> OpaquePointer
                             _ -> error "Non-pointer"
                 "load" <+> pretty ty <> "," <+> typed operand
         Ret operand -> "ret" <+> typed operand

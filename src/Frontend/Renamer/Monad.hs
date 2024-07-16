@@ -1,7 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Renamer.Monad
     ( Env,
@@ -11,6 +11,7 @@ module Frontend.Renamer.Monad
       boundVar,
       insertVar,
       boundArg,
+      boundCons,
       emptyCtx,
       emptyEnv,
       definitions,
@@ -32,9 +33,9 @@ import Data.Set qualified as Set
 import Frontend.Builtin (builtInNames)
 import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
+import Frontend.Types (SourceInfo)
 import Names (Ident (..))
 import Relude hiding (Map, head)
-import Frontend.Types (SourceInfo)
 
 data Env = Env
     { _newToOld :: Map Ident Ident
@@ -83,6 +84,9 @@ names = use newToOld
 boundFun :: (MonadReader Ctx m) => Ident -> m (Maybe Ident)
 boundFun name = views definitions (bool Nothing (Just name) . Set.member name)
 
+boundCons :: (MonadState Env m) => Ident -> m (Maybe Ident)
+boundCons name = uses constructors (bool Nothing (Just name) . Set.member name)
+
 boundArg :: (MonadState Env m) => Ident -> m (Maybe Ident)
 boundArg name = uses arguments (Map.lookup name)
 
@@ -122,7 +126,8 @@ insertArg name@(Ident nm) = do
     modifying arguments (Map.insert name name')
     pure name'
 
-checkAndinsertConstrutor :: (MonadValidate [RnError] m, MonadState Env m) => SourceInfo -> Ident -> m ()
+checkAndinsertConstrutor ::
+    (MonadValidate [RnError] m, MonadState Env m) => SourceInfo -> Ident -> m ()
 checkAndinsertConstrutor loc name = do
     uses constructors (Set.member name) >>= \case
         True -> conflictingDefinitionArgument loc name

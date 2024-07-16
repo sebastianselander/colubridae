@@ -3,7 +3,8 @@ module Backend.Desugar.Types where
 import Data.Data (Data)
 import Relude hiding (Type)
 import Names (Ident)
-import Origin (Origin)
+import Origin (Origin (..))
+import Backend.Types (Type(..))
 
 newtype Program = Program [Def]
     deriving (Show, Eq, Ord, Data)
@@ -11,24 +12,11 @@ newtype Program = Program [Def]
 data Def = Fn !Origin Ident [Arg] Type [TyExpr]
          | Main [TyExpr]
          | StaticString Ident Type Text
+         | TypeSyn Ident Type
+         | Con Ident Type (Maybe [Type])
     deriving (Show, Eq, Ord, Data)
 
 data Arg = Arg Ident Type | EnvArg Type
-    deriving (Show, Eq, Ord, Data)
-
-data Type
-    = Unit
-    | String
-    | Char
-    | Int
-    | Double
-    | Bool
-    | Mut Type
-    | TyFun [Type] Type
-    | Struct [Type]
-    | Array Int Type
-    | Void
-    | Ptr Type
     deriving (Show, Eq, Ord, Data)
 
 data TyExpr = Typed Type Expr

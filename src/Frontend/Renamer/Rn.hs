@@ -76,6 +76,7 @@ rnExpr = \case
     VarX info variable -> do
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
+                =<< maybe (fmap (Constructor,) <$> boundCons variable) (pure . Just)
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
                 =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable

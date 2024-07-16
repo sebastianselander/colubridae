@@ -10,7 +10,7 @@ import Control.Lens.Setter (locally, modifying)
 import Control.Lens.TH
 import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
-import Data.Data (Constr, Data)
+import Data.Data (Data)
 import Data.Map.Strict qualified as Map
 import Frontend.Builtin (builtIns)
 import Frontend.Error
@@ -37,8 +37,8 @@ newtype TcM a = Tc {runTc :: StateT Env (ReaderT Ctx (ValidateT [TcError] (Write
 run :: Ctx -> Env -> TcM a -> (Either [TcError] a, [TcWarning])
 run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT env . runTc
 
-getDefs :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
-getDefs = listify' f
+getFuns :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
+getFuns = listify' f
   where
     f :: FnRn -> Maybe (Ident, (TypeTc, SourceInfo))
     f (Fn info name args returnType _) =
@@ -49,16 +49,35 @@ getDefs = listify' f
         Mutable -> Mut $ typeOf ty
         Immutable -> typeOf ty
 
+getCons :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
+getCons = concat . listify' f
+  where
+    f :: AdtRn -> Maybe [(Ident, (TypeTc, SourceInfo))]
+    f (AdtX _ name cons) =
+        let returnType = TyConX NoExtField name
+         in Just $ fmap (g returnType) cons
+      where
+        g :: TypeTc -> ConstructorRn -> (Ident, (TypeTc, SourceInfo))
+        g returnType = \case
+            EnumCons loc name -> (name, (returnType, loc))
+            FunCons loc name argTys -> (name, (TyFunX NoExtField (fmap typeOf argTys) returnType, loc))
+
 tc :: Names -> ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
-tc names (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap (tcDefs names funTable) defs of
+tc names (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap (tcDefs names funTable conTable) defs of
     (([], defs), warnings) -> (Right $ ProgramX NoExtField defs, mconcat warnings)
     ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
   where
-    funTable = Map.fromList $ getDefs defs
+    funTable = Map.fromList $ getFuns defs
+    conTable = Map.fromList $ getCons defs
 
-tcDefs :: Names -> Map Ident (TypeTc, SourceInfo) -> DefRn -> (Either [TcError] DefTc, [TcWarning])
-tcDefs names funTable (DefFn fn) = first (fmap DefFn) $ tcFunction names funTable fn
-tcDefs names funTable (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
+tcDefs ::
+    Names ->
+    Map Ident (TypeTc, SourceInfo) ->
+    Map Ident (TypeTc, SourceInfo) ->
+    DefRn ->
+    (Either [TcError] DefTc, [TcWarning])
+tcDefs names funTable conTable (DefFn fn) = first (fmap DefFn) $ tcFunction names funTable conTable fn
+tcDefs _ _ _ (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
 
 tcAdt :: AdtRn -> (AdtTc, [TcWarning])
 tcAdt (AdtX loc name constructors) = (AdtX loc name (fmap (inferConstructor (TyConX NoExtField name)) constructors), [])
@@ -71,8 +90,12 @@ inferConstructor ty = \case
          in FunCons (loc, TyFunX NoExtField types' ty) name types'
 
 tcFunction ::
-    Names -> Map Ident (TypeTc, SourceInfo) -> FnRn -> (Either [TcError] FnTc, [TcWarning])
-tcFunction names funTable fun@(Fn _ _ args rt _) =
+    Names ->
+    Map Ident (TypeTc, SourceInfo) ->
+    Map Ident (TypeTc, SourceInfo) ->
+    FnRn ->
+    (Either [TcError] FnTc, [TcWarning])
+tcFunction names funTable conTable fun@(Fn _ _ args rt _) =
     let varTable =
             foldr
                 ( uncurry Map.insert
@@ -89,7 +112,7 @@ tcFunction names funTable fun@(Fn _ _ args rt _) =
                 )
                 mempty
                 args
-        ctx = Ctx.Ctx (Map.union builtIns funTable) (typeOf rt) fun [] names
+        ctx = Ctx.Ctx (Map.union builtIns funTable) conTable (typeOf rt) fun [] names
         env = Env varTable
      in run ctx env $ go fun
   where
@@ -160,6 +183,7 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
             Free -> lookupVar name
             Bound -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
+            Constructor -> lookupCon name
         pure $ VarX (info, ty, bind) name
     PrefixX info Neg expr -> do
         expr <- tcExpr Int expr
@@ -313,12 +337,8 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
         let literal = LitX (info, ty) lit'
         void $ unify info expectedTy literal
         pure literal
-    VarX (info, bind) name -> do
-        (ty, _declaredAtInfo) <- case bind of
-            Free -> lookupVar name
-            Bound -> lookupVar name
-            Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
-        let expr = VarX (info, ty, bind) name
+    VarX (info, _) _ -> do
+        expr <- infExpr currentExpr
         unify info expectedTy expr
         pure expr
     PrefixX info op expr -> do
@@ -474,6 +494,10 @@ insertVar name ty info = modifying variables (Map.insert name (ty, info))
 
 lookupVar :: (MonadState Env m) => Ident -> m (TypeTc, SourceInfo)
 lookupVar name = uses variables (fromJust . Map.lookup name)
+
+lookupCon :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
+lookupCon name = do
+    views Ctx.constructors (fromJust . Map.lookup name)
 
 lookupVarTy :: (MonadState Env m) => Ident -> m TypeTc
 lookupVarTy = fmap fst . lookupVar

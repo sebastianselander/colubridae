@@ -7,18 +7,21 @@ import Data.Data (Data)
 import Names (Ident)
 import Origin
 import Relude hiding (Type)
+import Backend.Types (Type (..))
 
 newtype Ir = Ir [Decl]
     deriving (Show)
 
+-- These are declared in the order we want them defined in the ir file
 data Decl
-    = Define !Origin !Ident [Operand] !LlvmType [Named Instruction]
-    | LlvmMain [Named Instruction]
-    | GlobalString !Ident !LlvmType !Text
+    = LlvmMain [Named Instruction]
+    | Define !Origin !Ident [Operand] !Type [Named Instruction]
+    | TypeDefinition !Ident !Type
+    | GlobalString !Ident !Type !Text
     deriving (Show)
 
 data Operand
-    = LocalReference !LlvmType !Ident
+    = LocalReference !Type !Ident
     | ConstantOperand !Constant
     deriving (Show)
 
@@ -32,12 +35,12 @@ newtype Label = L Ident
     deriving (Show)
 
 data Instruction
-    = Call !LlvmType !Operand [Operand]
-    | Arith !ArithOp !LlvmType !Operand !Operand
-    | Cmp !CmpOp !LlvmType !Operand !Operand
-    | And !LlvmType !Operand !Operand
-    | Or !LlvmType !Operand !Operand
-    | Alloca !LlvmType
+    = Call !Type !Operand [Operand]
+    | Arith !ArithOp !Type !Operand !Operand
+    | Cmp !CmpOp !Type !Operand !Operand
+    | And !Type !Operand !Operand
+    | Or !Type !Operand !Operand
+    | Alloca !Type
     | Malloc !Operand
     | Store !Operand !Operand
     | Load !Operand
@@ -52,36 +55,22 @@ data Instruction
     | Unreachable
     deriving (Show)
 
-data LlvmType
-    = I64
-    | I32
-    | I1
-    | Float
-    | I8
-    | PointerType LlvmType
-    | BlindPointerType
-    | LlvmVoid
-    | StructType [LlvmType]
-    | ArrayType Integer LlvmType
-    | FunPtr LlvmType [LlvmType]
-    deriving (Show)
-
 data Constant
-    = LInt !LlvmType !Integer
-    | LDouble !LlvmType !Double
-    | LBool !LlvmType !Bool
-    | LChar !LlvmType !Char
+    = LInt !Type !Integer
+    | LDouble !Type !Double
+    | LBool !Type !Bool
+    | LChar !Type !Char
     | LUnit
-    | LNull !LlvmType
-    | GlobalReference !LlvmType !Ident
+    | LNull !Type
+    | GlobalReference !Type !Ident
     deriving (Show)
 
 data Named a = Named Ident a | Nameless a
     deriving (Show, Functor, Traversable, Foldable, Generic, Data)
 
 class Typed a where
-    typeOf :: a -> LlvmType
-    setType :: LlvmType -> a -> a
+    typeOf :: a -> Type
+    setType :: Type -> a -> a
 
 instance Typed Operand where
     typeOf = \case
@@ -105,6 +94,6 @@ instance Typed Constant where
         LDouble ty _ -> ty
         LBool ty _ -> ty
         LChar ty _ -> ty
-        LUnit -> I1
+        LUnit -> I 1
         LNull ty -> ty
         GlobalReference ty _ -> ty

@@ -269,7 +269,7 @@ pExprAtom =
     pVar :: Parser ExprPar
     pVar = do
         gs <- spanStart
-        name <- identifier
+        name <- identifier <|> upperIdentifier
         info <- spanEnd gs
         pure (VarX info name)
 
