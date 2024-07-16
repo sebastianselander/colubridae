@@ -40,7 +40,8 @@ assembleCon name ty = \case
             name <- fresh
             operand <- alloca name ty
             ret operand
-            -- TODO: WORKING HERE!!
+            -- TODO: (Sebastian, 2024-07-16):
+            -- WORKING HERE!!
         pure [Define Constructor name [] ty instrs]
     Just tys -> do
         operands <- mapM (\name -> fmap (LocalReference name) fresh) tys
