@@ -36,6 +36,7 @@ pDumps =
                 (long "dump-st" <> help "Show the output of the statement checking phase")
             , flag Nothing (Just TypeCheck) (long "dump-tc" <> help "Show the output of the typechecker")
             , flag Nothing (Just Desugar) (long "dump-ds" <> help "Show the output of the desugaring phase")
+            , flag Nothing (Just Llvm) (long "dump-llvm" <> help "Dump the generated llvm-ir code")
             ]
 
 pInput :: Parser FilePath
