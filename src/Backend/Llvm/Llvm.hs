@@ -8,7 +8,7 @@ import Backend.Llvm.Monad
 import Backend.Llvm.Types
 import Backend.Types
 import Control.Lens.Getter (view)
-import Control.Lens.Setter (assign, locally)
+import Control.Lens.Setter (locally)
 import Names (Ident (..))
 import Relude hiding (Type, and, div, null, or, rem)
 import Origin (Origin(..))
@@ -18,7 +18,7 @@ assemble :: Program -> Ir
 assemble (Program defs) = Ir <$> runAssembler $ concatMapM assembleDecl (sortBy (comparing Down) defs)
 
 assembleDecl :: Def -> IRBuilder [Decl]
-assembleDecl (StaticString name ty text) = pure $ [GlobalString name ty text]
+assembleDecl (StaticString name ty text) = pure [GlobalString name ty text]
 assembleDecl (Main block) = do
     clearInstructions
     mapM_ assembleExpr block
