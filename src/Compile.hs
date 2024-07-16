@@ -22,6 +22,7 @@ import Relude hiding (concatMap, concat, intercalate)
 import Text.Pretty.Simple (pShow)
 import Options(Pass(..))
 import Frontend.Renamer.Pretty (prettyRenamer)
+import Frontend.Typechecker.Pretty (pThing)
 
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
@@ -51,7 +52,7 @@ compile fileName fileContents = do
     res <- case tc names res of
         (res, warnings) -> do
             res <- liftEither $ left report res
-            log (Debug TypeCheck Nothing (toStrict $ pShow res)) (fmap report warnings)
+            log (Debug TypeCheck (Just $ pThing res) (toStrict $ pShow res)) (fmap report warnings)
             pure res
 
     res <- case desugar names res of
