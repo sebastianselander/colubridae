@@ -33,6 +33,7 @@
               clang
               zlib
               gnumake
+              gdb
             ];
           }; };
       });
