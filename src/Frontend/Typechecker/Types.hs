@@ -45,7 +45,7 @@ type instance XArg Tc = NoExtField
 type instance XDef Tc = DataConCantHappen
 type instance XFn Tc = NoExtField
 
-type instance XAdt Tc = NoExtField
+type instance XAdt Tc = SourceInfo
 type instance XConstructor Tc = DataConCantHappen
 type instance XEnumCons Tc = TcInfo
 type instance XFunCons Tc = TcInfo
@@ -79,6 +79,7 @@ type instance XUnitLit Tc = NoExtField
 
 type instance XTyLit Tc = NoExtField
 type instance XTyFun Tc = NoExtField
+type instance XTyCon Tc = NoExtField
 type instance XType Tc = MetaTy
 
 type instance XLoop Tc = TcInfo

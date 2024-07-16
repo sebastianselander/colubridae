@@ -40,7 +40,7 @@ checkFunction (Fn info name _ returnType block) = runCheck (Ctx False) $ case re
 
 checkDef :: DefRn -> Either [ChError] ()
 checkDef (DefFn fn) = checkFunction fn
-checkDef (DefAdt adt) = undefined
+checkDef (DefAdt adt) = pure ()
 
 breakBlock :: BlockRn -> ChM ()
 breakBlock (BlockX _ statements tail) = mapM_ breakStmt statements >> mapM_ breakExpr tail

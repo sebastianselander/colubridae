@@ -77,6 +77,7 @@ type instance XUnitLit Par = NoExtField
 type instance XTyLit Par = NoExtField
 type instance XTyFun Par = NoExtField
 type instance XType Par = DataConCantHappen
+type instance XTyCon Par = NoExtField
 
 type instance XLoop Par = SourceInfo
 type instance XLam Par = SourceInfo

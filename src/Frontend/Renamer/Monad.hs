@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Renamer.Monad
     ( Env,
@@ -19,6 +20,7 @@ module Frontend.Renamer.Monad
       boundFun,
       insertArg,
       names,
+      checkAndinsertConstrutor,
     ) where
 
 import Control.Lens hiding ((<|))
@@ -32,12 +34,14 @@ import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
 import Names (Ident (..))
 import Relude hiding (Map, head)
+import Frontend.Types (SourceInfo)
 
 data Env = Env
     { _newToOld :: Map Ident Ident
     , _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident Ident)
     , _arguments :: Map Ident Ident
+    , _constructors :: Set Ident
     }
     deriving (Show)
 
@@ -58,7 +62,7 @@ newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
         )
 
 emptyEnv :: Env
-emptyEnv = Env mempty mempty (return mempty) mempty
+emptyEnv = Env mempty mempty (return mempty) mempty mempty
 
 emptyCtx :: Ctx
 emptyCtx = Ctx builtInNames
@@ -117,6 +121,12 @@ insertArg name@(Ident nm) = do
     modifying numbering (Map.insert name n)
     modifying arguments (Map.insert name name')
     pure name'
+
+checkAndinsertConstrutor :: (MonadValidate [RnError] m, MonadState Env m) => SourceInfo -> Ident -> m ()
+checkAndinsertConstrutor loc name = do
+    uses constructors (Set.member name) >>= \case
+        True -> conflictingDefinitionArgument loc name
+        False -> modifying constructors (Set.insert name)
 
 newContext :: Gen a -> Gen a
 newContext rn = do

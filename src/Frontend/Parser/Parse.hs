@@ -80,8 +80,13 @@ pArg = do
     pure (ArgX (info, mut) name ty)
 
 pType :: Parser TypePar
-pType = P.choice [pAtom, pFunTy, parens pType] <?> "type"
+pType = P.choice [pAtom, pFunTy, pTyCon, parens pType] <?> "type"
   where
+    pTyCon :: Parser TypePar
+    pTyCon = do
+        name <- lexeme upperIdentifier
+        pure $ TyConX NoExtField name
+
     pFunTy :: Parser TypePar
     pFunTy = do
         lexeme $ keyword "fn"

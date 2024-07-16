@@ -10,19 +10,19 @@ import Control.Lens.Setter (locally, modifying)
 import Control.Lens.TH
 import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
-import Data.Data (Data)
+import Data.Data (Constr, Data)
 import Data.Map.Strict qualified as Map
 import Frontend.Builtin (builtIns)
 import Frontend.Error
 import Frontend.Renamer.Types
+import Frontend.Typechecker.Ctx (Ctx)
+import Frontend.Typechecker.Ctx qualified as Ctx
 import Frontend.Typechecker.Types
 import Frontend.Types
 import Names (Ident, Names, getOriginalName')
 import Relude hiding (Any, intercalate)
 import Relude.Unsafe (fromJust)
 import Utils (chain, listify')
-import Frontend.Typechecker.Ctx qualified as Ctx
-import Frontend.Typechecker.Ctx (Ctx)
 
 newtype Env = Env
     { _variables :: Map Ident (TypeTc, SourceInfo)
@@ -58,9 +58,20 @@ tc names (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap
 
 tcDefs :: Names -> Map Ident (TypeTc, SourceInfo) -> DefRn -> (Either [TcError] DefTc, [TcWarning])
 tcDefs names funTable (DefFn fn) = first (fmap DefFn) $ tcFunction names funTable fn
-tcDefs names funTable (DefAdt adt) = undefined
+tcDefs names funTable (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
 
-tcFunction :: Names -> Map Ident (TypeTc, SourceInfo) -> FnRn -> (Either [TcError] FnTc, [TcWarning])
+tcAdt :: AdtRn -> (AdtTc, [TcWarning])
+tcAdt (AdtX loc name constructors) = (AdtX loc name (fmap (inferConstructor (TyConX NoExtField name)) constructors), [])
+
+inferConstructor :: TypeTc -> ConstructorRn -> ConstructorTc
+inferConstructor ty = \case
+    EnumCons loc name -> EnumCons (loc, ty) name
+    FunCons loc name types ->
+        let types' = fmap typeOf types
+         in FunCons (loc, TyFunX NoExtField types' ty) name types'
+
+tcFunction ::
+    Names -> Map Ident (TypeTc, SourceInfo) -> FnRn -> (Either [TcError] FnTc, [TcWarning])
 tcFunction names funTable fun@(Fn _ _ args rt _) =
     let varTable =
             foldr
@@ -386,7 +397,9 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
 
 -- | Unify the arguments of a lambda with the the given types
 unifyLambdaArgs ::
-    (MonadReader Ctx m, MonadValidate [TcError] m, MonadState Env m) => [(TypeTc, LamArgRn)] -> m [LamArgTc]
+    (MonadReader Ctx m, MonadValidate [TcError] m, MonadState Env m) =>
+    [(TypeTc, LamArgRn)] ->
+    m [LamArgTc]
 unifyLambdaArgs [] = pure []
 unifyLambdaArgs
     ((expectedType, LamArgX (loc, mut, mbArgumentType) argumentName) : xs) = do
@@ -499,6 +512,7 @@ instance TypeOf TypeRn where
     typeOf = \case
         TyLitX a b -> TyLitX a b
         TyFunX a b c -> TyFunX a (fmap typeOf b) (typeOf c)
+        TyConX a b -> TyConX a b
 
 instance TypeOf LamArgTc where
     typeOf (LamArgX ty _) = ty

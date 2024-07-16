@@ -22,9 +22,11 @@ rename = runGen emptyEnv emptyCtx . rnProgram
 
 rnProgram :: ProgramPar -> Gen (ProgramRn, Names)
 rnProgram program@(ProgramX a defs) = do
-    let toplevels = getDefinitions program
-    uniqueDefs toplevels
-    let toplevelSet = Set.fromList $ fmap snd toplevels
+    let functions = getFunctionNames program
+    let adts = getAdtNames program
+    uniqueDefs adts
+    uniqueDefs functions
+    let toplevelSet = Set.fromList $ fmap snd functions
     defs <- locally definitions (Set.union toplevelSet) (mapM rnDef defs)
     names <- names
     pure (ProgramX a defs, mkNames names)
@@ -48,7 +50,15 @@ rnFunction (Fn pos name arguments returnType block) = do
 
 rnDef :: DefPar -> Gen DefRn
 rnDef (DefFn fn) = DefFn <$> rnFunction fn
-rnDef (DefAdt adt) = undefined
+rnDef (DefAdt adt) = DefAdt <$> rnAdt adt
+
+rnAdt :: AdtPar -> Gen AdtRn
+rnAdt (AdtX loc name constructors) = AdtX loc name <$> mapM rnConstructor constructors
+
+rnConstructor :: ConstructorPar -> Gen ConstructorRn
+rnConstructor = \case
+    EnumCons loc name -> checkAndinsertConstrutor loc name >> pure (EnumCons loc name)
+    FunCons loc name types -> checkAndinsertConstrutor loc name >> FunCons loc name <$> mapM rnType types
 
 rnBlock :: BlockPar -> Gen BlockRn
 rnBlock (BlockX a stmts expr) =
@@ -122,7 +132,6 @@ rnLamArgs = foldM f mempty
         ty <- mapM rnType ty
         pure (LamArgX (info, mut, ty) name : seen)
 
-
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
     IntLitX info lit -> pure $ IntLitX info lit
@@ -132,8 +141,14 @@ rnLit = \case
     BoolLitX info lit -> pure $ BoolLitX info lit
     UnitLitX info -> pure $ UnitLitX info
 
-getDefinitions :: ProgramPar -> [(SourceInfo, Ident)]
-getDefinitions = listify' fnName
+getAdtNames :: ProgramPar -> [(SourceInfo, Ident)]
+getAdtNames = listify' adtName
+  where
+    adtName :: AdtPar -> Maybe (SourceInfo, Ident)
+    adtName (AdtX info name _) = Just (info, name)
+
+getFunctionNames :: ProgramPar -> [(SourceInfo, Ident)]
+getFunctionNames = listify' fnName
   where
     fnName :: FnPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _) = Just (info, name)

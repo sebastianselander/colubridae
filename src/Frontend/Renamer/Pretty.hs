@@ -11,20 +11,30 @@ import Prettyprinter (Doc, Pretty, (<+>))
 import Prettyprinter qualified as Pretty
 import Relude
 
-prettyRenamer :: Pretty a => a -> Text
+prettyRenamer :: (Pretty a) => a -> Text
 prettyRenamer = show . Pretty.pretty
 
-
 instance Pretty ProgramRn where
-    pretty (ProgramX NoExtField defs) = Pretty.concatWith (Pretty.surround Pretty.hardline) (fmap Pretty.pretty defs)
+    pretty (ProgramX NoExtField defs) = Pretty.concatWith (Pretty.surround (Pretty.hardline <> Pretty.hardline)) (fmap Pretty.pretty defs)
 
 instance Pretty DefRn where
-  pretty (DefFn fn) = Pretty.pretty fn
-  pretty (DefAdt adt) = Pretty.pretty adt
-
+    pretty (DefFn fn) = Pretty.pretty fn
+    pretty (DefAdt adt) = Pretty.pretty adt
 
 instance Pretty AdtRn where
-  pretty = undefined
+    pretty (AdtX _ name cons) =
+        "type"
+            <+> Pretty.pretty name
+            <+> Pretty.braces 
+                (Pretty.hardline <> Pretty.indent 4 ( Pretty.concatWith
+                    (Pretty.surround Pretty.hardline)
+                    (fmap (\x -> Pretty.pretty x <> Pretty.comma) cons)
+                ) <> Pretty.hardline)
+
+instance Pretty ConstructorRn where
+  pretty = \case
+    EnumCons _ name -> Pretty.pretty name
+    FunCons _ name types -> Pretty.pretty name <> Pretty.parens (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap Pretty.pretty types))
 
 instance Pretty FnRn where
     pretty (Fn _ (Ident name) args ty block) =
@@ -68,6 +78,7 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeRn -> Doc ann
 prettyType2 = \case
+    TyConX _ name -> Pretty.pretty name
     TyLitX _ tylit -> case tylit of
         UnitX -> "()"
         StringX -> "string"

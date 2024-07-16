@@ -127,7 +127,7 @@ dsFunction def@(Tc.Fn NoExtField name args returnType (Tc.BlockX (_info, _) stmt
 
 dsDef :: Tc.DefTc -> DsM Def
 dsDef (Tc.DefFn fn) = dsFunction fn
-dsDef (Tc.DefAdt adt) = undefined
+dsDef (Tc.DefAdt adt) = pure $ Fn Top (Ident "adt_placeholder") [] Unit []
 
 dsArg :: Tc.ArgX Tc.Tc -> DsM Arg
 dsArg (Tc.ArgX NoExtField name ty) = Arg name <$> mkClosureType ty
