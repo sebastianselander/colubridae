@@ -68,7 +68,7 @@ instance Pretty Constant where
     pretty = \case
         LInt _ int -> show int
         LDouble _ double -> show double
-        LBool _ bool -> show (fromEnum bool)
+        LBool _ b -> bool "false" "true" b
         LChar _ _ -> error "TODO"
         LUnit -> "1"
         LNull _ -> "null"
