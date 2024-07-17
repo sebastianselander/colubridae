@@ -1,19 +1,20 @@
 module Backend.Desugar.Types where
 
+import Backend.Types (Type (..))
 import Data.Data (Data)
-import Relude hiding (Type)
 import Names (Ident)
 import Origin (Origin (..))
-import Backend.Types (Type(..))
+import Relude hiding (Type)
 
 newtype Program = Program [Def]
     deriving (Show, Eq, Ord, Data)
 
-data Def = Fn !Origin Ident [Arg] Type [TyExpr]
-         | Main [TyExpr]
-         | StaticString Ident Type Text
-         | TypeSyn Ident Type
-         | Con Int Ident Type (Maybe [Type])
+data Def
+    = Fn !Origin Ident [Arg] Type [TyExpr]
+    | Main [TyExpr]
+    | StaticString Ident Type Text
+    | TypeSyn Ident Type
+    | Con Int Ident Type (Maybe [Type])
     deriving (Show, Eq, Ord, Data)
 
 data Arg = Arg Ident Type | EnvArg Type
@@ -35,11 +36,19 @@ data Expr
     | If TyExpr [TyExpr] (Maybe [TyExpr])
     | While TyExpr [TyExpr]
     | Closure TyExpr [TyExpr]
-    | ExtractFree Ident Ident Integer -- ^ `ident = ident[integer]`
+    | -- | `ident = ident[integer]`
+      ExtractFree Ident Ident Integer
     | StructIndexing TyExpr Integer
     deriving (Show, Eq, Ord, Data)
 
-data Binding = Free | Bound | Toplevel | Argument | Constructor | GlblConst | Lambda
+data Binding
+    = Free
+    | Bound
+    | Toplevel
+    | Argument
+    | Constructor
+    | GlblConst
+    | Lambda
     deriving (Show, Eq, Ord, Data)
 
 data BinOp
