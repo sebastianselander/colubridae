@@ -1,12 +1,8 @@
 type Foo {
     Bar,
-    Baz(string),
-    Qux(),
+    Foo(string, int)
 }
 
 def main() {
-    let a = Bar;
-    let b = Baz;
-    let c = Qux;
+    let res = Foo("hejsan", 42069)
 }
-
