@@ -569,4 +569,7 @@ unify' info ty1 ty2 = do
         (_, TypeX AnyX) -> pure ()
         (ty1, TypeX (MutableX ty2)) -> unify' info ty1 ty2
         (TypeX (MutableX ty1), ty2) -> unify' info ty1 ty2
+        (TyConX NoExtField name1, TyConX NoExtField name2)
+            | name1 == name2 -> pure ()
+            | otherwise -> tyExpectedGot info [ty1] ty2
         (ty1, ty2) -> void $ tyExpectedGot info [ty1] ty2
