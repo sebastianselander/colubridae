@@ -4,13 +4,13 @@
 module Backend.Desugar.Pretty where
 
 import Backend.Desugar.Types
+import Backend.Types
 import Data.Text (Text)
 import Names
+import Origin (Origin (Top))
 import Prettyprinter
 import Prettyprinter.Render.Text (renderStrict)
 import Relude hiding (Text, Type)
-import Origin (Origin(Top))
-import Backend.Types
 
 prettyDesugar :: Program -> Text
 prettyDesugar = renderStrict . layoutPretty defaultLayoutOptions . pProgram
@@ -74,6 +74,14 @@ pProgram :: Program -> Doc ann
 pProgram (Program defs) = hcat (punctuate hardline (fmap pDef defs))
 
 pDef :: Def -> Doc ann
+pDef (TypeSyn name ty) = "type" <+> pretty name <+> "=" <+> pType ty
+pDef (Con index name ty arguments) =
+    show index
+        <> "#"
+        <> pretty name
+        <> maybe "" (\xs -> parens (concatWith (surround (comma <> space)) $ fmap pType xs)) arguments
+        <> ":"
+        <+> pType ty
 pDef (StaticString name ty str) = "const" <+> pretty name <> ":" <+> pType ty <+> "=" <+> pretty str
 pDef (Main exprs) = pDef (Fn Top (Ident "main") [] Unit exprs)
 pDef (Fn _ name args typ exprs) =
@@ -136,6 +144,8 @@ pExpr (Typed ty expr) = go expr
                 <> "{"
                 <> indent 4 (hcat $ punctuate hardline (fmap pExpr exprs))
                 <> "}"
-        Closure fun freeVars -> braces (pExpr fun <> "," <+> brackets (concatWith (surround (comma <> space)) (fmap pExpr freeVars)))
+        Closure fun freeVars ->
+            braces
+                (pExpr fun <> "," <+> brackets (concatWith (surround (comma <> space)) (fmap pExpr freeVars)))
         StructIndexing expr n -> "get" <> parens (pExpr expr <> "," <+> show n)
         ExtractFree bindName envName index -> "let" <+> pretty bindName <+> "=" <+> pretty envName <> brackets (show index)

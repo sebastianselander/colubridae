@@ -23,7 +23,7 @@ import Frontend.Types qualified as Tc
 import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
-import Utils (listify')
+import Utils (listify', mapWithIndexM)
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -134,15 +134,15 @@ dsDef (Tc.DefAdt adt) = dsAdt adt
 dsAdt :: Tc.AdtTc -> DsM [Def]
 dsAdt (Tc.AdtX _loc name constructors) = do
     alloc <- constructorAllocSize constructors
-    funs <- mapM mkConstructorFunction constructors
+    funs <- mapWithIndexM mkConstructorFunction constructors
     case alloc of
         0 -> pure $ TypeSyn name (StructType [Int64]) : funs
-        n -> pure $ TypeSyn name (StructType [Int64, ArrayType (n `div` 8 + 1) (I 8)]) : funs
+        n -> pure $ TypeSyn name (StructType [Int64, ArrayType (n `div` 8) (I 64)]) : funs
 
-mkConstructorFunction :: Tc.ConstructorTc -> DsM Def
-mkConstructorFunction = \case
-    Tc.EnumCons (_loc, ty) name -> Con name <$> dsType ty <*> pure Nothing
-    Tc.FunCons (_loc, ty) name tys -> Con name <$> dsType ty <*> Just <$> mapM dsType tys
+mkConstructorFunction :: Int -> Tc.ConstructorTc -> DsM Def
+mkConstructorFunction n = \case
+    Tc.EnumCons (_loc, ty) name -> Con n name <$> dsType ty <*> pure Nothing
+    Tc.FunCons (_loc, ty) name tys -> Con n name <$> dsType ty <*> Just <$> mapM dsType tys
 
 constructorAllocSize :: (Monad m) => [Tc.ConstructorTc] -> m Int
 constructorAllocSize [] = pure 0
@@ -435,7 +435,7 @@ dsBound = \case
     Rn.Free -> Free
     Rn.Bound -> Bound
     Rn.Toplevel -> Toplevel
-    Rn.Constructor -> Toplevel
+    Rn.Constructor -> Constructor
 
 contextually :: DsM a -> DsM (DList TyExpr, a)
 contextually m = do

@@ -9,13 +9,14 @@ import Backend.Llvm.Types
 import Backend.Types
 import Control.Lens.Getter (view)
 import Control.Lens.Setter (locally)
-import Names (Ident (..))
-import Relude hiding (Type, and, div, null, or, rem)
-import Origin (Origin(..))
 import Control.Monad.Extra (concatMapM)
+import Names (Ident (..))
+import Origin (Origin (..))
+import Relude hiding (Type, and, div, null, or, rem)
+import Utils (mapWithIndexM)
 
 assemble :: Program -> Ir
-assemble (Program defs) = Ir <$> runAssembler $ concatMapM assembleDecl (sortBy (comparing Down) defs)
+assemble (Program defs) = Ir . sortBy (comparing Down) <$> runAssembler $ concatMapM assembleDecl defs
 
 assembleDecl :: Def -> IRBuilder [Decl]
 assembleDecl (StaticString name ty text) = pure [GlobalString name ty text]
@@ -29,23 +30,38 @@ assembleDecl (Fn origin name arguments returnType block) = do
     mapM_ assembleExpr block
     pure . Define origin name args returnType <$> extractInstructions
 assembleDecl (TypeSyn name ty) = pure [TypeDefinition name ty]
-assembleDecl (Con name ty tyArgs) = do
-    clearInstructions 
-    assembleCon name ty tyArgs
+assembleDecl (Con index name ty tyArgs) = do
+    clearInstructions
+    assembleCon index name ty tyArgs
 
-assembleCon :: Ident -> Type -> Maybe [Type] -> IRBuilder [Decl]
-assembleCon name ty = \case
+assembleCon :: Int -> Ident -> Type -> Maybe [Type] -> IRBuilder [Decl]
+assembleCon index name ty = \case
     Nothing -> do
-        (_, instrs) <- inContext $ do
+        instrs <- fmap snd $ inContext $ do
             name <- fresh
-            operand <- alloca name ty
-            ret operand
-            -- TODO: (Sebastian, 2024-07-16):
-            -- WORKING HERE!!
-        pure [Define Constructor name [] ty instrs]
+            alloced <- alloca name ty
+            store (struct [LInt Int64 (fromIntegral index)]) alloced
+            loaded <- load ty alloced
+            ret loaded
+        pure [Define ConstructorFn name [] ty instrs]
     Just tys -> do
+        let constructorFun = Ident "mk" <> name
         operands <- mapM (\name -> fmap (LocalReference name) fresh) tys
-        pure [Define Constructor name operands ty [Nameless Unreachable]]
+        let retty = getReturnType ty
+        instrs <- fmap snd $ inContext $ do
+            name <- fresh
+            alloced <- alloca name retty 
+            tag <- gep alloced [i32 @Integer 0, i32 @Integer 0]
+            store (i64 index) tag
+            void $ flip mapWithIndexM operands $ \index argument -> do
+                value <- gep alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
+                store argument value
+            struct <- load retty alloced
+            ret struct
+        pure
+            [ Define ConstructorFn constructorFun (localRef opaquePtr (Ident "env") : operands) retty instrs
+            , Define Top name [] ty [Nameless $ Ret $ global ty constructorFun]
+            ]
 
 assembleArg :: Arg -> IRBuilder Operand
 assembleArg (EnvArg ty) = pure $ LocalReference ty (Ident "env")
@@ -64,6 +80,20 @@ assembleExpr (Typed taggedType expr) =
         Lit lit -> assembleLit lit
         Var binding name -> do
             case binding of
+                Constructor ->
+                    case taggedType of
+                        TyFun _ _ -> do
+                            fun <- call taggedType (global taggedType name) []
+                            name <- fresh
+                            let structType = StructType [taggedType, opaquePtr]
+                            alloced <- alloca name structType
+                            funPtr <- gep alloced [i32 @Integer 0, i32 @Integer 0]
+                            envPtr <- gep alloced [i32 @Integer 0, i32 @Integer 1]
+                            store fun funPtr
+                            store (null opaquePtr) envPtr
+                            load structType alloced
+
+                        _ -> call taggedType (global taggedType name) []
                 Free -> load taggedType $ LocalReference (ptr taggedType) name
                 Bound -> load taggedType $ LocalReference (ptr taggedType) name
                 Toplevel -> pure $ global taggedType name
@@ -153,8 +183,7 @@ assembleExpr (Typed taggedType expr) =
                     mem <- malloc (ptr opaquePtr) (i64 (length env * 8))
                     forM_ (zip [0 ..] env) $ \(index, Typed ty expr) -> do
                         gepOperand <- gep mem [i32 @Integer index]
-                        comment "Hard coded to 8 size for now, will not work for any type larger at the moment"
-                        alloced <- malloc (ptr ty) (i32 $ sizeOf ty) -- TODO: Adapt size to the structure stored
+                        alloced <- malloc (ptr ty) (i32 $ sizeOf ty)
                         operand <- assembleExpr (Typed ty expr)
                         store operand alloced
                         store alloced gepOperand
@@ -220,3 +249,12 @@ i32 = ConstantOperand . LInt Int32 . fromIntegral
 
 i64 :: (Integral a) => a -> Operand
 i64 = ConstantOperand . LInt Int64 . fromIntegral
+
+getReturnType :: Type -> Type
+getReturnType = \case
+    TyFun _ ty -> ty
+    ty -> error $ "can not extract return type of non-function type: " <> show ty
+
+isFunType :: Type -> Bool
+isFunType (TyFun {}) = True
+isFunType _ = False

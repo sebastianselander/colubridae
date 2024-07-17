@@ -25,7 +25,7 @@ instance Pretty Ir where
     pretty (Ir decls) = hcat $ punctuate (hardline <> hardline) $ fmap pretty decls
 
 instance Pretty Decl where
-    pretty (TypeDefinition name ty) = "%" <> pretty name <+> "= type" <+> pretty ty
+    pretty (TypeDefinition name ty) = ";the type inside the array is just used to allocate the correct amount of bytes"<> hardline <> "%" <> pretty name <+> "= type" <+> pretty ty
     pretty (GlobalString name ty string) = "@" <> pretty name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
     pretty (LlvmMain instr) =
         "define void @main()"
@@ -72,6 +72,8 @@ instance Pretty Constant where
         LChar _ _ -> error "TODO"
         LUnit -> "1"
         LNull _ -> "null"
+        LStruct constants -> braces $ concatWith (surround (comma <> space)) $ fmap (\x -> pretty (typeOf x) <+> pretty x) constants
+        Undef _ -> "undef"
         GlobalReference _ name -> "@" <> pretty name
 
 instance Pretty Instruction where

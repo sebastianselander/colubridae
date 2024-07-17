@@ -29,3 +29,9 @@ indent n t = Text.replicate n " " <> t
 
 quote :: Text -> Text
 quote txt = "'" <> txt <> "'"
+
+mapWithIndex :: (Traversable t, Num index) => (index -> a -> b) -> t a -> t b
+mapWithIndex f = snd . mapAccumL (\index a -> (index + 1, f index a)) 0
+
+mapWithIndexM :: (Traversable t, Monad m, Num index) => (index -> a -> m b) -> t a -> m (t b)
+mapWithIndexM f = sequence . snd . mapAccumL (\index a -> (index + 1, f index a)) 0

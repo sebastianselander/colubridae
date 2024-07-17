@@ -18,21 +18,21 @@ data Decl
     | Define !Origin !Ident [Operand] !Type [Named Instruction]
     | TypeDefinition !Ident !Type
     | GlobalString !Ident !Type !Text
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data Operand
     = LocalReference !Type !Ident
     | ConstantOperand !Constant
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data ArithOp = LlvmAdd | LlvmSub | LlvmMul | LlvmDiv | LlvmRem
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data CmpOp = LlvmEq | LlvmNeq | LlvmGt | LlvmLt | LlvmGe | LlvmLe
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 newtype Label = L Ident
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data Instruction
     = Call !Type !Operand [Operand]
@@ -53,7 +53,7 @@ data Instruction
     | ExtractValue !Operand [Word32]
     | Blankline
     | Unreachable
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data Constant
     = LInt !Type !Integer
@@ -62,33 +62,23 @@ data Constant
     | LChar !Type !Char
     | LUnit
     | LNull !Type
+    | LStruct [Constant]
+    | Undef !Type
     | GlobalReference !Type !Ident
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data Named a = Named Ident a | Nameless a
-    deriving (Show, Functor, Traversable, Foldable, Generic, Data)
+    deriving (Show, Functor, Traversable, Foldable, Generic, Data, Ord, Eq)
 
 class Typed a where
     typeOf :: a -> Type
-    setType :: Type -> a -> a
 
 instance Typed Operand where
     typeOf = \case
         LocalReference ty _ -> ty
         ConstantOperand constant -> typeOf constant
-    setType ty = \case
-        LocalReference _ v -> LocalReference ty v
-        ConstantOperand constant -> ConstantOperand $ setType ty constant
 
 instance Typed Constant where
-    setType ty = \case
-        LInt _ v -> LInt ty v
-        LDouble _ v -> LDouble ty v
-        LBool _ v -> LBool ty v
-        LChar _ v -> LChar ty v
-        LUnit -> error "Setting type of Unit is not possible"
-        LNull _ -> LNull ty
-        GlobalReference _ v -> GlobalReference ty v
     typeOf = \case
         LInt ty _ -> ty
         LDouble ty _ -> ty
@@ -96,4 +86,6 @@ instance Typed Constant where
         LChar ty _ -> ty
         LUnit -> I 1
         LNull ty -> ty
+        LStruct constants -> StructType (fmap typeOf constants)
+        Undef ty -> ty
         GlobalReference ty _ -> ty

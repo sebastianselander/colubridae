@@ -13,7 +13,7 @@ data Def = Fn !Origin Ident [Arg] Type [TyExpr]
          | Main [TyExpr]
          | StaticString Ident Type Text
          | TypeSyn Ident Type
-         | Con Ident Type (Maybe [Type])
+         | Con Int Ident Type (Maybe [Type])
     deriving (Show, Eq, Ord, Data)
 
 data Arg = Arg Ident Type | EnvArg Type
@@ -39,7 +39,7 @@ data Expr
     | StructIndexing TyExpr Integer
     deriving (Show, Eq, Ord, Data)
 
-data Binding = Free | Bound | Toplevel | Argument | GlblConst | Lambda
+data Binding = Free | Bound | Toplevel | Argument | Constructor | GlblConst | Lambda
     deriving (Show, Eq, Ord, Data)
 
 data BinOp

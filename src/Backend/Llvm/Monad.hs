@@ -204,6 +204,7 @@ gepType (StructType ty) ((ConstantOperand (LInt Int32 n):is)) = case maybeAt (fr
     Nothing -> error "gep: index out of bounds"
     Just ty -> gepType ty is
 gepType (StructType _ty) (i : _) = error $ "gep: indices into structures must be 32-bit constants. " <> show i
+gepType (TyCon _) _ = OpaquePointer
 gepType ty (_:_) = error $ "gep: can't index into a " <> show ty
 
 extractValueType :: Type -> [Word32] -> Type
@@ -217,6 +218,12 @@ extractValueType ty (x:xs) = case ty of
 global :: Type -> Ident -> Operand
 global ty = ConstantOperand . GlobalReference ty
 
+constant :: Constant -> Operand
+constant = ConstantOperand
+
+struct :: [Constant] -> Operand
+struct = ConstantOperand . LStruct 
+
 null :: Type -> Operand
 null ty = ConstantOperand (LNull ty)
 
@@ -225,3 +232,6 @@ localRef = LocalReference
 
 blankline :: IRBuilder ()
 blankline = unnamed Blankline
+
+undef :: Type -> Operand
+undef = ConstantOperand . Undef 
