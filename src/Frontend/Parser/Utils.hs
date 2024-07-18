@@ -10,7 +10,7 @@ import Control.Lens (makeLenses)
 import Control.Lens.Getter (views)
 import Data.Map qualified as Map
 import Data.Maybe (fromJust)
-import Data.Text (pack)
+import Data.Text (pack, unpack)
 import Frontend.Error (Report, report)
 import Frontend.Types
 import Names (Ident (..))
@@ -20,18 +20,19 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 import Text.Megaparsec.Error (errorBundlePretty)
-import qualified Text.Megaparsec.Char.Lexer as P
 
 type Parser = P.ParsecT CustomParseError Text (Reader (BindingPowerTable PrefixOp BinOp Void))
 
 {-| The order of the errors matters here, the one with the 'greatest' ord
 takes priority if more than one error is thrown *I think*
 -}
-data CustomParseError = UppercaseLetter | Keyword Text
+data CustomParseError = Keyword Text | WildCardName
     deriving (Eq, Ord, Show)
 
 instance P.ShowErrorComponent CustomParseError where
-    showErrorComponent = show
+    showErrorComponent = \case
+           Keyword word -> "'" <> unpack word <> "' is a keyword"
+           WildCardName  -> "Can not use '_' as a variable name"
 
 instance Report (ParseErrorBundle Text CustomParseError) where
     report = pack . errorBundlePretty
@@ -39,6 +40,8 @@ instance Report (ParseErrorBundle Text CustomParseError) where
 keywords :: [Text]
 keywords =
     [ "def"
+    , "match"
+    , "=>"
     , "!"
     , "!="
     , "%"
@@ -149,11 +152,14 @@ upperIdentifier = do
 identifier :: Parser Ident
 identifier = do
     headLet <- P.char '_' <|> (P.lowerChar <?> "lower case identifier")
-    tailLets <- many (P.char '_' <|> P.alphaNumChar)
-    let name = headLet : tailLets
-    if isKeyword (pack name)
-        then customFailure (Keyword (pack name))
-        else pure (Ident (pack (headLet : tailLets)))
+    tailLets <- P.many (P.char '_' <|> P.alphaNumChar)
+    case (headLet, tailLets) of
+        ('_', []) -> customFailure WildCardName
+        _ -> do
+            let name = headLet : tailLets
+            if isKeyword (pack name)
+                then customFailure (Keyword (pack name))
+                else pure (Ident (pack (headLet : tailLets)))
 
 data Before
 

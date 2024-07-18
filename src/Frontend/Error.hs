@@ -10,7 +10,7 @@ import Control.Monad.Validate
 import Data.Text (intercalate, pack)
 import Data.Text qualified as Text
 import Frontend.Renamer.Pretty ()
-import Frontend.Renamer.Types (ExprRn)
+import Frontend.Renamer.Types (ExprRn, PatternRn)
 import Frontend.TH
 import Frontend.Typechecker.Ctx (Ctx, exprStack, names)
 import Frontend.Typechecker.Pretty (pThing)
@@ -39,6 +39,7 @@ data TcError
     | TypeMustBeKnown SourceInfo [ExprRn] Ident
     | ExpectedTyGotLambda SourceInfo [ExprRn] TypeTc
     | ExpectedLambdaNArgs SourceInfo [ExprRn] Int Int
+    | ExpectedPatNArgs SourceInfo [ExprRn] PatternRn Int Int
     deriving (Show)
 
 data ChError
@@ -146,6 +147,21 @@ reportTcError err = case err of
             ( unwords
                 ["Expected a lambda that takes", quote (show expected), "arguments, but it takes", quote (show got)]
             )
+    ExpectedPatNArgs info currExpr pat expected got ->
+        combineTc
+            info
+            currExpr
+            ( unwords
+                [ "The pattern"
+                , quote (pThing pat)
+                , "has"
+                , show got
+                , "matched fields,"
+                , "but the constructor expects"
+                , show expected
+                , "matched fields"
+                ]
+            )
 
 combineRn :: SourceInfo -> Text -> Text
 combineRn info msg = mconcat [reportSourceInfo info, ":\n", indent 2 ("* " <> msg)]
@@ -153,7 +169,7 @@ combineRn info msg = mconcat [reportSourceInfo info, ":\n", indent 2 ("* " <> ms
 combineTc :: SourceInfo -> [ExprRn] -> Text -> Text
 combineTc info expr msg =
     let lastExpr = viaNonEmpty last expr
-        line = Nothing --fmap (subtract 1 . unPos . fst . start) info.spanInfo
+        line = Nothing -- fmap (subtract 1 . unPos . fst . start) info.spanInfo
      in mconcat
             [ "\n"
             , reportSourceInfo info
@@ -172,8 +188,14 @@ barAndLine :: Maybe Int -> [Text] -> [Text]
 barAndLine n ys = go n ys
   where
     go _ [] = []
-    go Nothing (x:xs) = "  |  " <> x : go Nothing xs
-    go (Just line) (x:xs) = "  " <> show line <> Text.replicate (maxIndent n ys - length (show @String line) + 1) " " <> "|  " <> x : go (Just $ line + 1) xs
+    go Nothing (x : xs) = "  |  " <> x : go Nothing xs
+    go (Just line) (x : xs) =
+        "  "
+            <> show line
+            <> Text.replicate (maxIndent n ys - length (show @String line) + 1) " "
+            <> "|  "
+            <> x
+            : go (Just $ line + 1) xs
       where
         maxIndent Nothing _ = 0
         maxIndent (Just line) xs = length $ show @String $ line + length xs
@@ -183,7 +205,7 @@ reportSourceInfo info = do
     let path = pack info.sourceFile
     let pos = do
             Span (startRow, startCol) (_endRow, _endCol) <- info.spanInfo
-            pure $ mconcat [show $ unPos startRow - 1, ":", show $ unPos startCol]
+            pure $ mconcat [show $ unPos startRow, ":", show $ unPos startCol]
     mconcat [path, ":", fromMaybe "?:?" pos]
 
 tyExpectedGot' ::
@@ -352,6 +374,20 @@ expectedLambdaNArgs a c d = do
     names <- view names
     exprStack <- fmap (renameBack names) <$> view exprStack
     dispute (return $ ExpectedLambdaNArgs a exprStack c d)
+
+expectedPatNArgs ::
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m ()
+expectedPatNArgs loc pat expected got = do
+    names <- view names
+    exprStack <- fmap (renameBack names) <$> view exprStack
+    dispute (return $ ExpectedPatNArgs loc exprStack pat expected got)
+
+expectedPatNArgs' ::
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m a
+expectedPatNArgs' loc pat expected got = do
+    names <- view names
+    exprStack <- fmap (renameBack names) <$> view exprStack
+    refute (return $ ExpectedPatNArgs loc exprStack pat expected got)
 
 $(gen All "RnError")
 $(gen All "ChError")

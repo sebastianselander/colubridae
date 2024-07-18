@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Frontend.Parser.Parse (parse) where
 
@@ -54,7 +53,6 @@ pConstructor = do
     case argumentTypes of
         Nothing -> pure $ EnumCons loc constructorName
         Just tys -> pure $ FunCons loc constructorName tys
-    
 
 pDef :: Parser DefPar
 pDef = DefFn <$> pFunction <|> DefAdt <$> pAdt
@@ -192,6 +190,44 @@ pAss = P.label "assignment" $ do
     info <- spanEnd gs
     AssX info name op <$> pExpr
 
+pMatch :: Parser ExprPar
+pMatch = do
+    gs <- spanStart
+    keyword "match"
+    scrutinee <- pExpr
+    matchArms <- curlyBrackets $ commaSepEnd pMatchArm
+    loc <- spanEnd gs
+    pure $ MatchX loc scrutinee matchArms
+  where
+    pMatchArm :: Parser MatchArmPar
+    pMatchArm = do
+        gs <- spanStart
+        pattern <- pPattern
+        keyword "=>"
+        body <- pExpr
+        loc <- spanEnd gs
+        pure $ MatchArmX loc pattern body
+      where
+        pPattern :: Parser PatternPar
+        -- NOTE: Must parse wildcard before normal variable or it will be tried as a variable
+        pPattern = P.choice [pPCon, pPVar]
+          where
+            pPCon :: Parser PatternPar
+            pPCon = do
+                gs <- spanStart
+                name <- upperIdentifier
+                arguments <- P.optional (parens (commaSep pPattern))
+                loc <- spanEnd gs
+                case arguments of
+                    Nothing -> pure $ PEnumConX loc name
+                    Just args -> pure $ PFunConX loc name args
+            pPVar :: Parser PatternPar
+            pPVar = do
+                gs <- spanStart
+                name <- identifier
+                loc <- spanEnd gs
+                pure $ PVarX loc name
+
 pAssignOp :: Parser AssignOp
 pAssignOp =
     P.choice
@@ -254,14 +290,15 @@ pExpr = pLam <|> pAss <|> prattExpr pPrefix pInfix pApp
 pExprAtom :: Parser ExprPar
 pExprAtom =
     P.choice
-        [ pIf
+        [ pMatch
+        , pIf
         , pWhile
         , pRet
         , pLoop
         , pBreak
+        , pLet
         , EBlockX NoExtField <$> pBlock
         , pLit
-        , pLet
         , pVar
         , parens pExpr
         ]
@@ -397,4 +434,3 @@ prattExpr prefixParser infixParser atomParser = exprbp 0
                     r <- exprbp rbp
                     info <- spanEnd gs
                     go gs minBp (BinOpX info l operator r)
-

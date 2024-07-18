@@ -27,6 +27,8 @@ type LitTc = LitX Tc
 type StmtTc = StmtX Tc
 type BlockTc = BlockX Tc
 type LamArgTc = LamArgX Tc
+type MatchArmTc = MatchArmX Tc
+type PatternTc = PatternX Tc
 
 type TcInfo = (SourceInfo, TypeTc)
 type TcInfoBound = (SourceInfo, TypeTc, Boundedness)
@@ -37,6 +39,8 @@ deriving instance Data ExprTc
 deriving instance Data LitTc
 deriving instance Data TypeTc
 deriving instance Data LamArgTc
+deriving instance Data MatchArmTc
+deriving instance Data PatternTc
 
 type instance XProgram Tc = NoExtField
 
@@ -61,6 +65,13 @@ type instance XWhile Tc = TcInfo
 type instance XLet Tc = StmtType
 type instance XAss Tc = (StmtType, Boundedness)
 type instance XSExp Tc = NoExtField
+
+type instance XMatchArm Tc = SourceInfo
+type instance XMatch Tc = TcInfo
+
+type instance XPVar Tc = TcInfo
+type instance XPEnumCon Tc = TcInfo
+type instance XPFunCon Tc = TcInfo
 
 type instance XLit Tc = TcInfo
 type instance XVar Tc = TcInfoBound

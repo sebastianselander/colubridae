@@ -31,8 +31,18 @@ newtype Env = Env
 
 $(makeLenses ''Env)
 
-newtype TcM a = Tc {runTc :: StateT Env (ReaderT Ctx (ValidateT [TcError] (Writer [TcWarning]))) a}
-    deriving (Functor, Applicative, Monad, MonadReader Ctx, MonadValidate [TcError], MonadState Env)
+newtype TcM a = Tc
+    { runTc ::
+        StateT Env (ReaderT Ctx (ValidateT [TcError] (Writer [TcWarning]))) a
+    }
+    deriving
+        ( Functor
+        , Applicative
+        , Monad
+        , MonadReader Ctx
+        , MonadValidate [TcError]
+        , MonadState Env
+        )
 
 run :: Ctx -> Env -> TcM a -> (Either [TcError] a, [TcWarning])
 run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT env . runTc
@@ -60,12 +70,14 @@ getCons = concat . listify' f
         g :: TypeTc -> ConstructorRn -> (Ident, (TypeTc, SourceInfo))
         g returnType = \case
             EnumCons loc name -> (name, (returnType, loc))
-            FunCons loc name argTys -> (name, (TyFunX NoExtField (fmap typeOf argTys) returnType, loc))
+            FunCons loc name argTys ->
+                (name, (TyFunX NoExtField (fmap typeOf argTys) returnType, loc))
 
 tc :: Names -> ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
-tc names (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap (tcDefs names funTable conTable) defs of
-    (([], defs), warnings) -> (Right $ ProgramX NoExtField defs, mconcat warnings)
-    ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
+tc names (ProgramX NoExtField defs) =
+    case first partitionEithers $ unzip $ fmap (tcDefs names funTable conTable) defs of
+        (([], defs), warnings) -> (Right $ ProgramX NoExtField defs, mconcat warnings)
+        ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
   where
     funTable = Map.fromList $ getFuns defs
     conTable = Map.fromList $ getCons defs
@@ -76,11 +88,13 @@ tcDefs ::
     Map Ident (TypeTc, SourceInfo) ->
     DefRn ->
     (Either [TcError] DefTc, [TcWarning])
-tcDefs names funTable conTable (DefFn fn) = first (fmap DefFn) $ tcFunction names funTable conTable fn
+tcDefs names funTable conTable (DefFn fn) =
+    first (fmap DefFn) $ tcFunction names funTable conTable fn
 tcDefs _ _ _ (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
 
 tcAdt :: AdtRn -> (AdtTc, [TcWarning])
-tcAdt (AdtX loc name constructors) = (AdtX loc name (fmap (inferConstructor (TyConX NoExtField name)) constructors), [])
+tcAdt (AdtX loc name constructors) =
+    (AdtX loc name (fmap (inferConstructor (TyConX NoExtField name)) constructors), [])
 
 inferConstructor :: TypeTc -> ConstructorRn -> ConstructorTc
 inferConstructor ty = \case
@@ -153,7 +167,9 @@ infStmt :: StmtRn -> TcM StmtTc
 infStmt (SExprX NoExtField expr) = SExprX NoExtField <$> infExpr expr
 
 breaks :: BlockTc -> [ExprTc]
-breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e) stmts <> maybe [] breakExpr tail
+breaks (BlockX _ stmts tail) =
+    concatMap (\(SExprX NoExtField e) -> breakExpr e) stmts
+        <> maybe [] breakExpr tail
   where
     -- \| Find all breaks in a block. Do not traverse further on expressions where breaks are allowed
     breakExpr :: ExprTc -> [ExprTc]
@@ -172,6 +188,10 @@ breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e)
         WhileX {} -> []
         LoopX {} -> []
         LamX {} -> []
+        MatchX _ scrutinee arms -> breakExpr scrutinee <> concatMap breakArm arms
+      where
+        breakArm :: MatchArmX Tc -> [ExprTc]
+        breakArm (MatchArmX _ _ body) = breakExpr body
 
 infExpr :: ExprRn -> TcM ExprTc
 infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
@@ -329,6 +349,54 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
         body <- infExpr body
         let ty = TyFunX NoExtField (fmap typeOf args) (typeOf body)
         pure $ LamX (info, ty) args body
+    MatchX loc scrutinee matchArms -> do
+        scrutinee <- infExpr scrutinee
+        let scrutType = typeOf scrutinee
+        case matchArms of
+            [] -> pure $ MatchX (loc, Any) scrutinee []
+            (arm1 : arms) -> do
+                arm1 <- infMatchArm scrutType arm1
+                let armType = typeOf arm1
+                arms <- mapM (tcMatchArm scrutType armType) arms
+                pure $ MatchX (loc, armType) scrutinee (arm1 : arms)
+
+infMatchArm :: TypeTc -> MatchArmRn -> TcM MatchArmTc
+infMatchArm pattype (MatchArmX loc pat body) = do
+    pat <- tcPat pattype pat
+    body <- infExpr body
+    pure $ MatchArmX loc pat body
+
+tcMatchArm :: TypeTc -> TypeTc -> MatchArmRn -> TcM MatchArmTc
+tcMatchArm pattype bodytype (MatchArmX loc pat body) = do
+    pat <- tcPat pattype pat
+    body <- tcExpr bodytype body
+    pure $ MatchArmX loc pat body
+
+tcPat :: TypeTc -> PatternRn -> TcM PatternTc
+tcPat pattype currentPattern = case currentPattern of
+    PVarX loc varName -> do
+        insertVar varName pattype loc
+        pure $ PVarX (loc, pattype) varName
+    PEnumConX loc conName -> do
+        (ty, _declLoc) <- lookupCon conName
+        unify' loc pattype ty
+        pure $ PEnumConX (loc, ty) conName
+    PFunConX loc conName pats -> do
+        (ty, _declLoc) <- lookupCon conName
+        case ty of
+            TyFunX NoExtField argtys retty
+                | length argtys == length pats -> do
+                    unify' loc pattype retty
+                    pats <- zipWithM tcPat argtys pats
+                    pure $ PFunConX (loc, pattype) conName pats
+                | otherwise -> do
+                    expectedPatNArgs loc currentPattern (length argtys) (length pats)
+                    pats <- zipWithM tcPat (repeat Any) pats
+                    pure $ PFunConX (loc, pattype) conName pats
+            other -> do
+                tyExpectedGot loc [pattype] other
+                pats <- zipWithM tcPat (repeat Any) pats
+                pure $ PFunConX (loc, pattype) conName pats
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
 tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
@@ -414,6 +482,11 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
                     pure $ LamX (info, expectedTy) lamArgs body
                 | otherwise -> expectedLambdaNArgs' info (length argtys) (length args)
             _ -> expectedTyGotLambda' info expectedTy
+    MatchX loc scrutinee matchArms -> do
+        scrutinee <- infExpr scrutinee
+        let scrutType = typeOf scrutinee
+        arms <- mapM (tcMatchArm scrutType expectedTy) matchArms
+        pure $ MatchX (loc, expectedTy) scrutinee arms
 
 -- | Unify the arguments of a lambda with the the given types
 unifyLambdaArgs ::
@@ -447,6 +520,7 @@ hasInfo = \case
     WhileX info _ _ -> fst info
     LoopX info _ -> fst info
     LamX info _ _ -> fst info
+    MatchX info _ _ -> fst info
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
@@ -528,6 +602,7 @@ instance TypeOf ExprTc where
         WhileX ty _ _ -> snd ty
         LoopX ty _ -> snd ty
         LamX ty _ _ -> snd ty
+        MatchX ty _ _ -> snd ty
 
 instance TypeOf BlockTc where
     typeOf (BlockX ty _ _) = snd ty
@@ -540,6 +615,9 @@ instance TypeOf TypeRn where
 
 instance TypeOf LamArgTc where
     typeOf (LamArgX ty _) = ty
+
+instance TypeOf MatchArmTc where
+    typeOf (MatchArmX _ _ body) = typeOf body
 
 unify ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m, TypeOf a) =>

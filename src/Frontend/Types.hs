@@ -164,7 +164,12 @@ data ExprX a
     | WhileX !(XWhile a) (ExprX a) (BlockX a)
     | LoopX !(XLoop a) (BlockX a)
     | LamX !(XLam a) [LamArgX a] (ExprX a)
+    | MatchX !(XMatch a) (ExprX a) [MatchArmX a]
     | ExprX !(XExpr a)
+
+deriving instance (ForallX Show a) => Show (ExprX a)
+deriving instance (ForallX Typeable a) => Typeable (ExprX a)
+
 type family XExprStmt a
 type family XLit a
 type family XVar a
@@ -179,18 +184,35 @@ type family XBreak a
 type family XIf a
 type family XWhile a
 type family XExpr a
+type family XLoop a
+type family XLam a
+type family XMatch a
+
+data MatchArmX a = MatchArmX !(XMatchArm a) (PatternX a) (ExprX a)
+
+deriving instance (ForallX Show a) => Show (MatchArmX a)
+deriving instance (ForallX Typeable a) => Typeable (MatchArmX a)
+
+type family XMatchArm a
+
+data PatternX a
+    = PVarX !(XPVar a) Ident
+    | PEnumConX !(XPEnumCon a) Ident
+    | PFunConX !(XPFunCon a) Ident [PatternX a]
+
+deriving instance (ForallX Show a) => Show (PatternX a)
+deriving instance (ForallX Typeable a) => Typeable (PatternX a)
+
+type family XPVar a
+type family XPEnumCon a
+type family XPFunCon a
+
 
 data LamArgX a = LamArgX !(XLamArg a) Ident
 type family XLamArg a
 
 deriving instance (ForallX Show a) => Show (LamArgX a)
 deriving instance (ForallX Typeable a) => Typeable (LamArgX a)
-
-type family XLoop a
-type family XLam a
-
-deriving instance (ForallX Show a) => Show (ExprX a)
-deriving instance (ForallX Typeable a) => Typeable (ExprX a)
 
 data PrefixOp = Not | Neg
     deriving (Show, Eq, Ord, Data)
@@ -268,4 +290,9 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XConstructor a)
     , c (XEnumCons a)
     , c (XFunCons a)
+    , c (XMatchArm a)
+    , c (XMatch a)
+    , c (XPVar a)
+    , c (XPEnumCon a)
+    , c (XPFunCon a)
     )

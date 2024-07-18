@@ -122,6 +122,22 @@ rnExpr = \case
         args <- reverse <$> rnLamArgs args
         body <- newContext $ rnExpr body
         pure $ LamX info args body
+    MatchX info scrutinee arms -> do
+        scrutinee <- rnExpr scrutinee
+        arms <- mapM rnMatchArm arms
+        pure $ MatchX info scrutinee arms
+
+rnMatchArm :: MatchArmPar -> Gen MatchArmRn
+rnMatchArm (MatchArmX loc pat body) = newContext $ do
+    pat <- rnPattern pat
+    body <- rnExpr body
+    pure $ MatchArmX loc pat body
+
+rnPattern :: PatternPar -> Gen PatternRn
+rnPattern = \case
+    PVarX loc varName -> PVarX loc <$> insertVar varName 
+    PEnumConX loc conName -> pure $ PEnumConX loc conName
+    PFunConX loc conName pats -> PFunConX loc conName <$> mapM rnPattern pats
 
 rnLamArgs :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgPar] -> m [LamArgRn]
 rnLamArgs = foldM f mempty

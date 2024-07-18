@@ -22,6 +22,8 @@ type TypePar = TypeX Par
 type BlockPar = BlockX Par
 type StmtPar = StmtX Par
 type LamArgPar = LamArgX Par
+type MatchArmPar = MatchArmX Par
+type PatternPar = PatternX Par
 
 deriving instance Data ExprPar
 deriving instance Data ProgramPar
@@ -34,6 +36,8 @@ deriving instance Data ConstructorPar
 deriving instance Data TypePar
 deriving instance Data StmtPar
 deriving instance Data BlockPar
+deriving instance Data MatchArmPar
+deriving instance Data PatternPar
 
 type instance XProgram Par = NoExtField
 
@@ -66,6 +70,13 @@ type instance XWhile Par = SourceInfo
 type instance XLet Par = (SourceInfo, Mutability, Maybe TypePar)
 type instance XAss Par = SourceInfo
 type instance XExpr Par = DataConCantHappen
+
+type instance XMatchArm Par = SourceInfo
+type instance XMatch Par = SourceInfo
+
+type instance XPVar Par = SourceInfo
+type instance XPEnumCon Par = SourceInfo
+type instance XPFunCon Par = SourceInfo
 
 type instance XIntLit Par = NoExtField
 type instance XDoubleLit Par = NoExtField

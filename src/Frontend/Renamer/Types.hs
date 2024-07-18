@@ -30,6 +30,8 @@ type LitRn = LitX Rn
 type StmtRn = StmtX Rn
 type BlockRn = BlockX Rn
 type LamArgRn = LamArgX Rn
+type MatchArmRn = MatchArmX Rn
+type PatternRn = PatternX Rn
 
 deriving instance Data ExprRn
 deriving instance Data ProgramRn
@@ -43,6 +45,8 @@ deriving instance Data TypeRn
 deriving instance Data BlockRn
 deriving instance Data StmtRn
 deriving instance Data LamArgRn
+deriving instance Data MatchArmRn
+deriving instance Data PatternRn
 
 type instance XProgram Rn = XProgram Par
 
@@ -67,6 +71,13 @@ type instance XLet Rn = (SourceInfo, Mutability, Maybe TypeRn)
 type instance XAss Rn = (SourceInfo, Boundedness)
 type instance XSExp Rn = XSExp Par
 type instance XStmt Rn = DataConCantHappen
+
+type instance XMatchArm Rn = SourceInfo
+type instance XMatch Rn = SourceInfo
+
+type instance XPVar Rn = SourceInfo
+type instance XPEnumCon Rn = SourceInfo
+type instance XPFunCon Rn = SourceInfo
 
 type instance XLit Rn = XLit Par
 type instance XVar Rn = (SourceInfo, Boundedness)

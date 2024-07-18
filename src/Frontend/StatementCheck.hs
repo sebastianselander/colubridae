@@ -8,8 +8,8 @@ import Control.Lens
 import Control.Monad.Validate (MonadValidate, Validate, runValidate)
 import Frontend.Error
 import Frontend.Renamer.Types
-import Relude
 import Frontend.Types
+import Relude
 
 newtype Ctx = Ctx {_inLoop :: Bool}
     deriving (Show)
@@ -40,7 +40,7 @@ checkFunction (Fn info name _ returnType block) = runCheck (Ctx False) $ case re
 
 checkDef :: DefRn -> Either [ChError] ()
 checkDef (DefFn fn) = checkFunction fn
-checkDef (DefAdt adt) = pure ()
+checkDef (DefAdt _) = pure ()
 
 breakBlock :: BlockRn -> ChM ()
 breakBlock (BlockX _ statements tail) = mapM_ breakStmt statements >> mapM_ breakExpr tail
@@ -73,6 +73,13 @@ breakExpr = \case
     WhileX _ expr block -> breakExpr expr >> locally inLoop (const True) (breakBlock block)
     LoopX _ block -> locally inLoop (const True) (breakBlock block)
     LamX _ _ body -> breakExpr body
+    MatchX _ scrutinee arms -> do
+        breakExpr scrutinee
+        mapM_ breakMatchArm arms
+
+breakMatchArm :: MatchArmRn -> ChM ()
+breakMatchArm (MatchArmX _ _ expr) = breakExpr expr
+
 
 returnBlock :: BlockRn -> ChM Bool
 returnBlock (BlockX _ statements _) = returnStmts statements
@@ -115,6 +122,10 @@ returnExpr = \case
     WhileX _ expr block -> if alwaysTrue expr then returnBlock block else pure False
     LoopX _ block -> returnBlock block
     LamX {} -> pure False
+    MatchX _ scrutinee arms -> (&&) <$> returnExpr scrutinee <*> allM returnArm arms
+
+returnArm :: MatchArmRn -> ChM Bool
+returnArm (MatchArmX _ _ body) = returnExpr body
 
 -- TODO: Make mini evaluator
 alwaysTrue :: ExprRn -> Bool
@@ -144,3 +155,4 @@ hasInfoExpr = \case
     WhileX info _ _ -> info
     LoopX info _ -> info
     LamX info _ _ -> info
+    MatchX info _ _ -> info

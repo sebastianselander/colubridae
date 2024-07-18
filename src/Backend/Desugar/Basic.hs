@@ -285,6 +285,7 @@ dsExpr = \case
                     (Typed ty' (Var Toplevel freshName))
                     (fmap (\(ty, name) -> Typed ty (Var Free name)) freeVariables)
                 )
+    Tc.MatchX {} -> error "Match expression not implemented in the backend!"
 
 boundArgs :: [Arg] -> [(Type, Ident)]
 boundArgs [] = []
