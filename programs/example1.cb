@@ -2,18 +2,23 @@
 type Foo {
     Bar,
     Foo,
-    Baz(int),
+    Baz(int, Foo),
 }
 
 def main() {
-    let var = Foo;
+    let var = Baz(420, Baz(69, Bar));
     // pattern match
-    match var {
-        Foo => printString("got foo"),
-        Bar => printString("got bar"),
-
-        // The following two patterns have not been implemented yet
-        // Baz(n) => printInt(n), 
-        // x => let a: Foo = x;
-    }
+    let x = match var {
+        Baz(n,m) => {
+            printInt(n); 
+            match m {
+                Baz(k, x) => {
+                    printInt(k);
+                    match x {
+                        Bar => printString("got bar")
+                    }
+                }
+            }
+        }
+    };
 }
