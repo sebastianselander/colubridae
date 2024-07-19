@@ -2,23 +2,27 @@
 type Foo {
     Bar,
     Foo,
-    Baz(int, Foo),
+    Baz(int, string, int, int, bool),
 }
 
 def main() {
-    let var = Baz(420, Baz(69, Bar));
+    let var = Baz(420, "hej", 69, 1337, false);
     // pattern match
-    let x = match var {
-        Baz(n,m) => {
-            printInt(n); 
-            match m {
-                Baz(k, x) => {
-                    printInt(k);
-                    match x {
-                        Bar => printString("got bar")
-                    }
-                }
-            }
-        }
-    };
+    //let x = match var {
+    //    Baz(n,str, m, k, b) => {
+    //        printInt(n);
+    //        printString(str);
+    //        printInt(m);
+    //        printInt(k);
+    //        printBool(b);
+    //    }
+    //};
+}
+ 
+def printBool(b: bool) -> () {
+    if b {
+        printString("true")
+    } else {
+        printString("false")
+    }
 }
