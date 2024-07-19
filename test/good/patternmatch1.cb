@@ -1,0 +1,24 @@
+// declare an algebraic data type
+type Foo {
+    Bar,
+    Foo,
+    Baz(int, Foo),
+}
+
+def main() {
+    let var = Baz(420, Baz(69, Bar));
+    // pattern match
+    let x = match var {
+        Baz(n,m) => {
+            printInt(n); 
+            match m {
+                Baz(k, x) => {
+                    printInt(k);
+                    match x {
+                        Bar => printString("got bar")
+                    }
+                }
+            }
+        }
+    };
+}
