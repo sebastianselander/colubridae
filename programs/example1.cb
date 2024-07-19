@@ -1,8 +1,19 @@
+// declare an algebraic data type
 type Foo {
     Bar,
-    Foo(string, int)
+    Foo,
+    Baz(int),
 }
 
 def main() {
-    let res = Foo("hejsan", 42069)
+    let var = Foo;
+    // pattern match
+    match var {
+        Foo => printString("got foo"),
+        Bar => printString("got bar"),
+
+        // The following two patterns have not been implemented yet
+        // Baz(n) => printInt(n), 
+        // x => let a: Foo = x;
+    }
 }
