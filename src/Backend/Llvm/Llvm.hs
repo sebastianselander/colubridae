@@ -235,6 +235,7 @@ assembleExpr (Typed taggedType expr) =
                 store scrutOperand intermediate
                 -- 
                 -- Tag is at index 0, hence we start at 1
+                -- FIX: This does not work apparenty. Perhaps heap alloc everything a constructor holds
                 forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
                     var <- alloca name ty
                     ptr <- gep (Just $ ptr ty) intermediate [i32 @Int 0, i32 1, i32 @Int index]
