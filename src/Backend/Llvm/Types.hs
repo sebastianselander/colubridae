@@ -51,6 +51,9 @@ data Instruction
     | Jump !Label
     | GetElementPtr !Operand [Operand]
     | ExtractValue !Operand [Word32]
+    | InsertValue !Operand !Operand [Word32]
+    | Phi [(Operand, Label)]
+    | Switch !Operand Label [(Constant, Label)]
     | Blankline
     | Unreachable
     deriving (Show, Eq, Ord)

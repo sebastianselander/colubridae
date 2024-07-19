@@ -1,17 +1,19 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Backend.Llvm.Monad where
 
 import Backend.Llvm.Types
+import Backend.Types
 import Control.Lens (makeLenses)
 import Control.Lens.Getter (use, uses)
-import Control.Lens.Setter (modifying, (+=), assign)
+import Control.Lens.Setter (assign, modifying, (+=))
 import Data.DList (DList, snoc)
+import Data.Set qualified as Set
+import Data.Text qualified as Text
 import Names (Ident (..))
 import Relude hiding (Type)
-import qualified Data.Set as Set
-import Backend.Types
 
 data IRBuilderState = IRBuilderState
     { _instructions :: DList (Named Instruction)
@@ -19,18 +21,21 @@ data IRBuilderState = IRBuilderState
     , _labelCounter :: !Word16
     , _labelReserved :: Set Ident
     , _constructors :: Map Ident Int
+    , _predBlock :: (Label, Label)
     }
     deriving (Show)
 
-newtype IRBuilderCtx = IRBuilderCtx {
-    _breakLabel :: Label
-}
+newtype IRBuilderCtx = IRBuilderCtx
+    { _breakLabel :: Label
+    }
 $(makeLenses ''IRBuilderState)
 $(makeLenses ''IRBuilderCtx)
 
 emptyInstructions :: DList (Named Instruction)
 emptyInstructions = mempty
 
+entryBlock :: Label
+entryBlock = L (Ident "entry")
 
 initialIRBuilderState :: IRBuilderState
 initialIRBuilderState =
@@ -40,10 +45,11 @@ initialIRBuilderState =
         , _labelCounter = 1
         , _labelReserved = mempty
         , _constructors = mempty
+        , _predBlock = (entryBlock, entryBlock)
         }
 
 initialIRBuilderCtx :: IRBuilderCtx
-initialIRBuilderCtx = IRBuilderCtx {_breakLabel=L $ Ident "initial_label"}
+initialIRBuilderCtx = IRBuilderCtx {_breakLabel = entryBlock}
 
 newtype IRBuilder a = IRBuilder {runBuilder :: StateT IRBuilderState (Reader IRBuilderCtx) a}
     deriving (Functor, Applicative, Monad, MonadState IRBuilderState, MonadReader IRBuilderCtx)
@@ -167,18 +173,28 @@ ret operand = unnamed (Ret operand)
 
 label :: Label -> IRBuilder ()
 label lbl = do
-    emit (Nameless (Label lbl))
+    (cur, _) <- use predBlock 
+    assign predBlock (lbl, cur)
+    emit (Nameless $ Label lbl)
 
 -- TODO: Fix numbering
 mkLabel :: Text -> IRBuilder Label
-mkLabel desc = do
-    n <- use labelCounter
-    labelCounter += 1
-    let lbl = Ident $ desc <> "_" <> show n
-    used <- use labelReserved
-    if lbl `Set.member` used
-       then mkLabel desc
-       else modifying labelReserved (Set.insert lbl) >> pure (L lbl)
+mkLabel desc =
+    if ' ' `Text.elem` desc
+        then
+            go "" >>= \case
+                L (Ident name) -> pure $ L (Ident $ "\"" <> name <> "\"")
+        else go ""
+  where
+    go suffix = do
+        let lbl = Ident $ desc <> suffix
+        used <- use labelReserved
+        if lbl `Set.member` used
+            then do
+                n <- use labelCounter
+                labelCounter += 1
+                go ("." <> show n)
+            else modifying labelReserved (Set.insert lbl) >> pure (L lbl)
 
 comment :: Text -> IRBuilder ()
 comment cmnt = emit (Nameless (Comment cmnt))
@@ -193,23 +209,35 @@ jump lbl = unnamed (Jump lbl)
 gep :: Operand -> [Operand] -> IRBuilder Operand
 gep op ops = LocalReference (gepType (typeOf op) ops) <$> named (GetElementPtr op ops)
 
-extractValue :: Operand -> [Word32] -> IRBuilder Operand
-extractValue operand indices = LocalReference (extractValueType (typeOf operand) indices) <$> named (ExtractValue operand indices)
+insertValue :: Operand -> Operand -> [Word32] -> IRBuilder Operand
+insertValue l r indices = LocalReference (typeOf l) <$> named (InsertValue l r indices)
+
+extractValue :: Maybe Type -> Operand -> [Word32] -> IRBuilder Operand
+extractValue mbty operand indices =
+    LocalReference (fromMaybe (extractValueType (typeOf operand) indices) mbty)
+        <$> named (ExtractValue operand indices)
+
+phi :: [(Operand, Label)] -> IRBuilder Operand
+phi [] = LocalReference Void <$> named (Phi [])
+phi xs@(i : _) = LocalReference (typeOf (fst i)) <$> named (Phi xs)
+
+switch :: Operand -> Label -> [(Constant, Label)] -> IRBuilder ()
+switch op l xs = unnamed (Switch op l xs)
 
 gepType :: Type -> [Operand] -> Type
 gepType ty [] = ptr ty
 gepType OpaquePointer _ = OpaquePointer
-gepType (PointerType ty) (_:is) = gepType ty is
-gepType (StructType ty) ((ConstantOperand (LInt Int32 n):is)) = case maybeAt (fromIntegral n) ty of
+gepType (PointerType ty) (_ : is) = gepType ty is
+gepType (StructType ty) ((ConstantOperand (LInt Int32 n) : is)) = case maybeAt (fromIntegral n) ty of
     Nothing -> error "gep: index out of bounds"
     Just ty -> gepType ty is
 gepType (StructType _ty) (i : _) = error $ "gep: indices into structures must be 32-bit constants. " <> show i
 gepType (TyCon _) _ = OpaquePointer
-gepType ty (_:_) = error $ "gep: can't index into a " <> show ty
+gepType ty (_ : _) = error $ "gep: can't index into a " <> show ty
 
 extractValueType :: Type -> [Word32] -> Type
 extractValueType ty [] = ty
-extractValueType ty (x:xs) = case ty of
+extractValueType ty (x : xs) = case ty of
     StructType tys -> case maybeAt (fromIntegral x) tys of
         Nothing -> error "Extract value: indexing outside structure"
         Just ty -> extractValueType ty xs
@@ -222,7 +250,7 @@ constant :: Constant -> Operand
 constant = ConstantOperand
 
 struct :: [Constant] -> Operand
-struct = ConstantOperand . LStruct 
+struct = ConstantOperand . LStruct
 
 null :: Type -> Operand
 null ty = ConstantOperand (LNull ty)
@@ -234,4 +262,4 @@ blankline :: IRBuilder ()
 blankline = unnamed Blankline
 
 undef :: Type -> Operand
-undef = ConstantOperand . Undef 
+undef = ConstantOperand . Undef

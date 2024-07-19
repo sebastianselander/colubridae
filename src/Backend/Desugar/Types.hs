@@ -39,6 +39,13 @@ data Expr
     | -- | `ident = ident[integer]`
       ExtractFree Ident Ident Integer
     | StructIndexing TyExpr Integer
+    | Match TyExpr [MatchArm]
+    deriving (Show, Eq, Ord, Data)
+
+data MatchArm = MatchArm Pattern (NonEmpty TyExpr)
+    deriving (Show, Eq, Ord, Data)
+
+data Pattern = PVar Ident | PCon Int [Ident]
     deriving (Show, Eq, Ord, Data)
 
 data Binding

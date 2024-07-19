@@ -8,12 +8,12 @@ import Prettyprinter
 
 import Backend.Llvm.Prelude (prelude)
 import Backend.Llvm.Types
+import Backend.Types (Type (..))
 import Prettyprinter.Render.Text (renderStrict)
 import Relude hiding (Type)
-import Backend.Types (Type(..))
 
 llvmOut :: (Pretty a) => a -> Text
-llvmOut = (prelude <>) . renderStrict . layoutPretty (LayoutOptions {layoutPageWidth=Unbounded}) . pretty
+llvmOut = (prelude <>) . renderStrict . layoutPretty (LayoutOptions {layoutPageWidth = Unbounded}) . pretty
 
 indentLevel :: Int
 indentLevel = 4
@@ -25,11 +25,19 @@ instance Pretty Ir where
     pretty (Ir decls) = hcat $ punctuate (hardline <> hardline) $ fmap pretty decls
 
 instance Pretty Decl where
-    pretty (TypeDefinition name ty) = ";the type inside the array is just used to allocate the correct amount of bytes"<> hardline <> "%" <> pretty name <+> "= type" <+> pretty ty
+    pretty (TypeDefinition name ty) =
+        ";the type inside the array is just used to allocate the correct amount of bytes"
+            <> hardline
+            <> "%"
+            <> pretty name
+            <+> "= type"
+            <+> pretty ty
     pretty (GlobalString name ty string) = "@" <> pretty name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
     pretty (LlvmMain instr) =
         "define void @main()"
             <+> lbrace
+            <> hardline
+            <> "entry:" -- TODO: does not belong here
             <> hardline
             <> indentedBlock instr
             <> hardline
@@ -43,6 +51,8 @@ instance Pretty Decl where
             <> pretty name
             <> tupled (fmap typed args)
             <+> lbrace
+            <> hardline
+            <> "entry:"
             <> hardline
             <> indentedBlock instr
             <> hardline
@@ -59,7 +69,7 @@ instance Pretty Type where
         PointerType Void -> "ptr"
         PointerType (PointerType _) -> "ptr"
         PointerType ty -> pretty ty <> "*"
-        TyFun tys ty ->  pretty ty <> tupled (fmap pretty tys) <> "*"
+        TyFun tys ty -> pretty ty <> tupled (fmap pretty tys) <> "*"
         StructType tys -> braces $ space <> concatWith (surround (comma <> space)) (fmap pretty tys) <> space
         Mut ty -> pretty ty
         TyCon name -> "%" <> pretty name
@@ -72,7 +82,10 @@ instance Pretty Constant where
         LChar _ _ -> error "TODO"
         LUnit -> "1"
         LNull _ -> "null"
-        LStruct constants -> braces $ concatWith (surround (comma <> space)) $ fmap (\x -> pretty (typeOf x) <+> pretty x) constants
+        LStruct constants ->
+            braces
+                $ concatWith (surround (comma <> space))
+                $ fmap (\x -> pretty (typeOf x) <+> pretty x) constants
         Undef _ -> "undef"
         GlobalReference _ name -> "@" <> pretty name
 
@@ -87,11 +100,11 @@ instance Pretty Instruction where
         Alloca ty -> "alloca" <+> pretty ty
         Store l r -> "store" <+> typed l <> "," <+> typed r
         Load operand -> do
-                let ty = case typeOf operand of
-                            PointerType ty -> ty
-                            OpaquePointer -> OpaquePointer
-                            _ -> error "Non-pointer"
-                "load" <+> pretty ty <> "," <+> typed operand
+            let ty = case typeOf operand of
+                    PointerType ty -> ty
+                    OpaquePointer -> OpaquePointer
+                    _ -> error "Non-pointer"
+            "load" <+> pretty ty <> "," <+> typed operand
         Ret operand -> "ret" <+> typed operand
         Label lbl -> pretty lbl <> ":"
         Comment cmnt -> ";" <+> pretty cmnt
@@ -103,6 +116,28 @@ instance Pretty Instruction where
         ExtractValue operand indices -> "extractvalue" <+> typed operand <> "," <+> commasep (fmap pretty indices)
         Malloc operand -> "call ptr @malloc" <> parens (typed operand)
         Unreachable -> "unreachable"
+        InsertValue _ _ _ -> undefined
+        Phi [] -> error "phi: jump phi instruction set"
+        Phi xs@(i : _) ->
+            "phi"
+                <+> pretty (typeOf (fst i))
+                <+> concatWith
+                    (surround (comma <> space))
+                    ( fmap
+                        (\(operand, label) -> brackets (space <> pretty operand <> comma <+> "%" <> pretty label <> space))
+                        xs
+                    )
+        Switch op lbl pairs ->
+            "switch"
+                <+> typed op
+                <> comma
+                <+> "label %"
+                <> pretty lbl
+                <+> brackets
+                    ( concatWith
+                        (surround space)
+                        (fmap ((\(l, r) -> l <> comma <+> "label %" <> r) . bimap typed pretty) pairs)
+                    )
 
 commasep :: [Doc ann] -> Doc ann
 commasep = concatWith (surround (comma <> space))

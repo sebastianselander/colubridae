@@ -7,9 +7,10 @@ import Backend.Desugar.Types
 import Backend.Llvm.Monad
 import Backend.Llvm.Types
 import Backend.Types
-import Control.Lens.Getter (view)
+import Control.Lens.Getter (view, use)
 import Control.Lens.Setter (locally)
 import Control.Monad.Extra (concatMapM)
+import Data.List.NonEmpty qualified as NonEmpty
 import Names (Ident (..))
 import Origin (Origin (..))
 import Relude hiding (Type, and, div, null, or, rem)
@@ -50,7 +51,7 @@ assembleCon index name ty = \case
         let retty = getReturnType ty
         instrs <- fmap snd $ inContext $ do
             name <- fresh
-            alloced <- alloca name retty 
+            alloced <- alloca name retty
             tag <- gep alloced [i32 @Integer 0, i32 @Integer 0]
             store (i64 index) tag
             void $ flip mapWithIndexM operands $ \index argument -> do
@@ -92,7 +93,6 @@ assembleExpr (Typed taggedType expr) =
                             store fun funPtr
                             store (null opaquePtr) envPtr
                             load structType alloced
-
                         _ -> call taggedType (global taggedType name) []
                 Free -> load taggedType $ LocalReference (ptr taggedType) name
                 Bound -> load taggedType $ LocalReference (ptr taggedType) name
@@ -197,7 +197,7 @@ assembleExpr (Typed taggedType expr) =
             load taggedType declaration
         StructIndexing expr n -> do
             operand <- assembleExpr expr
-            extractValue operand [fromInteger n]
+            extractValue Nothing operand [fromInteger n]
         ExtractFree bindName envName index -> do
             operand <- gep (localRef (ptr opaquePtr) envName) [i32 index]
             operand <- gep operand [i32 @Integer 0]
@@ -206,6 +206,30 @@ assembleExpr (Typed taggedType expr) =
             variable <- alloca bindName taggedType
             store operand variable
             pure variable
+        Match scrutinee matchArms -> do
+            scrutOperand <- assembleExpr scrutinee
+            (prev,_) <- use predBlock
+            tag <- extractValue (Just Int64) scrutOperand [0]
+            doneLbl <- mkLabel "Done"
+            -- TODO: Variable patterns do not work
+            -- TODO: Extract values from constructors with values and bind to the varibles.
+            -- NOTE: Only enum constructors works
+            switchCases <- forM matchArms
+                $ \(MatchArm pat _) -> (LInt Int64 (indexOf pat),) <$> mkLabel ("Case_" <> show (indexOf pat))
+            switch tag doneLbl switchCases
+            phiArgs <- forM (zip (fmap snd switchCases) matchArms) $ \(lbl, MatchArm _ body) -> do
+                label lbl
+                operand <- NonEmpty.last <$> mapM assembleExpr body
+                jump doneLbl
+                pure (operand,lbl)
+            label doneLbl
+
+            phi (phiArgs <> [(constant (Undef taggedType), prev)])
+
+indexOf :: Pattern -> Integer
+indexOf = \case
+    PCon n _ -> fromIntegral n
+    PVar _ -> undefined
 
 assembleLit :: (Monad m) => Lit -> m Operand
 assembleLit = \case

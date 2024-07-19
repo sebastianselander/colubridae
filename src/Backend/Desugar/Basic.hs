@@ -8,11 +8,13 @@ import Backend.Desugar.Types
 import Backend.Llvm.Prelude (globalUnit)
 import Backend.Types
 import Control.Lens (makeLenses)
-import Control.Lens.Getter (use, view)
+import Control.Lens.Getter (use, uses, view)
 import Control.Lens.Setter (assign, modifying)
 import Control.Monad.Extra (concatMapM)
 import Data.DList
 import Data.List (nub, (\\))
+import Data.Map qualified as Map
+import Data.Maybe (fromJust)
 import Data.Text qualified as Text
 import Data.Tuple.Extra (uncurry3)
 import Frontend.Renamer.Types qualified as Rn (Boundedness (..))
@@ -24,6 +26,7 @@ import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify', mapWithIndexM)
+import Backend.Llvm.Monad (undef)
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -31,6 +34,7 @@ data Env = Env
     , _nameCounter :: Int
     , _lifted :: DList Def
     , _staticStrings :: [(Ident, Type, Text)]
+    , _constructorIndex :: Map Ident Int
     }
 
 $(makeLenses ''Env)
@@ -39,7 +43,7 @@ newtype DsM a = DsM {runDsm :: StateT Env (Reader (TyExpr -> DsM ())) a}
     deriving (Functor, Applicative, Monad, MonadState Env, MonadReader (TyExpr -> DsM ()))
 
 run :: (TyExpr -> DsM ()) -> Names -> Int -> DsM a -> (a, Env)
-run f names n = flip runReader f . flip runStateT (Env mempty names n mempty mempty) . runDsm
+run f names n = flip runReader f . flip runStateT (Env mempty names n mempty mempty mempty) . runDsm
 
 emit :: TyExpr -> DsM ()
 emit expr = modifying expressions (`snoc` expr)
@@ -141,8 +145,12 @@ dsAdt (Tc.AdtX _loc name constructors) = do
 
 mkConstructorFunction :: Int -> Tc.ConstructorTc -> DsM Def
 mkConstructorFunction n = \case
-    Tc.EnumCons (_loc, ty) name -> Con n name <$> dsType ty <*> pure Nothing
-    Tc.FunCons (_loc, ty) name tys -> Con n name <$> dsType ty <*> Just <$> mapM dsType tys
+    Tc.EnumCons (_loc, ty) name -> do
+        modifying constructorIndex (Map.insert name n)
+        Con n name <$> dsType ty <*> pure Nothing
+    Tc.FunCons (_loc, ty) name tys -> do
+        modifying constructorIndex (Map.insert name n)
+        Con n name <$> dsType ty <*> Just <$> mapM dsType tys
 
 constructorAllocSize :: (Monad m) => [Tc.ConstructorTc] -> m Int
 constructorAllocSize [] = pure 0
@@ -285,7 +293,32 @@ dsExpr = \case
                     (Typed ty' (Var Toplevel freshName))
                     (fmap (\(ty, name) -> Typed ty (Var Free name)) freeVariables)
                 )
-    Tc.MatchX {} -> error "Match expression not implemented in the backend!"
+    Tc.MatchX (_loc, ty) scrutinee matchArms -> do
+        ty <- mkClosureType ty
+        scrutinee <- dsExpr scrutinee
+        matchArms <- mapM dsMatchArm matchArms
+        pure $ Typed ty $ Match scrutinee matchArms
+
+dsMatchArm :: Tc.MatchArmTc -> DsM MatchArm
+dsMatchArm (Tc.MatchArmX _loc pat body) = do
+    pat <- dsPat pat
+    (emits, body) <- contextually $ dsExpr body
+    case toList emits of
+        [] -> do
+            pure $ MatchArm pat (pure body)
+        (x : xs) -> pure $ MatchArm pat (x :| (xs <> [body]))
+
+dsPat :: Tc.PatternTc -> DsM Pattern
+dsPat = \case
+    Tc.PVarX _loc name -> pure $ PVar name
+    Tc.PEnumConX _loc name -> do
+        index <- lookupCon name
+        pure $ PCon index []
+    Tc.PFunConX _loc name nestedPats -> do
+        index <- lookupCon name
+        let toVar (Tc.PVarX _ name) = name
+            toVar _ = error "Internal compiler bug: Nested pattern matching no supported yet"
+        pure $ PCon index (fmap toVar nestedPats)
 
 boundArgs :: [Arg] -> [(Type, Ident)]
 boundArgs [] = []
@@ -336,11 +369,12 @@ mkArg (Tc.LamArgX ty name) = do
     ty <- mkClosureType ty
     pure (Arg name ty)
 
+-- TODO: (Sebastian) Rewrite
 dsBlock :: (TyExpr -> DsM ()) -> Ident -> Tc.BlockX Tc.Tc -> DsM [TyExpr]
 dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
     names' <- use names
     n <- use nameCounter
-    let ((), Env emits names'' n' lifteds strings) =
+    let ((), Env emits names'' n' lifteds strings _) =
             run f names' n $ mapM_ dsStmt (stmts <> maybe [] (\x -> [Tc.SExprX NoExtField x]) tail)
     assign names names''
     assign nameCounter n'
@@ -350,7 +384,7 @@ dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
 dsBlock f _ (Tc.BlockX _ stmts Nothing) = do
     names' <- use names
     n <- use nameCounter
-    let ((), Env emits names'' n' lifteds strings) = run f names' n $ mapM_ dsStmt stmts
+    let ((), Env emits names'' n' lifteds strings _) = run f names' n $ mapM_ dsStmt stmts
     assign names names''
     assign nameCounter n'
     modifying lifted (<> lifteds)
@@ -359,7 +393,7 @@ dsBlock f _ (Tc.BlockX _ stmts Nothing) = do
 dsBlock f variable (Tc.BlockX (_, ty) stmts (Just tail)) = do
     names' <- use names
     n <- use nameCounter
-    let ((), Env emits names'' n' lifteds strings) =
+    let ((), Env emits names'' n' lifteds strings _) =
             run f names' n $ do
                 ty <- mkClosureType ty
                 mapM_ dsStmt stmts
@@ -409,6 +443,9 @@ unit = Typed (I 1) $ Lit UnitLit
 
 typed :: Tc.TypeTc -> Expr -> DsM TyExpr
 typed ty expr = Typed <$> dsType ty <*> pure expr
+
+lookupCon :: Ident -> DsM Int
+lookupCon name = uses constructorIndex (fromJust . Map.lookup name)
 
 dsPrefixOp :: Tc.PrefixOp -> PrefixOp
 dsPrefixOp = \case
