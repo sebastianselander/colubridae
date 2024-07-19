@@ -4,7 +4,6 @@
 module Backend.Desugar.Pretty where
 
 import Backend.Desugar.Types
-import Backend.Llvm.Monad (undef)
 import Backend.Types
 import Data.Text (Text)
 import Names
@@ -147,10 +146,17 @@ pExpr (Typed ty expr) = go expr
                 <> "}"
         Closure fun freeVars ->
             braces
-                (pExpr fun <> "," <+> brackets (concatWith (surround (comma <> space)) (fmap pExpr freeVars)))
-        StructIndexing expr n -> "get" <> parens (pExpr expr <> "," <+> show n)
-        ExtractFree bindName envName index -> "let" <+> pretty bindName <+> "=" <+> pretty envName <> brackets (show index)
-        Match scrutinee arms -> "match" <+> pExpr scrutinee <+> braces (hardline <> prettyArms arms <> hardline)
+                ( pExpr fun
+                    <> ","
+                    <+> brackets (concatWith (surround (comma <> space)) (fmap pExpr freeVars))
+                )
+        StructIndexing expr n ->
+            "get" <> parens (pExpr expr <> "," <+> show n)
+        ExtractFree bindName envName index ->
+            "let" <+> pretty bindName <+> "=" <+> pretty envName <> brackets (show index)
+        Match scrutinee arms catch ->
+            "match" <+> pExpr scrutinee <+> braces (hardline <> prettyArms arms <> hardline)
+        ToStderrExit txt -> undefined
 
 prettyArms :: [MatchArm] -> Doc ann
 prettyArms = concatWith (surround hardline) . fmap prettyArm
@@ -169,5 +175,4 @@ prettyShowPat = renderStrict . layoutPretty defaultLayoutOptions . prettyPat
 
 prettyPat :: Pattern -> Doc ann
 prettyPat = \case
-    PVar name -> pretty name
-    PCon name args -> pretty name <> parens (concatWith (surround (comma <> space)) (fmap pretty args))
+    PCon name args -> pretty name <> parens (concatWith (surround (comma <> space)) (fmap (pretty . fst) args))

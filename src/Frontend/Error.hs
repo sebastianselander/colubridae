@@ -204,7 +204,7 @@ reportSourceInfo :: SourceInfo -> Text
 reportSourceInfo info = do
     let path = pack info.sourceFile
     let pos = do
-            Span (startRow, startCol) (_endRow, _endCol) <- info.spanInfo
+            let (Span (startRow, startCol) (_endRow, _endCol)) = info.spanInfo
             pure $ mconcat [show $ unPos startRow, ":", show $ unPos startCol]
     mconcat [path, ":", fromMaybe "?:?" pos]
 

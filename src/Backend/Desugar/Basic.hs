@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -15,18 +16,18 @@ import Data.DList
 import Data.List (nub, (\\))
 import Data.Map qualified as Map
 import Data.Maybe (fromJust)
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Tuple.Extra (uncurry3)
 import Frontend.Renamer.Types qualified as Rn (Boundedness (..))
 import Frontend.Typechecker.Types (stmtType, varType)
 import Frontend.Typechecker.Types qualified as Tc
-import Frontend.Types (NoExtField (NoExtField))
+import Frontend.Types (NoExtField (NoExtField), SourceInfo)
 import Frontend.Types qualified as Tc
 import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify', mapWithIndexM)
-import Backend.Llvm.Monad (undef)
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -293,32 +294,54 @@ dsExpr = \case
                     (Typed ty' (Var Toplevel freshName))
                     (fmap (\(ty, name) -> Typed ty (Var Free name)) freeVariables)
                 )
-    Tc.MatchX (_loc, ty) scrutinee matchArms -> do
+    Tc.MatchX (loc, ty) scrutinee matchArms -> do
         ty <- mkClosureType ty
         scrutinee <- dsExpr scrutinee
-        matchArms <- mapM dsMatchArm matchArms
-        pure $ Typed ty $ Match scrutinee matchArms
+        matchArms <- dsMatchArms matchArms
+        matchArms <- extractCatch loc matchArms
+        pure $ Typed ty $ uncurry (Match scrutinee) matchArms
 
-dsMatchArm :: Tc.MatchArmTc -> DsM MatchArm
-dsMatchArm (Tc.MatchArmX _loc pat body) = do
+-- TODO: Really reconsider if this is the logic we want
+extractCatch :: SourceInfo -> [Either MatchArm Catch] -> DsM ([MatchArm], Catch)
+extractCatch loc arms = (go mempty (lefts arms),) <$> maybe nonexhaustive pure (listToMaybe $ rights arms)
+  where
+    nonexhaustive :: DsM Catch
+    nonexhaustive = do
+        let errString = show loc <> "\\0A    Non-exhaustive pattern in match"
+        name <- fresh "nonexhaustive_string"
+        modifying staticStrings ((name, ArrayType (Text.length errString - 1) (I 8), errString <> "\\00") :)
+        pure
+            $ Catch
+                (Ident "$nomatch$")
+                (pure $ Typed Unit $ ToStderrExit name)
+    go :: Set Int -> [MatchArm] -> [MatchArm]
+    go _ [] = []
+    go seen (arm@(MatchArm (PCon n _) _) : arms) =
+        if Set.member n seen then go seen arms else arm : go (Set.insert n seen) arms
+
+dsMatchArms :: [Tc.MatchArmTc] -> DsM [Either MatchArm Catch]
+dsMatchArms [] = pure []
+dsMatchArms (Tc.MatchArmX _loc pat body : rest) = do
     pat <- dsPat pat
-    (emits, body) <- contextually $ dsExpr body
-    case toList emits of
-        [] -> do
-            pure $ MatchArm pat (pure body)
-        (x : xs) -> pure $ MatchArm pat (x :| (xs <> [body]))
+    body <-
+        (\(ls, r) -> maybe (pure r) (<> pure r) $ nonEmpty (toList ls)) <$> contextually (dsExpr body)
+    case pat of
+        Left catchAll -> pure [Right (Catch catchAll body)]
+        Right pat -> (Left (MatchArm pat body) :) <$> dsMatchArms rest
 
-dsPat :: Tc.PatternTc -> DsM Pattern
+dsPat :: Tc.PatternTc -> DsM (Either Ident Pattern)
 dsPat = \case
-    Tc.PVarX _loc name -> pure $ PVar name
+    Tc.PVarX _loc name -> pure $ Left name
     Tc.PEnumConX _loc name -> do
         index <- lookupCon name
-        pure $ PCon index []
+        pure $ Right $ PCon index []
     Tc.PFunConX _loc name nestedPats -> do
         index <- lookupCon name
-        let toVar (Tc.PVarX _ name) = name
-            toVar _ = error "Internal compiler bug: Nested pattern matching no supported yet"
-        pure $ PCon index (fmap toVar nestedPats)
+        let toVar (Tc.PVarX (_, ty) name) = do
+                ty <- mkClosureType ty
+                pure (name, ty)
+            toVar _ = error "Internal compiler crash: Nested pattern matching not supported yet"
+        Right . PCon index <$> mapM toVar nestedPats
 
 boundArgs :: [Arg] -> [(Type, Ident)]
 boundArgs [] = []

@@ -206,8 +206,8 @@ jump :: Label -> IRBuilder ()
 jump lbl = unnamed (Jump lbl)
 
 -- | Does not work correctly for structure if gep is used nested
-gep :: Operand -> [Operand] -> IRBuilder Operand
-gep op ops = LocalReference (gepType (typeOf op) ops) <$> named (GetElementPtr op ops)
+gep :: Maybe Type -> Operand -> [Operand] -> IRBuilder Operand
+gep ty op ops = LocalReference (fromMaybe (gepType (typeOf op) ops) ty) <$> named (GetElementPtr op ops)
 
 insertValue :: Operand -> Operand -> [Word32] -> IRBuilder Operand
 insertValue l r indices = LocalReference (typeOf l) <$> named (InsertValue l r indices)

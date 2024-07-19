@@ -5,19 +5,25 @@ module Backend.Llvm.Llvm where
 
 import Backend.Desugar.Types
 import Backend.Llvm.Monad
+import Backend.Llvm.Prelude (exitFailure, printString)
 import Backend.Llvm.Types
 import Backend.Types
-import Control.Lens.Getter (view, use)
+import Control.Lens.Getter (view)
 import Control.Lens.Setter (locally)
 import Control.Monad.Extra (concatMapM)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Text qualified as Text
 import Names (Ident (..))
 import Origin (Origin (..))
-import Relude hiding (Type, and, div, null, or, rem)
+import Relude hiding (Type, and, div, exitFailure, null, or, rem)
 import Utils (mapWithIndexM)
 
 assemble :: Program -> Ir
-assemble (Program defs) = Ir . sortBy (comparing Down) <$> runAssembler $ concatMapM assembleDecl defs
+assemble (Program defs) =
+    Ir
+        . sortBy (comparing Down)
+        <$> runAssembler
+        $ concatMapM assembleDecl defs
 
 assembleDecl :: Def -> IRBuilder [Decl]
 assembleDecl (StaticString name ty text) = pure [GlobalString name ty text]
@@ -52,15 +58,20 @@ assembleCon index name ty = \case
         instrs <- fmap snd $ inContext $ do
             name <- fresh
             alloced <- alloca name retty
-            tag <- gep alloced [i32 @Integer 0, i32 @Integer 0]
+            tag <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 0]
             store (i64 index) tag
             void $ flip mapWithIndexM operands $ \index argument -> do
-                value <- gep alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
+                value <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
                 store argument value
             struct <- load retty alloced
             ret struct
         pure
-            [ Define ConstructorFn constructorFun (localRef opaquePtr (Ident "env") : operands) retty instrs
+            [ Define
+                ConstructorFn
+                constructorFun
+                (localRef opaquePtr (Ident "env") : operands)
+                retty
+                instrs
             , Define Top name [] ty [Nameless $ Ret $ global ty constructorFun]
             ]
 
@@ -88,8 +99,8 @@ assembleExpr (Typed taggedType expr) =
                             name <- fresh
                             let structType = StructType [taggedType, opaquePtr]
                             alloced <- alloca name structType
-                            funPtr <- gep alloced [i32 @Integer 0, i32 @Integer 0]
-                            envPtr <- gep alloced [i32 @Integer 0, i32 @Integer 1]
+                            funPtr <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 0]
+                            envPtr <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 1]
                             store fun funPtr
                             store (null opaquePtr) envPtr
                             load structType alloced
@@ -99,7 +110,7 @@ assembleExpr (Typed taggedType expr) =
                 Toplevel -> pure $ global taggedType name
                 GlblConst -> do
                     -- NOTE: This will not work with global strings
-                    op <- gep (global (ptr taggedType) name) [i32 @Integer 0]
+                    op <- gep Nothing (global (ptr taggedType) name) [i32 @Integer 0]
                     load taggedType op
                 Argument -> pure $ LocalReference taggedType name
                 Lambda -> load taggedType $ LocalReference (ptr taggedType) name
@@ -182,15 +193,15 @@ assembleExpr (Typed taggedType expr) =
                 _ -> do
                     mem <- malloc (ptr opaquePtr) (i64 (length env * 8))
                     forM_ (zip [0 ..] env) $ \(index, Typed ty expr) -> do
-                        gepOperand <- gep mem [i32 @Integer index]
+                        gepOperand <- gep Nothing mem [i32 @Integer index]
                         alloced <- malloc (ptr ty) (i32 $ sizeOf ty)
                         operand <- assembleExpr (Typed ty expr)
                         store operand alloced
                         store alloced gepOperand
                     pure mem
             declaration <- alloca name taggedType
-            functionPointer <- gep declaration [i32 @Integer 0, i32 @Integer 0]
-            environmentPointer <- gep declaration [i32 @Integer 0, i32 @Integer 1]
+            functionPointer <- gep Nothing declaration [i32 @Integer 0, i32 @Integer 0]
+            environmentPointer <- gep Nothing declaration [i32 @Integer 0, i32 @Integer 1]
             functionOperand <- assembleExpr fun
             store functionOperand functionPointer
             store mem environmentPointer
@@ -199,37 +210,63 @@ assembleExpr (Typed taggedType expr) =
             operand <- assembleExpr expr
             extractValue Nothing operand [fromInteger n]
         ExtractFree bindName envName index -> do
-            operand <- gep (localRef (ptr opaquePtr) envName) [i32 index]
-            operand <- gep operand [i32 @Integer 0]
+            operand <- gep Nothing (localRef (ptr opaquePtr) envName) [i32 index]
+            operand <- gep Nothing operand [i32 @Integer 0]
             operand <- load (ptr taggedType) operand
             operand <- load taggedType operand
             variable <- alloca bindName taggedType
             store operand variable
             pure variable
-        Match scrutinee matchArms -> do
+        Match scrutinee@(Typed scrutty _) matchArms (Catch name catchExpr) -> do
             scrutOperand <- assembleExpr scrutinee
-            (prev,_) <- use predBlock
             tag <- extractValue (Just Int64) scrutOperand [0]
             doneLbl <- mkLabel "Done"
-            -- TODO: Variable patterns do not work
-            -- TODO: Extract values from constructors with values and bind to the varibles.
-            -- NOTE: Only enum constructors works
+            catchLbl <- mkLabel "Catch"
             switchCases <- forM matchArms
-                $ \(MatchArm pat _) -> (LInt Int64 (indexOf pat),) <$> mkLabel ("Case_" <> show (indexOf pat))
-            switch tag doneLbl switchCases
-            phiArgs <- forM (zip (fmap snd switchCases) matchArms) $ \(lbl, MatchArm _ body) -> do
+                $ \(MatchArm pat _) ->
+                    (LInt Int64 (indexOf pat),)
+                        <$> mkLabel ("Case_" <> show (indexOf pat))
+            switch tag catchLbl switchCases
+            phiArgs <- forM (zip (fmap snd switchCases) matchArms) $ \(lbl, MatchArm (PCon _ vars) body) -> do
                 label lbl
+                -- FIX: We do this to be able to use GEP for type conversion. Probably very slow!
+                name <- fresh
+                intermediate <- alloca name scrutty 
+                store scrutOperand intermediate
+                -- 
+                -- Tag is at index 0, hence we start at 1
+                forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
+                    var <- alloca name ty
+                    ptr <- gep (Just $ ptr ty) intermediate [i32 @Int 0, i32 1, i32 @Int index]
+                    val <- load ty ptr
+                    store val var
                 operand <- NonEmpty.last <$> mapM assembleExpr body
                 jump doneLbl
-                pure (operand,lbl)
+                pure (operand, lbl)
+            label catchLbl
+            operand <- NonEmpty.last <$> mapM assembleExpr catchExpr
+            alloced <- alloca name taggedType
+            store operand alloced
+            jump doneLbl
             label doneLbl
 
-            phi (phiArgs <> [(constant (Undef taggedType), prev)])
+            phi ((operand, catchLbl) : phiArgs)
+        ToStderrExit var -> do
+            void
+                $ call
+                    (I 1)
+                    (global (TyFun [opaquePtr, ptr Char] Unit) (Ident $ Text.pack printString))
+                    [constant (LNull opaquePtr), global opaquePtr var]
+            void
+                $ call
+                    (I 1)
+                    (global (TyFun [] Void) (Ident $ Text.pack exitFailure))
+                    []
+            pure (undef taggedType)
 
 indexOf :: Pattern -> Integer
 indexOf = \case
     PCon n _ -> fromIntegral n
-    PVar _ -> undefined
 
 assembleLit :: (Monad m) => Lit -> m Operand
 assembleLit = \case

@@ -14,7 +14,7 @@ import Prettyprinter (Pretty)
 import Prettyprinter qualified as Pretty
 import Relude hiding (Type, concat, intercalate, replicate)
 import Relude qualified
-import Text.Megaparsec (Pos)
+import Text.Megaparsec (Pos, mkPos)
 import Text.Megaparsec.Pos (unPos)
 
 data NoExtField = NoExtField
@@ -36,20 +36,25 @@ data Span = Span
     }
     deriving (Eq, Ord, Data)
 
+emptyInfo :: SourceInfo
+emptyInfo = SourceInfo {sourceFile = "", spanInfo = emptySpan}
+
+emptySpan :: Span
+emptySpan = Span (mkPos 0, mkPos 0) (mkPos 0, mkPos 0)
+
 instance Show Span where
     show Span {start, end} =
         let (bl, bc) = both (Relude.show . unPos) start
-            (al, ac) = both (Relude.show . unPos) end
-         in Relude.concat ["(", bl, ":", bc, "->", al, ":", ac, ")"]
+         in Relude.concat [bl, ":", bc]
 
 data SourceInfo = SourceInfo
-    { spanInfo :: !(Maybe Span)
+    { spanInfo :: !Span
     , sourceFile :: !FilePath
     }
     deriving (Eq, Ord, Data)
 
 instance Show SourceInfo where
-    show info = maybe "no pos" Relude.show info.spanInfo
+    show info = info.sourceFile <> ":" <> Relude.show info.spanInfo
 
 -- Program
 data ProgramX a = ProgramX !(XProgram a) [DefX a]
@@ -206,7 +211,6 @@ deriving instance (ForallX Typeable a) => Typeable (PatternX a)
 type family XPVar a
 type family XPEnumCon a
 type family XPFunCon a
-
 
 data LamArgX a = LamArgX !(XLamArg a) Ident
 type family XLamArg a

@@ -174,7 +174,7 @@ spanEnd :: GhostSpan Before -> Parser SourceInfo
 spanEnd (GS before) = do
     after <- P.getSourcePos
     let span = Span {start = before, end = (after.sourceLine, after.sourceColumn)}
-    let info = SourceInfo {sourceFile = after.sourceName, spanInfo = Just span}
+    let info = SourceInfo {sourceFile = after.sourceName, spanInfo = span}
     lexeme (return ())
     pure info
 
@@ -183,9 +183,6 @@ span gs p = do
     res <- p
     info <- spanEnd gs
     pure (res, info)
-
-emptyInfo :: SourceInfo
-emptyInfo = SourceInfo {sourceFile = "", spanInfo = Nothing}
 
 data BindingPowerTable pre inf post = BindingPowerTable
     { _prefixTable :: Map pre Int
