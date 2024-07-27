@@ -1,10 +1,17 @@
+# Bugs
+
+- [ ] Constructor variables are counted as free variables in lambdas. Implement a correct free variable finder algorithm
+- [x] match case in match case are deleted by desugaring algorithm
+
 # Todo
 
 ## Immediate todos
 
-- [ ] Rewrite the way values are stored in adts. Store each value on the heap instead. Might encounter stack overflows for deep recursive data types otherwise.
 - [x] Implement pattern matching in the backend.
+- [x] Rewrite the way values are stored in adts. 
+      Store each value on the heap instead. 
+      Might encounter stack overflows for deep recursive data types otherwise.
 
 ## Later
 
-- [ ] Refactor and comment? the code a bit.
+- [ ] Refactor and comment the code a bit.
