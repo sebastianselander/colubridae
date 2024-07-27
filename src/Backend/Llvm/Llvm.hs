@@ -8,7 +8,7 @@ import Backend.Llvm.Monad
 import Backend.Llvm.Prelude (exitFailure, printString)
 import Backend.Llvm.Types
 import Backend.Types
-import Control.Lens.Getter (view)
+import Control.Lens.Getter (view, use)
 import Control.Lens.Setter (locally)
 import Control.Monad.Extra (concatMapM)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -62,7 +62,10 @@ assembleCon index name ty = \case
             store (i64 index) tag
             void $ flip mapWithIndexM operands $ \index argument -> do
                 value <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
-                store argument value
+                malloced <- malloc (ptr (typeOf argument)) (i64 @Int 10)
+                mallocedPtr <- gep Nothing malloced [i32 @Integer 0]
+                store argument mallocedPtr
+                store malloced value
             struct <- load retty alloced
             ret struct
         pure
@@ -89,8 +92,9 @@ mkArgName (Ident name) = Ident $ name <> ".arg"
 assembleExpr :: TyExpr -> IRBuilder Operand
 assembleExpr (Typed taggedType expr) =
     case expr of
-        Lit lit -> assembleLit lit
+        Lit lit -> comment "Lit expression" >> assembleLit lit
         Var binding name -> do
+            comment "Var expression"
             case binding of
                 Constructor ->
                     case taggedType of
@@ -115,39 +119,48 @@ assembleExpr (Typed taggedType expr) =
                 Argument -> pure $ LocalReference taggedType name
                 Lambda -> load taggedType $ LocalReference (ptr taggedType) name
         BinOp leftExpr operator rightExpr -> do
+            comment "BinOp expression"
             left <- assembleExpr leftExpr
             right <- assembleExpr rightExpr
             llvmBinOp operator taggedType left right
         PrefixOp Not expr -> do
+            comment "PrefixOp expression"
             expr <- assembleExpr expr
             eq Bool (ConstantOperand (LBool taggedType False)) expr
         PrefixOp Neg expr -> do
+            comment "PrefixOp expression"
             expr <- assembleExpr expr
             sub taggedType (ConstantOperand (LInt taggedType 0)) expr
         App appExpr argExprs -> do
+            comment "App expression"
             app <- assembleExpr appExpr
             args <- mapM assembleExpr argExprs
             call taggedType app args
-        Let name varType Nothing -> alloca name varType
+        Let name varType Nothing -> comment "Let expression" >> alloca name varType
         Let name varType (Just expr) -> do
+            comment "Let expression"
             decl <- alloca name varType
             expr <- assembleExpr expr
             store expr decl
             pure decl
         Ass name varType expr -> do
+            comment "Ass expression"
             expr <- assembleExpr expr
             let operand = LocalReference (ptr varType) name
             store expr operand
             pure operand
         Return expr -> do
+            comment "Return expression"
             expr <- assembleExpr expr
             ret expr
             unit
         Break -> do
+            comment "Break expression"
             lbl <- view breakLabel
             jump lbl
             unit
         If condition trueBlk falseBlk -> do
+            comment "If expression"
             true <- mkLabel "if_true"
             false <- mkLabel "if_false"
             end <- mkLabel "if_after"
@@ -173,6 +186,7 @@ assembleExpr (Typed taggedType expr) =
 
             unit
         While condition blk -> do
+            comment "While expression"
             start <- mkLabel "while_start"
             continue <- mkLabel "while_continue"
             exit <- mkLabel "while_exit"
@@ -186,7 +200,7 @@ assembleExpr (Typed taggedType expr) =
             label exit
             unit
         Closure fun env -> do
-            -- TODO: Test more with types of different sizes
+            comment "Closure expression"
             name <- fresh
             mem <- case env of
                 [] -> pure $ null (ptr opaquePtr)
@@ -207,9 +221,11 @@ assembleExpr (Typed taggedType expr) =
             store mem environmentPointer
             load taggedType declaration
         StructIndexing expr n -> do
+            comment "StructIndexing expression"
             operand <- assembleExpr expr
             extractValue Nothing operand [fromInteger n]
         ExtractFree bindName envName index -> do
+            comment "ExtractFree expression"
             operand <- gep Nothing (localRef (ptr opaquePtr) envName) [i32 index]
             operand <- gep Nothing operand [i32 @Integer 0]
             operand <- load (ptr taggedType) operand
@@ -217,7 +233,8 @@ assembleExpr (Typed taggedType expr) =
             variable <- alloca bindName taggedType
             store operand variable
             pure variable
-        Match scrutinee@(Typed scrutty _) matchArms (Catch name catchExpr) -> do
+        Match scrutinee@(Typed _ _) matchArms (Catch name catchExpr) -> do
+            comment "Match expression"
             scrutOperand <- assembleExpr scrutinee
             tag <- extractValue (Just Int64) scrutOperand [0]
             doneLbl <- mkLabel "Done"
@@ -229,21 +246,17 @@ assembleExpr (Typed taggedType expr) =
             switch tag catchLbl switchCases
             phiArgs <- forM (zip (fmap snd switchCases) matchArms) $ \(lbl, MatchArm (PCon _ vars) body) -> do
                 label lbl
-                -- FIX: We do this to be able to use GEP for type conversion. Probably very slow!
-                name <- fresh
-                intermediate <- alloca name scrutty 
-                store scrutOperand intermediate
-                -- 
-                -- Tag is at index 0, hence we start at 1
-                -- FIX: This does not work apparenty. Perhaps heap alloc everything a constructor holds
+
                 forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
                     var <- alloca name ty
-                    ptr <- gep (Just $ ptr ty) intermediate [i32 @Int 0, i32 1, i32 @Int index]
+                    ptr <- extractValue (Just (ptr ty)) scrutOperand [1, index]
+                    ptr <- gep Nothing ptr [i32 @Int 0]
                     val <- load ty ptr
                     store val var
                 operand <- NonEmpty.last <$> mapM assembleExpr body
                 jump doneLbl
-                pure (operand, lbl)
+                comeFrom <- use predBlock 
+                pure (operand, comeFrom)
             label catchLbl
             operand <- NonEmpty.last <$> mapM assembleExpr catchExpr
             alloced <- alloca name taggedType
@@ -251,7 +264,7 @@ assembleExpr (Typed taggedType expr) =
             jump doneLbl
             label doneLbl
 
-            phi ((operand, catchLbl) : phiArgs)
+            phi (phiArgs <> [(operand, catchLbl)])
         ToStderrExit var -> do
             void
                 $ call

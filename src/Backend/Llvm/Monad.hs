@@ -21,7 +21,7 @@ data IRBuilderState = IRBuilderState
     , _labelCounter :: !Word16
     , _labelReserved :: Set Ident
     , _constructors :: Map Ident Int
-    , _predBlock :: (Label, Label)
+    , _predBlock :: Label
     }
     deriving (Show)
 
@@ -45,7 +45,7 @@ initialIRBuilderState =
         , _labelCounter = 1
         , _labelReserved = mempty
         , _constructors = mempty
-        , _predBlock = (entryBlock, entryBlock)
+        , _predBlock = entryBlock
         }
 
 initialIRBuilderCtx :: IRBuilderCtx
@@ -173,8 +173,7 @@ ret operand = unnamed (Ret operand)
 
 label :: Label -> IRBuilder ()
 label lbl = do
-    (cur, _) <- use predBlock 
-    assign predBlock (lbl, cur)
+    assign predBlock lbl
     emit (Nameless $ Label lbl)
 
 -- TODO: Fix numbering
