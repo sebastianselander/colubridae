@@ -21,7 +21,7 @@ data Type
 
 sizeOf :: Type -> Integer
 sizeOf = \case
-    I n -> fromIntegral $ min n 8
+    I n -> fromIntegral $ max (n `div` 8) 8
     Float -> 8
     PointerType _ -> 8
     OpaquePointer -> 8
