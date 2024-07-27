@@ -28,6 +28,7 @@ import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify', mapWithIndexM)
+import Control.Lens.Setter ((+=))
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -43,8 +44,8 @@ $(makeLenses ''Env)
 newtype DsM a = DsM {runDsm :: StateT Env (Reader (TyExpr -> DsM ())) a}
     deriving (Functor, Applicative, Monad, MonadState Env, MonadReader (TyExpr -> DsM ()))
 
-run :: (TyExpr -> DsM ()) -> Names -> Int -> DsM a -> (a, Env)
-run f names n = flip runReader f . flip runStateT (Env mempty names n mempty mempty mempty) . runDsm
+run :: Map Ident Int -> (TyExpr -> DsM ()) -> Names -> Int -> DsM a -> (a, Env)
+run cons f names n = flip runReader f . flip runStateT (Env mempty names n mempty mempty cons) . runDsm
 
 emit :: TyExpr -> DsM ()
 emit expr = modifying expressions (`snoc` expr)
@@ -98,7 +99,7 @@ fresh prefix = go 0
                 pure freshName
 
 basicDesugar :: Names -> Tc.ProgramTc -> Program
-basicDesugar names = fst . run (const $ pure ()) names 0 . dsProgram
+basicDesugar names = fst . run mempty (const $ pure ()) names 0 . dsProgram
 
 dsProgram :: Tc.ProgramTc -> DsM Program
 dsProgram (Tc.ProgramX Tc.NoExtField defs) = do
@@ -142,7 +143,7 @@ dsAdt (Tc.AdtX _loc name constructors) = do
     funs <- mapWithIndexM mkConstructorFunction constructors
     case alloc of
         0 -> pure $ TypeSyn name (StructType [Int64]) : funs
-        n -> pure $ TypeSyn name (StructType [Int64, ArrayType (n `div` 8) (I 64)]) : funs
+        n -> pure $ TypeSyn name (StructType [Int64, ArrayType (n `div` 8) opaquePtr]) : funs
 
 mkConstructorFunction :: Int -> Tc.ConstructorTc -> DsM Def
 mkConstructorFunction n = \case
@@ -157,7 +158,7 @@ constructorAllocSize :: (Monad m) => [Tc.ConstructorTc] -> m Int
 constructorAllocSize [] = pure 0
 constructorAllocSize (Tc.EnumCons (_loc, _) _ : cons) = fmap (max 0) (constructorAllocSize cons)
 constructorAllocSize (Tc.FunCons (_loc, _) _ tys : cons) = do
-    size <- sum <$> mapM (fmap sizeOf . dsType) tys
+    let size = sizeOf opaquePtr * fromIntegral (length tys)
     rest <- constructorAllocSize cons
     pure (max (fromIntegral size) rest)
 
@@ -299,7 +300,7 @@ dsExpr = \case
         scrutinee <- dsExpr scrutinee
         matchArms <- dsMatchArms matchArms
         matchArms <- extractCatch loc matchArms
-        pure $ Typed ty $ uncurry (Match scrutinee) matchArms
+        named $ pure $ Typed ty $ uncurry (Match scrutinee) matchArms
 
 -- TODO: Really reconsider if this is the logic we want
 extractCatch :: SourceInfo -> [Either MatchArm Catch] -> DsM ([MatchArm], Catch)
@@ -310,9 +311,11 @@ extractCatch loc arms = (go mempty (lefts arms),) <$> maybe nonexhaustive pure (
         let errString = show loc <> "\\0A    Non-exhaustive pattern in match"
         name <- fresh "nonexhaustive_string"
         modifying staticStrings ((name, ArrayType (Text.length errString - 1) (I 8), errString <> "\\00") :)
+        n <- use nameCounter
+        nameCounter += 1
         pure
             $ Catch
-                (Ident "$nomatch$")
+                (Ident $ "$nomatch$" <> show n)
                 (pure $ Typed Unit $ ToStderrExit name)
     go :: Set Int -> [MatchArm] -> [MatchArm]
     go _ [] = []
@@ -324,7 +327,8 @@ dsMatchArms [] = pure []
 dsMatchArms (Tc.MatchArmX _loc pat body : rest) = do
     pat <- dsPat pat
     body <-
-        (\(ls, r) -> maybe (pure r) (<> pure r) $ nonEmpty (toList ls)) <$> contextually (dsExpr body)
+        (\(ls, r) -> maybe (pure r) (<> pure r) $ nonEmpty (toList ls))
+            <$> contextually (dsExpr body)
     case pat of
         Left catchAll -> pure [Right (Catch catchAll body)]
         Right pat -> (Left (MatchArm pat body) :) <$> dsMatchArms rest
@@ -380,6 +384,7 @@ env = Ident "env"
 lookupFree :: Ident -> Integer -> (Type, Ident) -> TyExpr
 lookupFree env n (ty, var) = Typed ty $ ExtractFree var env n
 
+-- BUG: (Sebastian) Pattern matched variables are counted as free.
 freeVars :: [(Type, Ident)] -> TyExpr -> [(Type, Ident)]
 freeVars xs expr = listify' free expr \\ xs
   where
@@ -397,8 +402,9 @@ dsBlock :: (TyExpr -> DsM ()) -> Ident -> Tc.BlockX Tc.Tc -> DsM [TyExpr]
 dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
     names' <- use names
     n <- use nameCounter
+    cons <- use constructorIndex
     let ((), Env emits names'' n' lifteds strings _) =
-            run f names' n $ mapM_ dsStmt (stmts <> maybe [] (\x -> [Tc.SExprX NoExtField x]) tail)
+            run cons f names' n $ mapM_ dsStmt (stmts <> maybe [] (\x -> [Tc.SExprX NoExtField x]) tail)
     assign names names''
     assign nameCounter n'
     modifying lifted (<> lifteds)
@@ -407,7 +413,8 @@ dsBlock f _ (Tc.BlockX (_, Tc.Unit) stmts tail) = do
 dsBlock f _ (Tc.BlockX _ stmts Nothing) = do
     names' <- use names
     n <- use nameCounter
-    let ((), Env emits names'' n' lifteds strings _) = run f names' n $ mapM_ dsStmt stmts
+    cons <- use constructorIndex
+    let ((), Env emits names'' n' lifteds strings _) = run cons f names' n $ mapM_ dsStmt stmts
     assign names names''
     assign nameCounter n'
     modifying lifted (<> lifteds)
@@ -416,8 +423,9 @@ dsBlock f _ (Tc.BlockX _ stmts Nothing) = do
 dsBlock f variable (Tc.BlockX (_, ty) stmts (Just tail)) = do
     names' <- use names
     n <- use nameCounter
+    cons <- use constructorIndex
     let ((), Env emits names'' n' lifteds strings _) =
-            run f names' n $ do
+            run cons f names' n $ do
                 ty <- mkClosureType ty
                 mapM_ dsStmt stmts
                 tail <- dsExpr tail
@@ -500,11 +508,9 @@ dsBound = \case
 
 contextually :: DsM a -> DsM (DList TyExpr, a)
 contextually m = do
-    nc <- use nameCounter
     exprs <- use expressions
     assign expressions mempty
     e <- m
     emits <- use expressions
-    assign nameCounter nc
     assign expressions exprs
     pure (emits, e)
