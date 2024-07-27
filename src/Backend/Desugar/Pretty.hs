@@ -107,7 +107,7 @@ pArg (EnvArg ty) = "env:" <+> pType ty
 pArg (Arg name ty) = pIdent name <> ":" <+> pType ty
 
 pExpr :: TyExpr -> Doc ann
-pExpr (Typed ty expr) = go expr
+pExpr (Typed _ expr) = go expr
   where
     go = \case
         Lit lit -> pLit lit
@@ -155,8 +155,11 @@ pExpr (Typed ty expr) = go expr
         ExtractFree bindName envName index ->
             "let" <+> pretty bindName <+> "=" <+> pretty envName <> brackets (show index)
         Match scrutinee arms catch ->
-            "match" <+> pExpr scrutinee <+> braces (hardline <> prettyArms arms <> hardline)
-        ToStderrExit txt -> undefined
+            "match" <+> pExpr scrutinee <+> braces (hardline <> prettyArms arms <> hardline <> pCatch catch <> hardline)
+        ToStderrExit txt -> "exit: " <> pretty txt
+
+pCatch :: Catch -> Doc ann
+pCatch (Catch name expr) = pretty name <+> "=>" <+> concatWith (surround (semi <> hardline)) (fmap pExpr (toList expr))
 
 prettyArms :: [MatchArm] -> Doc ann
 prettyArms = concatWith (surround hardline) . fmap prettyArm
