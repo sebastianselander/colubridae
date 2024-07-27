@@ -4,7 +4,9 @@ def main() {
     let h: fn(int) -> int = \x -> x + 1;
     let i: fn(int) -> int = \x -> x + 1;
     printInt(f(g(h(i(1)))));
+    printString("\n");
 
     let f: fn(int) -> fn(int) -> fn(int) -> fn(int) -> fn(int) -> int = \a -> \b -> \c -> \d -> \e -> a + b + c + d + e;
-    printInt(f(1)(1)(1)(1)(1))
+    printInt(f(1)(1)(1)(1)(1));
+    printString("\n")
 }

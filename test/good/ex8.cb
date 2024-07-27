@@ -2,6 +2,7 @@ def main() {
     let x = 10;
     let y = 40;
     printInt(add(x,y));
+    printString("\n");
 }
 
 def add(x: int, y: int) -> int {

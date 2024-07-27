@@ -11,8 +11,9 @@ def main() {
     let x = match var {
         Baz(n,m) => {
             printInt(n);
+            printString("\n");
             match m {
-                Bar => printString("got bar")
+                Bar => printString("got bar\n")
             }
         }
     };

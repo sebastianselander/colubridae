@@ -6,4 +6,5 @@ def foo() -> fn(int) -> int {
 
 def main() {
     printInt(foo()(123));
+    printString("\n");
 }

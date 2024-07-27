@@ -3,10 +3,12 @@ def main() {
     let x = loop {
         if (i < 10) {
             printInt(i);
+            printString("\n");
             i += 1;
         } else {
             break 123
         }
     };
     printInt(x);
+    printString("\n");
 }

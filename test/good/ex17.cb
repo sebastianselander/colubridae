@@ -5,7 +5,9 @@ def main() {
             break "done"
         };
         printInt(x);
+        printString("\n");
         x += 1;
     };
     printString(g);
+    printString("\n");
 }
