@@ -1,7 +1,7 @@
 # Bugs
 
-- [ ] Constructor variables are counted as free variables in lambdas. Implement a correct free variable finder algorithm
-- [x] match case in match case are deleted by desugaring algorithm
+- [x] Constructor variables are counted as free variables in lambdas. Implement a correct free variable finder algorithm
+- [x] Nested match case are deleted by desugaring algorithm (it was code generation that didn't produce stuff unless the value was used)
 
 # Todo
 

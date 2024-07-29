@@ -10,9 +10,9 @@ import Backend.Llvm.Prelude (globalUnit)
 import Backend.Types
 import Control.Lens (makeLenses)
 import Control.Lens.Getter (use, uses, view)
-import Control.Lens.Setter (assign, modifying)
+import Control.Lens.Setter ( assign, modifying, (+=) )
 import Control.Monad.Extra (concatMapM)
-import Data.DList
+import Data.DList hiding (concat)
 import Data.List (nub, (\\))
 import Data.Map qualified as Map
 import Data.Maybe (fromJust)
@@ -28,7 +28,6 @@ import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify', mapWithIndexM)
-import Control.Lens.Setter ((+=))
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -384,13 +383,16 @@ env = Ident "env"
 lookupFree :: Ident -> Integer -> (Type, Ident) -> TyExpr
 lookupFree env n (ty, var) = Typed ty $ ExtractFree var env n
 
--- BUG: (Sebastian) Pattern matched variables are counted as free.
+-- TODO: (Sebastian) Rewrite and make a more robust implementation
 freeVars :: [(Type, Ident)] -> TyExpr -> [(Type, Ident)]
-freeVars xs expr = listify' free expr \\ xs
+freeVars xs expr = listify' free expr \\ (xs <> concat (listify' matchParams expr))
   where
+    free :: TyExpr -> Maybe (Type, Ident)
     free (Typed ty (Var Free name)) = Just (ty, name)
     free (Typed ty (Var Argument name)) = Just (ty, name)
     free _ = Nothing
+    matchParams :: Pattern -> Maybe [(Type, Ident)]
+    matchParams (PCon _ xs) = Just (fmap swap xs)
 
 mkArg :: (Monad m) => Tc.LamArgTc -> m Arg
 mkArg (Tc.LamArgX ty name) = do
