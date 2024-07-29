@@ -135,7 +135,7 @@ rnMatchArm (MatchArmX loc pat body) = newContext $ do
 
 rnPattern :: PatternPar -> Gen PatternRn
 rnPattern = \case
-    PVarX loc varName -> PVarX loc <$> insertVar varName 
+    PVarX loc varName -> PVarX loc <$> insertVar varName
     PEnumConX loc conName -> pure $ PEnumConX loc conName
     PFunConX loc conName pats -> PFunConX loc conName <$> mapM rnPattern pats
 

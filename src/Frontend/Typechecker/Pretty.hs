@@ -140,7 +140,7 @@ prettyExpr7 (AppX _ l rs) =
     Pretty.pretty l
         <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty rs))
 prettyExpr7 (LetX (StmtType {_varType}) name e) =
-    "let" <+>  Pretty.pretty name <> ":" <+> Pretty.pretty _varType <+> "=" <+> Pretty.pretty e
+    "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty _varType <+> "=" <+> Pretty.pretty e
 prettyExpr7 (AssX _ (Ident name) op e) = Pretty.pretty name <+> Pretty.pretty op <+> Pretty.pretty e
 prettyExpr7 (RetX _ Nothing) = "return"
 prettyExpr7 (RetX _ (Just e)) = "return" <+> Pretty.pretty e
