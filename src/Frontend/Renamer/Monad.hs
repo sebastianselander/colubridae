@@ -78,9 +78,6 @@ runGen env ctx =
 names :: Gen (Map Ident Ident)
 names = use newToOld
 
-{-| Checks if a variable is bound in the closest scope
-| It does *not* check if a variable is completely unbound
--}
 boundFun :: (MonadReader Ctx m) => Ident -> m (Maybe Ident)
 boundFun name = views definitions (bool Nothing (Just name) . Set.member name)
 
@@ -90,6 +87,9 @@ boundCons name = uses constructors (bool Nothing (Just name) . Set.member name)
 boundArg :: (MonadState Env m) => Ident -> m (Maybe Ident)
 boundArg name = uses arguments (Map.lookup name)
 
+{-| Checks if a variable is bound in the closest scope
+  | It does *not* check if a variable is completely unbound
+-}
 boundVar :: (MonadState Env m) => Ident -> m (Maybe (Boundedness, Ident))
 boundVar name = do
     (close :| rest) <- use scope
