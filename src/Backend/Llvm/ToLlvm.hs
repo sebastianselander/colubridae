@@ -116,7 +116,6 @@ instance Pretty Instruction where
         ExtractValue operand indices -> "extractvalue" <+> typed operand <> "," <+> commasep (fmap pretty indices)
         Malloc operand -> "call ptr @malloc" <> parens (typed operand)
         Unreachable -> "unreachable"
-        InsertValue _ _ _ -> undefined
         Phi [] -> error "phi: jump phi instruction set"
         Phi xs@(i : _) ->
             "phi"
