@@ -13,7 +13,6 @@ import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
-import Text.Pretty.Simple (pPrint)
 
 parse' ::
     BindingPowerTable PrefixOp BinOp Void ->
@@ -26,14 +25,6 @@ parse' table file =
 
 parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
 parse = parse' defaultBindingPowerTable
-
-runP' :: (Show a) => BindingPowerTable PrefixOp BinOp Void -> Parser a -> Text -> IO ()
-runP' table p input = case flip runReader table $ P.runParserT (p <* P.eof) "" input of
-    Left err -> putStrLn $ P.errorBundlePretty err
-    Right res -> pPrint res
-
-runP :: (Show a) => Parser a -> Text -> IO ()
-runP = runP' defaultBindingPowerTable
 
 pAdt :: Parser AdtPar
 pAdt = do
