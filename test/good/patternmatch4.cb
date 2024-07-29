@@ -14,7 +14,7 @@ def main() {
     printString("sum is: ");
     printInt(sum);
     printString("\n");
-    printString("head:");
+    printString("head: ");
     printInt(head(ls));
     printString("\n");
     printList(ls);

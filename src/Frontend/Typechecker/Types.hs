@@ -11,13 +11,15 @@ import Data.Data (Data)
 import Relude hiding (Any)
 import Frontend.Types
 import Control.Lens (makeLenses)
-import Control.Lens.Getter (view)
 import Frontend.Renamer.Types (Boundedness)
 
 data Tc deriving (Data)
 
 type ProgramTc = ProgramX Tc
 type DefTc = DefX Tc
+type FnTc = FnX Tc
+type AdtTc = AdtX Tc
+type ConstructorTc = ConstructorX Tc
 type ArgTc = ArgX Tc
 type ExprTc = ExprX Tc
 type TypeTc = TypeX Tc
@@ -25,6 +27,8 @@ type LitTc = LitX Tc
 type StmtTc = StmtX Tc
 type BlockTc = BlockX Tc
 type LamArgTc = LamArgX Tc
+type MatchArmTc = MatchArmX Tc
+type PatternTc = PatternX Tc
 
 type TcInfo = (SourceInfo, TypeTc)
 type TcInfoBound = (SourceInfo, TypeTc, Boundedness)
@@ -35,12 +39,20 @@ deriving instance Data ExprTc
 deriving instance Data LitTc
 deriving instance Data TypeTc
 deriving instance Data LamArgTc
+deriving instance Data MatchArmTc
+deriving instance Data PatternTc
 
 type instance XProgram Tc = NoExtField
 
 type instance XArg Tc = NoExtField
 
-type instance XDef Tc = NoExtField
+type instance XDef Tc = DataConCantHappen
+type instance XFn Tc = NoExtField
+
+type instance XAdt Tc = SourceInfo
+type instance XConstructor Tc = DataConCantHappen
+type instance XEnumCons Tc = TcInfo
+type instance XFunCons Tc = TcInfo
 
 type instance XBlock Tc = TcInfo
 
@@ -53,6 +65,13 @@ type instance XWhile Tc = TcInfo
 type instance XLet Tc = StmtType
 type instance XAss Tc = (StmtType, Boundedness)
 type instance XSExp Tc = NoExtField
+
+type instance XMatchArm Tc = SourceInfo
+type instance XMatch Tc = TcInfo
+
+type instance XPVar Tc = TcInfo
+type instance XPEnumCon Tc = TcInfo
+type instance XPFunCon Tc = TcInfo
 
 type instance XLit Tc = TcInfo
 type instance XVar Tc = TcInfoBound
@@ -71,6 +90,7 @@ type instance XUnitLit Tc = NoExtField
 
 type instance XTyLit Tc = NoExtField
 type instance XTyFun Tc = NoExtField
+type instance XTyCon Tc = NoExtField
 type instance XType Tc = MetaTy
 
 type instance XLoop Tc = TcInfo

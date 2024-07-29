@@ -10,7 +10,7 @@ import Control.Lens (makeLenses)
 import Control.Lens.Getter (views)
 import Data.Map qualified as Map
 import Data.Maybe (fromJust)
-import Data.Text (pack)
+import Data.Text (pack, unpack)
 import Frontend.Error (Report, report)
 import Frontend.Types
 import Names (Ident (..))
@@ -20,50 +20,82 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
 import Text.Megaparsec.Error (errorBundlePretty)
-import qualified Text.Megaparsec.Char.Lexer as P
 
 type Parser = P.ParsecT CustomParseError Text (Reader (BindingPowerTable PrefixOp BinOp Void))
 
 {-| The order of the errors matters here, the one with the 'greatest' ord
 takes priority if more than one error is thrown *I think*
 -}
-data CustomParseError = UppercaseLetter | Keyword Text
+data CustomParseError = Keyword Text | WildCardName
     deriving (Eq, Ord, Show)
 
 instance P.ShowErrorComponent CustomParseError where
-    showErrorComponent = show
+    showErrorComponent = \case
+           Keyword word -> "'" <> unpack word <> "' is a keyword"
+           WildCardName  -> "Can not use '_' as a variable name"
 
 instance Report (ParseErrorBundle Text CustomParseError) where
     report = pack . errorBundlePretty
 
-keywords :: [String]
+keywords :: [Text]
 keywords =
     [ "def"
-    , "="
-    , "let"
-    , "mut"
-    , "while"
-    , "break"
-    , "return"
-    , "if"
-    , "true"
-    , "false"
-    , "int"
-    , "bool"
-    , "double"
-    , "string"
-    , "char"
-    , "fn"
-    , "{"
-    , "}"
+    , "match"
+    , "=>"
+    , "!"
+    , "!="
+    , "%"
+    , "&&"
     , "("
+    , "()"
     , ")"
+    , "*"
+    , "+"
+    , "+="
+    , "-"
+    , "->"
+    , "/"
+    , ":"
+    , "<"
+    , "<="
+    , "="
+    , "=="
+    , ">"
+    , ">="
+    , "-="
+    , "*="
+    , "/="
+    , "%="
+    , "else"
     , "["
+    , "\\"
     , "]"
+    , "bool"
+    , "break"
+    , "char"
+    , "double"
+    , "false"
+    , "fn"
+    , "if"
+    , "int"
+    , "let"
+    , "loop"
+    , "mut"
+    , "return"
+    , "string"
+    , "true"
+    , "type"
+    , "while"
+    , "{"
+    , "||"
+    , "}"
     ]
 
 keyword :: Text -> Parser ()
-keyword = void . lexeme . P.string
+keyword t = if isKeyword t then void $ lexeme $ P.string t else error $ "keyword '" <> t <> "' not declared"
+
+isKeyword :: Text -> Bool
+isKeyword t = t `elem` keywords
 
 parens :: Parser a -> Parser a
 parens = lexeme . P.between (P.hidden $ char '(') (P.hidden $ char ')')
@@ -97,7 +129,10 @@ string :: Text -> Parser Text
 string txt = lexeme (P.string txt)
 
 commaSep :: Parser a -> Parser [a]
-commaSep p = P.sepBy p (P.hidden $ lexeme $ char ',')
+commaSep p = P.sepBy p (P.hidden $ char ',')
+
+commaSepEnd :: Parser a -> Parser [a]
+commaSepEnd p = P.sepEndBy p (P.hidden $ char ',')
 
 stringLiteral :: Parser Text
 stringLiteral = P.hidden (P.char '"') >> pack <$> P.manyTill L.charLiteral (P.hidden (P.char '"'))
@@ -105,14 +140,26 @@ stringLiteral = P.hidden (P.char '"') >> pack <$> P.manyTill L.charLiteral (P.hi
 charLiteral :: Parser Char
 charLiteral = P.between (P.hidden $ P.char '\'') (P.hidden $ P.char '\'') L.charLiteral
 
+upperIdentifier :: Parser Ident
+upperIdentifier = do
+    headLet <- P.upperChar <?> "upper case identifier"
+    tailLets <- many (P.char '_' <|> P.alphaNumChar)
+    let name = headLet : tailLets
+    if isKeyword (pack name)
+        then customFailure (Keyword (pack name))
+        else pure (Ident (pack (headLet : tailLets)))
+
 identifier :: Parser Ident
 identifier = do
     headLet <- P.char '_' <|> (P.lowerChar <?> "lower case identifier")
-    tailLets <- many (P.char '_' <|> P.alphaNumChar)
-    let name = headLet : tailLets
-    if name `elem` keywords
-        then customFailure (Keyword (pack name))
-        else pure (Ident (pack (headLet : tailLets)))
+    tailLets <- P.many (P.char '_' <|> P.alphaNumChar)
+    case (headLet, tailLets) of
+        ('_', []) -> customFailure WildCardName
+        _ -> do
+            let name = headLet : tailLets
+            if isKeyword (pack name)
+                then customFailure (Keyword (pack name))
+                else pure (Ident (pack (headLet : tailLets)))
 
 data Before
 
@@ -127,7 +174,7 @@ spanEnd :: GhostSpan Before -> Parser SourceInfo
 spanEnd (GS before) = do
     after <- P.getSourcePos
     let span = Span {start = before, end = (after.sourceLine, after.sourceColumn)}
-    let info = SourceInfo {sourceFile = after.sourceName, spanInfo = Just span}
+    let info = SourceInfo {sourceFile = after.sourceName, spanInfo = span}
     lexeme (return ())
     pure info
 
@@ -136,9 +183,6 @@ span gs p = do
     res <- p
     info <- spanEnd gs
     pure (res, info)
-
-emptyInfo :: SourceInfo
-emptyInfo = SourceInfo {sourceFile = "", spanInfo = Nothing}
 
 data BindingPowerTable pre inf post = BindingPowerTable
     { _prefixTable :: Map pre Int

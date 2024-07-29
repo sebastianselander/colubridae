@@ -10,12 +10,12 @@ import Data.Kind qualified
 import Data.Tuple.Extra (both)
 import GHC.Show (show)
 import Names
+import Prettyprinter (Pretty)
+import Prettyprinter qualified as Pretty
 import Relude hiding (Type, concat, intercalate, replicate)
 import Relude qualified
-import Text.Megaparsec (Pos)
+import Text.Megaparsec (Pos, mkPos)
 import Text.Megaparsec.Pos (unPos)
-import Prettyprinter qualified as Pretty
-import Prettyprinter (Pretty)
 
 data NoExtField = NoExtField
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
@@ -36,20 +36,25 @@ data Span = Span
     }
     deriving (Eq, Ord, Data)
 
+emptyInfo :: SourceInfo
+emptyInfo = SourceInfo {sourceFile = "", spanInfo = emptySpan}
+
+emptySpan :: Span
+emptySpan = Span (mkPos 0, mkPos 0) (mkPos 0, mkPos 0)
+
 instance Show Span where
     show Span {start, end} =
         let (bl, bc) = both (Relude.show . unPos) start
-            (al, ac) = both (Relude.show . unPos) end
-         in Relude.concat ["(", bl, ":", bc, "->", al, ":", ac, ")"]
+         in Relude.concat [bl, ":", bc]
 
 data SourceInfo = SourceInfo
-    { spanInfo :: !(Maybe Span)
+    { spanInfo :: !Span
     , sourceFile :: !FilePath
     }
     deriving (Eq, Ord, Data)
 
 instance Show SourceInfo where
-    show info = maybe "no pos" Relude.show info.spanInfo
+    show info = info.sourceFile <> ":" <> Relude.show info.spanInfo
 
 -- Program
 data ProgramX a = ProgramX !(XProgram a) [DefX a]
@@ -60,11 +65,34 @@ deriving instance (ForallX Typeable a) => Typeable (ProgramX a)
 
 -- Definition
 data DefX a
-    = Fn !(XDef a) Ident [ArgX a] (TypeX a) (BlockX a)
+    = DefFn (FnX a)
+    | DefAdt (AdtX a)
+    | DefX !(XDef a)
 type family XDef a
-
 deriving instance (ForallX Show a) => Show (DefX a)
 deriving instance (ForallX Typeable a) => Typeable (DefX a)
+
+data FnX a = Fn !(XFn a) Ident [ArgX a] (TypeX a) (BlockX a)
+type family XFn a
+
+deriving instance (ForallX Show a) => Show (FnX a)
+deriving instance (ForallX Typeable a) => Typeable (FnX a)
+
+data AdtX a = AdtX !(XAdt a) Ident [ConstructorX a]
+type family XAdt a
+deriving instance (ForallX Show a) => Show (AdtX a)
+deriving instance (ForallX Typeable a) => Typeable (AdtX a)
+
+data ConstructorX a
+    = EnumCons (XEnumCons a) Ident
+    | FunCons (XFunCons a) Ident [TypeX a]
+    | ConstructorX !(XConstructor a)
+
+type family XConstructor a
+type family XEnumCons a
+type family XFunCons a
+deriving instance (ForallX Show a) => Show (ConstructorX a)
+deriving instance (ForallX Typeable a) => Typeable (ConstructorX a)
 
 -- Argument
 data ArgX a = ArgX !(XArg a) Ident (TypeX a)
@@ -78,15 +106,20 @@ data TypeX a
     = TyLitX !(XTyLit a) TyLit
     | TyFunX !(XTyFun a) [TypeX a] (TypeX a)
     | TypeX !(XType a)
+    | TyConX !(XTyCon a) Ident
 type family XTyLit a
 type family XTyFun a
 type family XType a
+type family XTyCon a
 
 coerceType ::
-    (XTyLit t1 ~ XTyLit t2, XTyFun t1 ~ XTyFun t2, XType t1 ~ XType t2) => TypeX t1 -> TypeX t2
+    (XTyLit t1 ~ XTyLit t2, XTyFun t1 ~ XTyFun t2, XType t1 ~ XType t2, XTyCon t1 ~ XTyCon t2) =>
+    TypeX t1 ->
+    TypeX t2
 coerceType ty = case ty of
     TyLitX a b -> TyLitX a b
     TyFunX a b c -> TyFunX a (fmap coerceType b) (coerceType c)
+    TyConX a b -> TyConX a b
     TypeX a -> TypeX a
 
 data TyLit = UnitX | StringX | IntX | DoubleX | CharX | BoolX
@@ -136,7 +169,12 @@ data ExprX a
     | WhileX !(XWhile a) (ExprX a) (BlockX a)
     | LoopX !(XLoop a) (BlockX a)
     | LamX !(XLam a) [LamArgX a] (ExprX a)
+    | MatchX !(XMatch a) (ExprX a) [MatchArmX a]
     | ExprX !(XExpr a)
+
+deriving instance (ForallX Show a) => Show (ExprX a)
+deriving instance (ForallX Typeable a) => Typeable (ExprX a)
+
 type family XExprStmt a
 type family XLit a
 type family XVar a
@@ -151,18 +189,34 @@ type family XBreak a
 type family XIf a
 type family XWhile a
 type family XExpr a
+type family XLoop a
+type family XLam a
+type family XMatch a
+
+data MatchArmX a = MatchArmX !(XMatchArm a) (PatternX a) (ExprX a)
+
+deriving instance (ForallX Show a) => Show (MatchArmX a)
+deriving instance (ForallX Typeable a) => Typeable (MatchArmX a)
+
+type family XMatchArm a
+
+data PatternX a
+    = PVarX !(XPVar a) Ident
+    | PEnumConX !(XPEnumCon a) Ident
+    | PFunConX !(XPFunCon a) Ident [PatternX a]
+
+deriving instance (ForallX Show a) => Show (PatternX a)
+deriving instance (ForallX Typeable a) => Typeable (PatternX a)
+
+type family XPVar a
+type family XPEnumCon a
+type family XPFunCon a
 
 data LamArgX a = LamArgX !(XLamArg a) Ident
 type family XLamArg a
 
 deriving instance (ForallX Show a) => Show (LamArgX a)
 deriving instance (ForallX Typeable a) => Typeable (LamArgX a)
-
-type family XLoop a
-type family XLam a
-
-deriving instance (ForallX Show a) => Show (ExprX a)
-deriving instance (ForallX Typeable a) => Typeable (ExprX a)
 
 data PrefixOp = Not | Neg
     deriving (Show, Eq, Ord, Data)
@@ -225,6 +279,7 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XStmt a)
     , c (XStringLit a)
     , c (XTyLit a)
+    , c (XTyCon a)
     , c (XTyFun a)
     , c (XVar a)
     , c (XWhile a)
@@ -234,4 +289,14 @@ type ForallX (c :: Data.Kind.Type -> Constraint) a =
     , c (XLoop a)
     , c (XLam a)
     , c (XLamArg a)
+    , c (XFn a)
+    , c (XAdt a)
+    , c (XConstructor a)
+    , c (XEnumCons a)
+    , c (XFunCons a)
+    , c (XMatchArm a)
+    , c (XMatch a)
+    , c (XPVar a)
+    , c (XPEnumCon a)
+    , c (XPFunCon a)
     )

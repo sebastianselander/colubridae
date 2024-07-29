@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -10,6 +11,7 @@ module Frontend.Renamer.Monad
       boundVar,
       insertVar,
       boundArg,
+      boundCons,
       emptyCtx,
       emptyEnv,
       definitions,
@@ -19,6 +21,7 @@ module Frontend.Renamer.Monad
       boundFun,
       insertArg,
       names,
+      checkAndinsertConstrutor,
     ) where
 
 import Control.Lens hiding ((<|))
@@ -30,6 +33,7 @@ import Data.Set qualified as Set
 import Frontend.Builtin (builtInNames)
 import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
+import Frontend.Types (SourceInfo)
 import Names (Ident (..))
 import Relude hiding (Map, head)
 
@@ -38,6 +42,7 @@ data Env = Env
     , _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident Ident)
     , _arguments :: Map Ident Ident
+    , _constructors :: Set Ident
     }
     deriving (Show)
 
@@ -58,7 +63,7 @@ newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
         )
 
 emptyEnv :: Env
-emptyEnv = Env mempty mempty (return mempty) mempty
+emptyEnv = Env mempty mempty (return mempty) mempty mempty
 
 emptyCtx :: Ctx
 emptyCtx = Ctx builtInNames
@@ -73,15 +78,18 @@ runGen env ctx =
 names :: Gen (Map Ident Ident)
 names = use newToOld
 
-{-| Checks if a variable is bound in the closest scope
-| It does *not* check if a variable is completely unbound
--}
 boundFun :: (MonadReader Ctx m) => Ident -> m (Maybe Ident)
 boundFun name = views definitions (bool Nothing (Just name) . Set.member name)
+
+boundCons :: (MonadState Env m) => Ident -> m (Maybe Ident)
+boundCons name = uses constructors (bool Nothing (Just name) . Set.member name)
 
 boundArg :: (MonadState Env m) => Ident -> m (Maybe Ident)
 boundArg name = uses arguments (Map.lookup name)
 
+{-| Checks if a variable is bound in the closest scope
+  | It does *not* check if a variable is completely unbound
+-}
 boundVar :: (MonadState Env m) => Ident -> m (Maybe (Boundedness, Ident))
 boundVar name = do
     (close :| rest) <- use scope
@@ -117,6 +125,13 @@ insertArg name@(Ident nm) = do
     modifying numbering (Map.insert name n)
     modifying arguments (Map.insert name name')
     pure name'
+
+checkAndinsertConstrutor ::
+    (MonadValidate [RnError] m, MonadState Env m) => SourceInfo -> Ident -> m ()
+checkAndinsertConstrutor loc name = do
+    uses constructors (Set.member name) >>= \case
+        True -> conflictingDefinitionArgument loc name
+        False -> modifying constructors (Set.insert name)
 
 newContext :: Gen a -> Gen a
 newContext rn = do

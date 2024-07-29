@@ -15,14 +15,14 @@ import Data.Map.Strict qualified as Map
 import Frontend.Builtin (builtIns)
 import Frontend.Error
 import Frontend.Renamer.Types
+import Frontend.Typechecker.Ctx (Ctx)
+import Frontend.Typechecker.Ctx qualified as Ctx
 import Frontend.Typechecker.Types
 import Frontend.Types
 import Names (Ident, Names, getOriginalName')
 import Relude hiding (Any, intercalate)
 import Relude.Unsafe (fromJust)
 import Utils (chain, listify')
-import Frontend.Typechecker.Ctx qualified as Ctx
-import Frontend.Typechecker.Ctx (Ctx)
 
 newtype Env = Env
     { _variables :: Map Ident (TypeTc, SourceInfo)
@@ -31,16 +31,26 @@ newtype Env = Env
 
 $(makeLenses ''Env)
 
-newtype TcM a = Tc {runTc :: StateT Env (ReaderT Ctx (ValidateT [TcError] (Writer [TcWarning]))) a}
-    deriving (Functor, Applicative, Monad, MonadReader Ctx, MonadValidate [TcError], MonadState Env)
+newtype TcM a = Tc
+    { runTc ::
+        StateT Env (ReaderT Ctx (ValidateT [TcError] (Writer [TcWarning]))) a
+    }
+    deriving
+        ( Functor
+        , Applicative
+        , Monad
+        , MonadReader Ctx
+        , MonadValidate [TcError]
+        , MonadState Env
+        )
 
 run :: Ctx -> Env -> TcM a -> (Either [TcError] a, [TcWarning])
 run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT env . runTc
 
-getDefs :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
-getDefs = listify' f
+getFuns :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
+getFuns = listify' f
   where
-    f :: DefRn -> Maybe (Ident, (TypeTc, SourceInfo))
+    f :: FnRn -> Maybe (Ident, (TypeTc, SourceInfo))
     f (Fn info name args returnType _) =
         let funTy = TyFunX NoExtField (fmap argTy args) (typeOf returnType)
          in Just (name, (funTy, info))
@@ -49,15 +59,57 @@ getDefs = listify' f
         Mutable -> Mut $ typeOf ty
         Immutable -> typeOf ty
 
-tc :: Names -> ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
-tc names (ProgramX NoExtField defs) = case first partitionEithers $ unzip $ fmap (tcDefs names funTable) defs of
-    (([], defs), warnings) -> (Right $ ProgramX NoExtField defs, mconcat warnings)
-    ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
+getCons :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
+getCons = concat . listify' f
   where
-    funTable = Map.fromList $ getDefs defs
+    f :: AdtRn -> Maybe [(Ident, (TypeTc, SourceInfo))]
+    f (AdtX _ name cons) =
+        let returnType = TyConX NoExtField name
+         in Just $ fmap (g returnType) cons
+      where
+        g :: TypeTc -> ConstructorRn -> (Ident, (TypeTc, SourceInfo))
+        g returnType = \case
+            EnumCons loc name -> (name, (returnType, loc))
+            FunCons loc name argTys ->
+                (name, (TyFunX NoExtField (fmap typeOf argTys) returnType, loc))
 
-tcDefs :: Names -> Map Ident (TypeTc, SourceInfo) -> DefRn -> (Either [TcError] DefTc, [TcWarning])
-tcDefs names funTable fun@(Fn _ _ args rt _) =
+tc :: Names -> ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
+tc names (ProgramX NoExtField defs) =
+    case first partitionEithers $ unzip $ fmap (tcDefs names funTable conTable) defs of
+        (([], defs), warnings) -> (Right $ ProgramX NoExtField defs, mconcat warnings)
+        ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
+  where
+    funTable = Map.fromList $ getFuns defs
+    conTable = Map.fromList $ getCons defs
+
+tcDefs ::
+    Names ->
+    Map Ident (TypeTc, SourceInfo) ->
+    Map Ident (TypeTc, SourceInfo) ->
+    DefRn ->
+    (Either [TcError] DefTc, [TcWarning])
+tcDefs names funTable conTable (DefFn fn) =
+    first (fmap DefFn) $ tcFunction names funTable conTable fn
+tcDefs _ _ _ (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
+
+tcAdt :: AdtRn -> (AdtTc, [TcWarning])
+tcAdt (AdtX loc name constructors) =
+    (AdtX loc name (fmap (inferConstructor (TyConX NoExtField name)) constructors), [])
+
+inferConstructor :: TypeTc -> ConstructorRn -> ConstructorTc
+inferConstructor ty = \case
+    EnumCons loc name -> EnumCons (loc, ty) name
+    FunCons loc name types ->
+        let types' = fmap typeOf types
+         in FunCons (loc, TyFunX NoExtField types' ty) name types'
+
+tcFunction ::
+    Names ->
+    Map Ident (TypeTc, SourceInfo) ->
+    Map Ident (TypeTc, SourceInfo) ->
+    FnRn ->
+    (Either [TcError] FnTc, [TcWarning])
+tcFunction names funTable conTable fun@(Fn _ _ args rt _) =
     let varTable =
             foldr
                 ( uncurry Map.insert
@@ -74,7 +126,7 @@ tcDefs names funTable fun@(Fn _ _ args rt _) =
                 )
                 mempty
                 args
-        ctx = Ctx.Ctx (Map.union builtIns funTable) (typeOf rt) fun [] names
+        ctx = Ctx.Ctx (Map.union builtIns funTable) conTable (typeOf rt) fun [] names
         env = Env varTable
      in run ctx env $ go fun
   where
@@ -115,7 +167,9 @@ infStmt :: StmtRn -> TcM StmtTc
 infStmt (SExprX NoExtField expr) = SExprX NoExtField <$> infExpr expr
 
 breaks :: BlockTc -> [ExprTc]
-breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e) stmts <> maybe [] breakExpr tail
+breaks (BlockX _ stmts tail) =
+    concatMap (\(SExprX NoExtField e) -> breakExpr e) stmts
+        <> maybe [] breakExpr tail
   where
     -- \| Find all breaks in a block. Do not traverse further on expressions where breaks are allowed
     breakExpr :: ExprTc -> [ExprTc]
@@ -134,6 +188,10 @@ breaks (BlockX _ stmts tail) = concatMap (\(SExprX NoExtField e) -> breakExpr e)
         WhileX {} -> []
         LoopX {} -> []
         LamX {} -> []
+        MatchX _ scrutinee arms -> breakExpr scrutinee <> concatMap breakArm arms
+      where
+        breakArm :: MatchArmX Tc -> [ExprTc]
+        breakArm (MatchArmX _ _ body) = breakExpr body
 
 infExpr :: ExprRn -> TcM ExprTc
 infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
@@ -145,6 +203,7 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
             Free -> lookupVar name
             Bound -> lookupVar name
             Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
+            Constructor -> lookupCon name
         pure $ VarX (info, ty, bind) name
     PrefixX info Neg expr -> do
         expr <- tcExpr Int expr
@@ -290,6 +349,54 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
         body <- infExpr body
         let ty = TyFunX NoExtField (fmap typeOf args) (typeOf body)
         pure $ LamX (info, ty) args body
+    MatchX loc scrutinee matchArms -> do
+        scrutinee <- infExpr scrutinee
+        let scrutType = typeOf scrutinee
+        case matchArms of
+            [] -> pure $ MatchX (loc, Any) scrutinee []
+            (arm1 : arms) -> do
+                arm1 <- infMatchArm scrutType arm1
+                let armType = typeOf arm1
+                arms <- mapM (tcMatchArm scrutType armType) arms
+                pure $ MatchX (loc, armType) scrutinee (arm1 : arms)
+
+infMatchArm :: TypeTc -> MatchArmRn -> TcM MatchArmTc
+infMatchArm pattype (MatchArmX loc pat body) = do
+    pat <- tcPat pattype pat
+    body <- infExpr body
+    pure $ MatchArmX loc pat body
+
+tcMatchArm :: TypeTc -> TypeTc -> MatchArmRn -> TcM MatchArmTc
+tcMatchArm pattype bodytype (MatchArmX loc pat body) = do
+    pat <- tcPat pattype pat
+    body <- tcExpr bodytype body
+    pure $ MatchArmX loc pat body
+
+tcPat :: TypeTc -> PatternRn -> TcM PatternTc
+tcPat pattype currentPattern = case currentPattern of
+    PVarX loc varName -> do
+        insertVar varName pattype loc
+        pure $ PVarX (loc, pattype) varName
+    PEnumConX loc conName -> do
+        (ty, _declLoc) <- lookupCon conName
+        unify' loc pattype ty
+        pure $ PEnumConX (loc, ty) conName
+    PFunConX loc conName pats -> do
+        (ty, _declLoc) <- lookupCon conName
+        case ty of
+            TyFunX NoExtField argtys retty
+                | length argtys == length pats -> do
+                    unify' loc pattype retty
+                    pats <- zipWithM tcPat argtys pats
+                    pure $ PFunConX (loc, pattype) conName pats
+                | otherwise -> do
+                    expectedPatNArgs loc currentPattern (length argtys) (length pats)
+                    pats <- zipWithM tcPat (repeat Any) pats
+                    pure $ PFunConX (loc, pattype) conName pats
+            other -> do
+                tyExpectedGot loc [pattype] other
+                pats <- zipWithM tcPat (repeat Any) pats
+                pure $ PFunConX (loc, pattype) conName pats
 
 tcExpr :: TypeTc -> ExprRn -> TcM ExprTc
 tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
@@ -298,12 +405,8 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
         let literal = LitX (info, ty) lit'
         void $ unify info expectedTy literal
         pure literal
-    VarX (info, bind) name -> do
-        (ty, _declaredAtInfo) <- case bind of
-            Free -> lookupVar name
-            Bound -> lookupVar name
-            Toplevel -> (\(ty, info) -> (ty, info)) <$> lookupFun name
-        let expr = VarX (info, ty, bind) name
+    VarX (info, _) _ -> do
+        expr <- infExpr currentExpr
         unify info expectedTy expr
         pure expr
     PrefixX info op expr -> do
@@ -379,10 +482,17 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
                     pure $ LamX (info, expectedTy) lamArgs body
                 | otherwise -> expectedLambdaNArgs' info (length argtys) (length args)
             _ -> expectedTyGotLambda' info expectedTy
+    MatchX loc scrutinee matchArms -> do
+        scrutinee <- infExpr scrutinee
+        let scrutType = typeOf scrutinee
+        arms <- mapM (tcMatchArm scrutType expectedTy) matchArms
+        pure $ MatchX (loc, expectedTy) scrutinee arms
 
 -- | Unify the arguments of a lambda with the the given types
 unifyLambdaArgs ::
-    (MonadReader Ctx m, MonadValidate [TcError] m, MonadState Env m) => [(TypeTc, LamArgRn)] -> m [LamArgTc]
+    (MonadReader Ctx m, MonadValidate [TcError] m, MonadState Env m) =>
+    [(TypeTc, LamArgRn)] ->
+    m [LamArgTc]
 unifyLambdaArgs [] = pure []
 unifyLambdaArgs
     ((expectedType, LamArgX (loc, mut, mbArgumentType) argumentName) : xs) = do
@@ -410,6 +520,7 @@ hasInfo = \case
     WhileX info _ _ -> fst info
     LoopX info _ -> fst info
     LamX info _ _ -> fst info
+    MatchX info _ _ -> fst info
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
@@ -458,6 +569,10 @@ insertVar name ty info = modifying variables (Map.insert name (ty, info))
 lookupVar :: (MonadState Env m) => Ident -> m (TypeTc, SourceInfo)
 lookupVar name = uses variables (fromJust . Map.lookup name)
 
+lookupCon :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
+lookupCon name = do
+    views Ctx.constructors (fromJust . Map.lookup name)
+
 lookupVarTy :: (MonadState Env m) => Ident -> m TypeTc
 lookupVarTy = fmap fst . lookupVar
 
@@ -487,6 +602,7 @@ instance TypeOf ExprTc where
         WhileX ty _ _ -> snd ty
         LoopX ty _ -> snd ty
         LamX ty _ _ -> snd ty
+        MatchX ty _ _ -> snd ty
 
 instance TypeOf BlockTc where
     typeOf (BlockX ty _ _) = snd ty
@@ -495,9 +611,13 @@ instance TypeOf TypeRn where
     typeOf = \case
         TyLitX a b -> TyLitX a b
         TyFunX a b c -> TyFunX a (fmap typeOf b) (typeOf c)
+        TyConX a b -> TyConX a b
 
 instance TypeOf LamArgTc where
     typeOf (LamArgX ty _) = ty
+
+instance TypeOf MatchArmTc where
+    typeOf (MatchArmX _ _ body) = typeOf body
 
 unify ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m, TypeOf a) =>
@@ -527,4 +647,7 @@ unify' info ty1 ty2 = do
         (_, TypeX AnyX) -> pure ()
         (ty1, TypeX (MutableX ty2)) -> unify' info ty1 ty2
         (TypeX (MutableX ty1), ty2) -> unify' info ty1 ty2
+        (TyConX NoExtField name1, TyConX NoExtField name2)
+            | name1 == name2 -> pure ()
+            | otherwise -> tyExpectedGot info [ty1] ty2
         (ty1, ty2) -> void $ tyExpectedGot info [ty1] ty2

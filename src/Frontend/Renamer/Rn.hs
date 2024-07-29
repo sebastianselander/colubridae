@@ -22,9 +22,11 @@ rename = runGen emptyEnv emptyCtx . rnProgram
 
 rnProgram :: ProgramPar -> Gen (ProgramRn, Names)
 rnProgram program@(ProgramX a defs) = do
-    let toplevels = getDefinitions program
-    uniqueDefs toplevels
-    let toplevelSet = Set.fromList $ fmap snd toplevels
+    let functions = getFunctionNames program
+    let adts = getAdtNames program
+    uniqueDefs adts
+    uniqueDefs functions
+    let toplevelSet = Set.fromList $ fmap snd functions
     defs <- locally definitions (Set.union toplevelSet) (mapM rnDef defs)
     names <- names
     pure (ProgramX a defs, mkNames names)
@@ -39,12 +41,24 @@ uniqueDefs = go builtInNames
             then duplicateToplevels info name
             else go (Set.insert name seen) xs
 
-rnDef :: DefPar -> Gen DefRn
-rnDef (Fn pos name arguments returnType block) = do
+rnFunction :: FnPar -> Gen FnRn
+rnFunction (Fn pos name arguments returnType block) = do
     arguments <- rnArgs arguments
     returnType <- rnType returnType
     statements <- rnBlock block
     return $ Fn pos name arguments returnType statements
+
+rnDef :: DefPar -> Gen DefRn
+rnDef (DefFn fn) = DefFn <$> rnFunction fn
+rnDef (DefAdt adt) = DefAdt <$> rnAdt adt
+
+rnAdt :: AdtPar -> Gen AdtRn
+rnAdt (AdtX loc name constructors) = AdtX loc name <$> mapM rnConstructor constructors
+
+rnConstructor :: ConstructorPar -> Gen ConstructorRn
+rnConstructor = \case
+    EnumCons loc name -> checkAndinsertConstrutor loc name >> pure (EnumCons loc name)
+    FunCons loc name types -> checkAndinsertConstrutor loc name >> FunCons loc name <$> mapM rnType types
 
 rnBlock :: BlockPar -> Gen BlockRn
 rnBlock (BlockX a stmts expr) =
@@ -62,6 +76,7 @@ rnExpr = \case
     VarX info variable -> do
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
+                =<< maybe (fmap (Constructor,) <$> boundCons variable) (pure . Just)
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
                 =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
@@ -107,6 +122,22 @@ rnExpr = \case
         args <- reverse <$> rnLamArgs args
         body <- newContext $ rnExpr body
         pure $ LamX info args body
+    MatchX info scrutinee arms -> do
+        scrutinee <- rnExpr scrutinee
+        arms <- mapM rnMatchArm arms
+        pure $ MatchX info scrutinee arms
+
+rnMatchArm :: MatchArmPar -> Gen MatchArmRn
+rnMatchArm (MatchArmX loc pat body) = newContext $ do
+    pat <- rnPattern pat
+    body <- rnExpr body
+    pure $ MatchArmX loc pat body
+
+rnPattern :: PatternPar -> Gen PatternRn
+rnPattern = \case
+    PVarX loc varName -> PVarX loc <$> insertVar varName
+    PEnumConX loc conName -> pure $ PEnumConX loc conName
+    PFunConX loc conName pats -> PFunConX loc conName <$> mapM rnPattern pats
 
 rnLamArgs :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgPar] -> m [LamArgRn]
 rnLamArgs = foldM f mempty
@@ -118,7 +149,6 @@ rnLamArgs = foldM f mempty
         ty <- mapM rnType ty
         pure (LamArgX (info, mut, ty) name : seen)
 
-
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
     IntLitX info lit -> pure $ IntLitX info lit
@@ -128,10 +158,16 @@ rnLit = \case
     BoolLitX info lit -> pure $ BoolLitX info lit
     UnitLitX info -> pure $ UnitLitX info
 
-getDefinitions :: ProgramPar -> [(SourceInfo, Ident)]
-getDefinitions = listify' fnName
+getAdtNames :: ProgramPar -> [(SourceInfo, Ident)]
+getAdtNames = listify' adtName
   where
-    fnName :: DefPar -> Maybe (SourceInfo, Ident)
+    adtName :: AdtPar -> Maybe (SourceInfo, Ident)
+    adtName (AdtX info name _) = Just (info, name)
+
+getFunctionNames :: ProgramPar -> [(SourceInfo, Ident)]
+getFunctionNames = listify' fnName
+  where
+    fnName :: FnPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _) = Just (info, name)
 
 rnArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]

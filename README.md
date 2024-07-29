@@ -130,7 +130,7 @@ Currently existing types are
 - `()`
 - function types `fn(int, int) -> int`
 
-NOTE: `char`, `string` don't compile correctly yet.
+NOTE: `char`, don't compile correctly yet.
 
 ### Identifiers
 Identifiers can start with either a lower case letter or an underscore, and can be followed by the same, but also a number.

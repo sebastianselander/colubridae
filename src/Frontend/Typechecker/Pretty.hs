@@ -12,13 +12,41 @@ import Prettyprinter qualified as Pretty
 import Prettyprinter.Render.Text qualified as Pretty
 import Relude
 
-pThing :: Pretty a => a -> Text
+pThing :: (Pretty a) => a -> Text
 pThing = Pretty.renderStrict . Pretty.layoutPretty Pretty.defaultLayoutOptions . Pretty.pretty
 
 instance Pretty ProgramTc where
-    pretty (ProgramX NoExtField defs) = Pretty.concatWith (Pretty.surround Pretty.hardline) (fmap Pretty.pretty defs)
+    pretty (ProgramX NoExtField defs) =
+        Pretty.concatWith (Pretty.surround (Pretty.hardline <> Pretty.hardline)) (fmap Pretty.pretty defs)
 
 instance Pretty DefTc where
+    pretty (DefFn fn) = Pretty.pretty fn
+    pretty (DefAdt adt) = Pretty.pretty adt
+
+instance Pretty AdtTc where
+    pretty (AdtX _ name cons) =
+        "type"
+            <+> Pretty.pretty name
+            <+> Pretty.braces
+                ( Pretty.hardline
+                    <> Pretty.indent
+                        4
+                        ( Pretty.concatWith
+                            (Pretty.surround Pretty.hardline)
+                            (fmap (\x -> Pretty.pretty x <> Pretty.comma) cons)
+                        )
+                    <> Pretty.hardline
+                )
+
+instance Pretty ConstructorTc where
+    pretty = \case
+        EnumCons _ name -> Pretty.pretty name
+        FunCons _ name types ->
+            Pretty.pretty name
+                <> Pretty.parens
+                    (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap Pretty.pretty types))
+
+instance Pretty FnTc where
     pretty (Fn _ (Ident name) args ty block) =
         "def"
             <+> Pretty.pretty name
@@ -35,7 +63,7 @@ instance Pretty BlockTc where
                 <> maybe Pretty.emptyDoc (\x -> Pretty.hardline <> Pretty.pretty x) tail
             )
 instance Pretty DataConCantHappen where
-  pretty _ = error "absurd"
+    pretty _ = error "absurd"
 
 instance Pretty StmtTc where
     pretty (SExprX NoExtField expr) = Pretty.pretty expr <> Pretty.semi
@@ -47,11 +75,15 @@ instance Pretty TypeTc where
     pretty = prettyType1
 
 prettyType1 :: TypeTc -> Doc ann
-prettyType1 (TyFunX _ l r) = "fn" <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty l)) <+> "->" <+> Pretty.pretty r
+prettyType1 (TyFunX _ l r) =
+    "fn" <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty l))
+        <+> "->"
+        <+> Pretty.pretty r
 prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeTc -> Doc ann
 prettyType2 = \case
+    TyConX _ name -> Pretty.pretty name
     TyLitX _ tylit -> case tylit of
         UnitX -> "()"
         StringX -> "string"
@@ -107,7 +139,8 @@ prettyExpr7 (VarX _ name) = Pretty.pretty name
 prettyExpr7 (AppX _ l rs) =
     Pretty.pretty l
         <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty rs))
-prettyExpr7 (LetX (StmtType {_varType}) name e) = "let" <+> Pretty.pretty _varType <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
+prettyExpr7 (LetX (StmtType {_varType}) name e) =
+    "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty _varType <+> "=" <+> Pretty.pretty e
 prettyExpr7 (AssX _ (Ident name) op e) = Pretty.pretty name <+> Pretty.pretty op <+> Pretty.pretty e
 prettyExpr7 (RetX _ Nothing) = "return"
 prettyExpr7 (RetX _ (Just e)) = "return" <+> Pretty.pretty e
@@ -115,13 +148,45 @@ prettyExpr7 (EBlockX _ block) = Pretty.pretty block
 prettyExpr7 (BreakX _ Nothing) = "break"
 prettyExpr7 (BreakX _ (Just e)) = "break" <+> Pretty.pretty e
 prettyExpr7 (IfX _ cond thenB Nothing) = "if" <+> Pretty.pretty cond <+> Pretty.pretty thenB
-prettyExpr7 (IfX a cond thenB (Just elseB)) = Pretty.pretty (IfX a cond thenB Nothing) <+> "else" <+> Pretty.pretty elseB
+prettyExpr7 (IfX a cond thenB (Just elseB)) =
+    Pretty.pretty (IfX a cond thenB Nothing) <+> "else" <+> Pretty.pretty elseB
 prettyExpr7 (WhileX _ cond block) = "while" <+> Pretty.pretty cond <+> Pretty.pretty block
 prettyExpr7 (LoopX _ block) = "loop" <+> Pretty.pretty block
-prettyExpr7 (LamX _ args body) = "\\" <> Pretty.concatWith (Pretty.surround Pretty.space) (fmap Pretty.pretty args) <+> "->" <+> Pretty.pretty body
+prettyExpr7 (LamX _ args body) =
+    "\\" <> Pretty.concatWith (Pretty.surround Pretty.space) (fmap Pretty.pretty args)
+        <+> "->"
+        <+> Pretty.pretty body
+prettyExpr7 (MatchX _ scrutinee arms) =
+    "match"
+        <+> Pretty.pretty scrutinee
+        <+> Pretty.braces
+            ( Pretty.hardline
+                <> Pretty.indent
+                    4
+                    ( Pretty.concatWith
+                        (Pretty.surround (Pretty.comma <> Pretty.hardline))
+                        (fmap Pretty.pretty arms)
+                    )
+                <> Pretty.hardline
+            )
+
+instance Pretty MatchArmTc where
+    pretty (MatchArmX _ pat expr) = Pretty.pretty pat <+> "=>" <+> Pretty.pretty expr
+
+instance Pretty PatternTc where
+    pretty = \case
+        PVarX _ varName -> Pretty.pretty varName
+        PEnumConX _ conName -> Pretty.pretty conName
+        PFunConX _ conName pats ->
+            Pretty.pretty conName
+                <> Pretty.parens
+                    ( Pretty.concatWith
+                        (Pretty.surround (Pretty.comma <> Pretty.space))
+                        (fmap Pretty.pretty pats)
+                    )
 
 instance Pretty LamArgTc where
-  pretty (LamArgX ty name) = Pretty.parens (Pretty.pretty name <+> Pretty.pretty ty)
+    pretty (LamArgX ty name) = Pretty.parens (Pretty.pretty name <+> Pretty.pretty ty)
 
 instance Pretty LitTc where
     pretty lit = case lit of

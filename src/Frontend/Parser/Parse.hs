@@ -13,7 +13,6 @@ import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
-import Text.Pretty.Simple (pPrint)
 
 parse' ::
     BindingPowerTable PrefixOp BinOp Void ->
@@ -27,16 +26,30 @@ parse' table file =
 parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
 parse = parse' defaultBindingPowerTable
 
-runP' :: (Show a) => BindingPowerTable PrefixOp BinOp Void -> Parser a -> Text -> IO ()
-runP' table p input = case flip runReader table $ P.runParserT (p <* P.eof) "" input of
-    Left err -> putStrLn $ P.errorBundlePretty err
-    Right res -> pPrint res
+pAdt :: Parser AdtPar
+pAdt = do
+    gs <- spanStart
+    keyword "type"
+    adtName <- lexeme upperIdentifier
+    constructors <- curlyBrackets (commaSepEnd pConstructor)
+    loc <- spanEnd gs
+    pure (AdtX loc adtName constructors)
 
-runP :: (Show a) => Parser a -> Text -> IO ()
-runP = runP' defaultBindingPowerTable
+pConstructor :: Parser ConstructorPar
+pConstructor = do
+    gs <- spanStart
+    constructorName <- upperIdentifier
+    argumentTypes <- P.optional (parens (commaSep pType))
+    loc <- spanEnd gs
+    case argumentTypes of
+        Nothing -> pure $ EnumCons loc constructorName
+        Just tys -> pure $ FunCons loc constructorName tys
 
 pDef :: Parser DefPar
-pDef = do
+pDef = DefFn <$> pFunction <|> DefAdt <$> pAdt
+
+pFunction :: Parser FnPar
+pFunction = do
     gs <- spanStart
     lexeme (keyword "def")
     name <- lexeme identifier
@@ -56,8 +69,13 @@ pArg = do
     pure (ArgX (info, mut) name ty)
 
 pType :: Parser TypePar
-pType = P.choice [pAtom, pFunTy, parens pType] <?> "type"
+pType = P.choice [pAtom, pFunTy, pTyCon, parens pType] <?> "type"
   where
+    pTyCon :: Parser TypePar
+    pTyCon = do
+        name <- lexeme upperIdentifier
+        pure $ TyConX NoExtField name
+
     pFunTy :: Parser TypePar
     pFunTy = do
         lexeme $ keyword "fn"
@@ -163,6 +181,44 @@ pAss = P.label "assignment" $ do
     info <- spanEnd gs
     AssX info name op <$> pExpr
 
+pMatch :: Parser ExprPar
+pMatch = do
+    gs <- spanStart
+    keyword "match"
+    scrutinee <- pExpr
+    matchArms <- curlyBrackets $ commaSepEnd pMatchArm
+    loc <- spanEnd gs
+    pure $ MatchX loc scrutinee matchArms
+  where
+    pMatchArm :: Parser MatchArmPar
+    pMatchArm = do
+        gs <- spanStart
+        pattern <- pPattern
+        keyword "=>"
+        body <- pExpr
+        loc <- spanEnd gs
+        pure $ MatchArmX loc pattern body
+      where
+        pPattern :: Parser PatternPar
+        -- NOTE: Must parse wildcard before normal variable or it will be tried as a variable
+        pPattern = P.choice [pPCon, pPVar]
+          where
+            pPCon :: Parser PatternPar
+            pPCon = do
+                gs <- spanStart
+                name <- upperIdentifier
+                arguments <- P.optional (parens (commaSep pPattern))
+                loc <- spanEnd gs
+                case arguments of
+                    Nothing -> pure $ PEnumConX loc name
+                    Just args -> pure $ PFunConX loc name args
+            pPVar :: Parser PatternPar
+            pPVar = do
+                gs <- spanStart
+                name <- identifier
+                loc <- spanEnd gs
+                pure $ PVarX loc name
+
 pAssignOp :: Parser AssignOp
 pAssignOp =
     P.choice
@@ -225,14 +281,15 @@ pExpr = pLam <|> pAss <|> prattExpr pPrefix pInfix pApp
 pExprAtom :: Parser ExprPar
 pExprAtom =
     P.choice
-        [ pIf
+        [ pMatch
+        , pIf
         , pWhile
         , pRet
         , pLoop
         , pBreak
+        , pLet
         , EBlockX NoExtField <$> pBlock
         , pLit
-        , pLet
         , pVar
         , parens pExpr
         ]
@@ -240,7 +297,7 @@ pExprAtom =
     pVar :: Parser ExprPar
     pVar = do
         gs <- spanStart
-        name <- identifier
+        name <- identifier <|> upperIdentifier
         info <- spanEnd gs
         pure (VarX info name)
 
@@ -368,4 +425,3 @@ prattExpr prefixParser infixParser atomParser = exprbp 0
                     r <- exprbp rbp
                     info <- spanEnd gs
                     go gs minBp (BinOpX info l operator r)
-

@@ -5,11 +5,11 @@ module Frontend.Renamer.Types where
 
 import Data.Data (Data)
 import Frontend.Parser.Types
-import Relude
 import Frontend.Types
 import Prettyprinter
+import Relude
 
-data Boundedness = Free | Bound | Toplevel
+data Boundedness = Free | Bound | Toplevel | Constructor
     deriving (Show, Eq, Ord, Data)
 
 instance Pretty Boundedness where
@@ -20,6 +20,9 @@ data Rn
 
 type ProgramRn = ProgramX Rn
 type DefRn = DefX Rn
+type FnRn = FnX Rn
+type AdtRn = AdtX Rn
+type ConstructorRn = ConstructorX Rn
 type ArgRn = ArgX Rn
 type ExprRn = ExprX Rn
 type TypeRn = TypeX Rn
@@ -27,22 +30,35 @@ type LitRn = LitX Rn
 type StmtRn = StmtX Rn
 type BlockRn = BlockX Rn
 type LamArgRn = LamArgX Rn
+type MatchArmRn = MatchArmX Rn
+type PatternRn = PatternX Rn
 
 deriving instance Data ExprRn
 deriving instance Data ProgramRn
 deriving instance Data LitRn
 deriving instance Data ArgRn
 deriving instance Data DefRn
+deriving instance Data FnRn
+deriving instance Data AdtRn
+deriving instance Data ConstructorRn
 deriving instance Data TypeRn
 deriving instance Data BlockRn
 deriving instance Data StmtRn
 deriving instance Data LamArgRn
+deriving instance Data MatchArmRn
+deriving instance Data PatternRn
 
 type instance XProgram Rn = XProgram Par
 
 type instance XArg Rn = XArg Par
 
 type instance XDef Rn = XDef Par
+type instance XFn Rn = XFn Par
+
+type instance XAdt Rn = XAdt Par
+type instance XConstructor Rn = XConstructor Par
+type instance XEnumCons Rn = XEnumCons Par
+type instance XFunCons Rn = XFunCons Par
 
 type instance XBlock Rn = XBlock Par
 
@@ -55,6 +71,13 @@ type instance XLet Rn = (SourceInfo, Mutability, Maybe TypeRn)
 type instance XAss Rn = (SourceInfo, Boundedness)
 type instance XSExp Rn = XSExp Par
 type instance XStmt Rn = DataConCantHappen
+
+type instance XMatchArm Rn = SourceInfo
+type instance XMatch Rn = SourceInfo
+
+type instance XPVar Rn = SourceInfo
+type instance XPEnumCon Rn = SourceInfo
+type instance XPFunCon Rn = SourceInfo
 
 type instance XLit Rn = XLit Par
 type instance XVar Rn = (SourceInfo, Boundedness)
@@ -74,6 +97,7 @@ type instance XUnitLit Rn = NoExtField
 type instance XTyLit Rn = NoExtField
 type instance XTyFun Rn = NoExtField
 type instance XType Rn = DataConCantHappen
+type instance XTyCon Rn = NoExtField
 
 type instance XLoop Rn = SourceInfo
 type instance XLam Rn = XLam Par

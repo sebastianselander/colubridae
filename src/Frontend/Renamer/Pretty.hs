@@ -11,14 +11,41 @@ import Prettyprinter (Doc, Pretty, (<+>))
 import Prettyprinter qualified as Pretty
 import Relude
 
-prettyRenamer :: Pretty a => a -> Text
+prettyRenamer :: (Pretty a) => a -> Text
 prettyRenamer = show . Pretty.pretty
 
-
 instance Pretty ProgramRn where
-    pretty (ProgramX NoExtField defs) = Pretty.concatWith (Pretty.surround Pretty.hardline) (fmap Pretty.pretty defs)
+    pretty (ProgramX NoExtField defs) =
+        Pretty.concatWith (Pretty.surround (Pretty.hardline <> Pretty.hardline)) (fmap Pretty.pretty defs)
 
 instance Pretty DefRn where
+    pretty (DefFn fn) = Pretty.pretty fn
+    pretty (DefAdt adt) = Pretty.pretty adt
+
+instance Pretty AdtRn where
+    pretty (AdtX _ name cons) =
+        "type"
+            <+> Pretty.pretty name
+            <+> Pretty.braces
+                ( Pretty.hardline
+                    <> Pretty.indent
+                        4
+                        ( Pretty.concatWith
+                            (Pretty.surround Pretty.hardline)
+                            (fmap (\x -> Pretty.pretty x <> Pretty.comma) cons)
+                        )
+                    <> Pretty.hardline
+                )
+
+instance Pretty ConstructorRn where
+    pretty = \case
+        EnumCons _ name -> Pretty.pretty name
+        FunCons _ name types ->
+            Pretty.pretty name
+                <> Pretty.parens
+                    (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap Pretty.pretty types))
+
+instance Pretty FnRn where
     pretty (Fn _ (Ident name) args ty block) =
         "def"
             <+> Pretty.pretty name
@@ -60,6 +87,7 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeRn -> Doc ann
 prettyType2 = \case
+    TyConX _ name -> Pretty.pretty name
     TyLitX _ tylit -> case tylit of
         UnitX -> "()"
         StringX -> "string"
@@ -131,10 +159,40 @@ prettyExpr7 (LamX _ args body) =
     "\\" <> Pretty.concatWith (Pretty.surround Pretty.space) (fmap Pretty.pretty args)
         <+> "->"
         <+> Pretty.pretty body
+prettyExpr7 (MatchX _ scrutinee arms) =
+    "match"
+        <+> Pretty.pretty scrutinee
+        <+> Pretty.braces
+            ( Pretty.hardline
+                <> Pretty.indent
+                    4
+                    ( Pretty.concatWith
+                        (Pretty.surround (Pretty.comma <> Pretty.hardline))
+                        (fmap Pretty.pretty arms)
+                    )
+                <> Pretty.hardline
+            )
+
+instance Pretty MatchArmRn where
+    pretty (MatchArmX _ pat expr) = Pretty.pretty pat <+> "=>" <+> Pretty.pretty expr
+
+instance Pretty PatternRn where
+    pretty = \case
+        PVarX _ varName -> Pretty.pretty varName
+        PEnumConX _ conName -> Pretty.pretty conName
+        PFunConX _ conName pats ->
+            Pretty.pretty conName
+                <> Pretty.parens
+                    ( Pretty.concatWith
+                        (Pretty.surround (Pretty.comma <> Pretty.space))
+                        (fmap Pretty.pretty pats)
+                    )
 
 instance Pretty LamArgRn where
-    pretty (LamArgX (_, mut, Nothing) name) = Pretty.pretty mut <+> Pretty.pretty name
-    pretty (LamArgX (_, mut, Just ty) name) = Pretty.parens $ Pretty.pretty mut <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty
+    pretty (LamArgX (_, mut, Nothing) name) =
+        Pretty.pretty mut <+> Pretty.pretty name
+    pretty (LamArgX (_, mut, Just ty) name) =
+        Pretty.parens $ Pretty.pretty mut <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty
 
 instance Pretty LitRn where
     pretty lit = case lit of

@@ -5,34 +5,84 @@ module Backend.Llvm.Llvm where
 
 import Backend.Desugar.Types
 import Backend.Llvm.Monad
+import Backend.Llvm.Prelude (exitFailure, printString)
 import Backend.Llvm.Types
-import Control.Lens.Getter (view)
-import Control.Lens.Setter (assign, locally)
-import Relude hiding (null, Type, and, div, or, rem)
+import Backend.Types
+import Control.Lens.Getter (view, use)
+import Control.Lens.Setter (locally)
+import Control.Monad.Extra (concatMapM)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Text qualified as Text
 import Names (Ident (..))
+import Origin (Origin (..))
+import Relude hiding (Type, and, div, exitFailure, null, or, rem)
+import Utils (mapWithIndexM)
 
 assemble :: Program -> Ir
-assemble (Program defs) = Ir <$> runAssembler $ mapM assembleDecl defs
+assemble (Program defs) =
+    Ir
+        . sortBy (comparing Down)
+        <$> runAssembler
+        $ concatMapM assembleDecl defs
 
--- NOTE: Very imperative
-assembleDecl :: Def -> IRBuilder Decl
-assembleDecl (StaticString name ty text) = pure $ GlobalString name (llvmType ty) text
+assembleDecl :: Def -> IRBuilder [Decl]
+assembleDecl (StaticString name ty text) = pure [GlobalString name ty text]
 assembleDecl (Main block) = do
-    assign instructions emptyInstructions
+    clearInstructions
     mapM_ assembleExpr block
-    LlvmMain <$> extractInstructions
-assembleDecl (Fn origin name arguments returnType' block) = do
-    assign instructions emptyInstructions
-    let returnType = llvmType returnType'
+    pure . LlvmMain <$> extractInstructions
+assembleDecl (Fn origin name arguments returnType block) = do
+    clearInstructions
     args <- mapM assembleArg arguments
     mapM_ assembleExpr block
-    Define origin name args returnType <$> extractInstructions
+    pure . Define origin name args returnType <$> extractInstructions
+assembleDecl (TypeSyn name ty) = pure [TypeDefinition name ty]
+assembleDecl (Con index name ty tyArgs) = do
+    clearInstructions
+    assembleCon index name ty tyArgs
+
+assembleCon :: Int -> Ident -> Type -> Maybe [Type] -> IRBuilder [Decl]
+assembleCon index name ty = \case
+    Nothing -> do
+        instrs <- fmap snd $ inContext $ do
+            name <- fresh
+            alloced <- alloca name ty
+            store (struct [LInt Int64 (fromIntegral index)]) alloced
+            loaded <- load ty alloced
+            ret loaded
+        pure [Define ConstructorFn name [] ty instrs]
+    Just tys -> do
+        let constructorFun = Ident "mk" <> name
+        operands <- mapM (\name -> fmap (LocalReference name) fresh) tys
+        let retty = getReturnType ty
+        instrs <- fmap snd $ inContext $ do
+            name <- fresh
+            alloced <- alloca name retty
+            tag <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 0]
+            store (i64 index) tag
+            void $ flip mapWithIndexM operands $ \index argument -> do
+                value <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
+                malloced <- malloc (ptr (typeOf argument)) (i64 @Int 10)
+                mallocedPtr <- gep Nothing malloced [i32 @Integer 0]
+                store argument mallocedPtr
+                store malloced value
+            struct <- load retty alloced
+            ret struct
+        pure
+            [ Define
+                ConstructorFn
+                constructorFun
+                (localRef opaquePtr (Ident "env") : operands)
+                retty
+                instrs
+            , Define Top name [] ty [Nameless $ Ret $ global ty constructorFun]
+            ]
 
 assembleArg :: Arg -> IRBuilder Operand
-assembleArg (EnvArg ty) = pure $ LocalReference (llvmType ty) (Ident "env")
+assembleArg (EnvArg ty) = pure $ LocalReference ty (Ident "env")
 assembleArg (Arg name ty) = do
-    let arg = LocalReference (llvmType ty) (mkArgName name)
-    fakeArg <- alloca name (llvmType ty)
+    let arg = LocalReference ty (mkArgName name)
+    fakeArg <- alloca name ty
     store arg fakeArg
     pure arg
 
@@ -40,169 +90,211 @@ mkArgName :: Ident -> Ident
 mkArgName (Ident name) = Ident $ name <> ".arg"
 
 assembleExpr :: TyExpr -> IRBuilder Operand
-assembleExpr (Typed taggedType' expr) =
-    let taggedType = llvmType taggedType'
-     in case expr of
-            Lit lit -> assembleLit lit
-            Var binding name -> do
-                case binding of
-                    Free -> load taggedType $ LocalReference (ptr taggedType) name
-                    Bound -> load taggedType $ LocalReference (ptr taggedType) name
-                    Toplevel -> pure $ global taggedType name
-                    GlblConst -> do
-                        -- NOTE: This will not work with global strings
-                        op <- gep (global (ptr taggedType) name) [i32 @Integer 0]
-                        load taggedType op
-                    Argument -> pure $ LocalReference taggedType name
-                    Lambda -> load taggedType $ LocalReference (ptr taggedType) name
-            BinOp leftExpr operator rightExpr -> do
-                left <- assembleExpr leftExpr
-                right <- assembleExpr rightExpr
-                llvmBinOp operator taggedType left right
-            PrefixOp Not expr -> do
-                expr <- assembleExpr expr
-                eq I1 (ConstantOperand (LBool taggedType False)) expr
-            PrefixOp Neg expr -> do
-                expr <- assembleExpr expr
-                sub taggedType (ConstantOperand (LInt taggedType 0)) expr
-            App appExpr argExprs -> do
-                app <- assembleExpr appExpr
-                args <- mapM assembleExpr argExprs
-                call taggedType app args
-            Let name varType Nothing -> alloca name (llvmType varType)
-            Let name varType (Just expr) -> do
-                decl <- alloca name (llvmType varType)
-                expr <- assembleExpr expr
-                store expr decl
-                pure decl
-            Ass name varType expr -> do
-                expr <- assembleExpr expr
-                let operand = LocalReference (ptr $ llvmType varType) name
-                store expr operand
-                pure operand
-            Return expr -> do
-                expr <- assembleExpr expr
-                ret expr
-                unit
-            Break -> do
-                lbl <- view breakLabel
-                jump lbl
-                unit
-            If condition trueBlk falseBlk -> do
-                true <- mkLabel "if_true"
-                false <- mkLabel "if_false"
-                end <- mkLabel "if_after"
-                condition <- assembleExpr condition
-                -- jump to end if no else branch exist
-                br condition true (maybe end (const false) falseBlk)
-                -- true case
-                label true
-                mapM_ assembleExpr trueBlk
-                jump end
+assembleExpr (Typed taggedType expr) =
+    case expr of
+        Lit lit -> comment "Lit expression" >> assembleLit lit
+        Var binding name -> do
+            comment "Var expression"
+            case binding of
+                Constructor ->
+                    case taggedType of
+                        TyFun _ _ -> do
+                            fun <- call taggedType (global taggedType name) []
+                            name <- fresh
+                            let structType = StructType [taggedType, opaquePtr]
+                            alloced <- alloca name structType
+                            funPtr <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 0]
+                            envPtr <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 1]
+                            store fun funPtr
+                            store (null opaquePtr) envPtr
+                            load structType alloced
+                        _ -> call taggedType (global taggedType name) []
+                Free -> load taggedType $ LocalReference (ptr taggedType) name
+                Bound -> load taggedType $ LocalReference (ptr taggedType) name
+                Toplevel -> pure $ global taggedType name
+                GlblConst -> do
+                    -- NOTE: This will not work with global strings
+                    op <- gep Nothing (global (ptr taggedType) name) [i32 @Integer 0]
+                    load taggedType op
+                Argument -> pure $ LocalReference taggedType name
+                Lambda -> load taggedType $ LocalReference (ptr taggedType) name
+        BinOp leftExpr operator rightExpr -> do
+            comment "BinOp expression"
+            left <- assembleExpr leftExpr
+            right <- assembleExpr rightExpr
+            llvmBinOp operator taggedType left right
+        PrefixOp Not expr -> do
+            comment "PrefixOp expression"
+            expr <- assembleExpr expr
+            eq Bool (ConstantOperand (LBool taggedType False)) expr
+        PrefixOp Neg expr -> do
+            comment "PrefixOp expression"
+            expr <- assembleExpr expr
+            sub taggedType (ConstantOperand (LInt taggedType 0)) expr
+        App appExpr argExprs -> do
+            comment "App expression"
+            app <- assembleExpr appExpr
+            args <- mapM assembleExpr argExprs
+            call taggedType app args
+        Let name varType Nothing -> comment "Let expression" >> alloca name varType
+        Let name varType (Just expr) -> do
+            comment "Let expression"
+            decl <- alloca name varType
+            expr <- assembleExpr expr
+            store expr decl
+            pure decl
+        Ass name varType expr -> do
+            comment "Ass expression"
+            expr <- assembleExpr expr
+            let operand = LocalReference (ptr varType) name
+            store expr operand
+            pure operand
+        Return expr -> do
+            comment "Return expression"
+            expr <- assembleExpr expr
+            ret expr
+            unit
+        Break -> do
+            comment "Break expression"
+            lbl <- view breakLabel
+            jump lbl
+            unit
+        If condition trueBlk falseBlk -> do
+            comment "If expression"
+            true <- mkLabel "if_true"
+            false <- mkLabel "if_false"
+            end <- mkLabel "if_after"
+            condition <- assembleExpr condition
+            -- jump to end if no else branch exist
+            br condition true (maybe end (const false) falseBlk)
+            -- true case
+            label true
+            mapM_ assembleExpr trueBlk
+            jump end
 
-                -- false case, if there is one
-                maybe
-                    (pure ())
-                    ( \falseBlk -> do
-                        label false
-                        mapM_ assembleExpr falseBlk
-                        jump end
-                    )
-                    falseBlk
+            -- false case, if there is one
+            maybe
+                (pure ())
+                ( \falseBlk -> do
+                    label false
+                    mapM_ assembleExpr falseBlk
+                    jump end
+                )
+                falseBlk
 
-                label end
+            label end
 
-                unit
-            While condition blk -> do
-                start <- mkLabel "while_start"
-                continue <- mkLabel "while_continue"
-                exit <- mkLabel "while_exit"
-                jump continue
-                label continue
-                expr <- assembleExpr condition
-                br expr start exit
-                label start
-                locally breakLabel (const exit) $ mapM_ assembleExpr blk
-                jump continue
-                label exit
-                unit
-            Closure fun env -> do
-                -- TODO: Test more with types of different sizes
-                name <- fresh
-                mem <- case env of
-                    [] -> pure $ null (ptr blindPtr)
-                    _ -> do
-                        mem <- malloc (ptr blindPtr) (i64 (length env * 8))
-                        forM_ (zip [0..] env) $ \(index, Typed ty expr) -> do
-                            gepOperand <- gep mem [i32 @Integer index]
-                            comment "Hard coded to 8 size for now, will not work for any type larger at the moment"
-                            alloced <- malloc (ptr (llvmType ty)) (i32 $ sizeOf $ llvmType ty) -- TODO: Adapt size to the structure stored
-                            operand <- assembleExpr (Typed ty expr)
-                            store operand alloced
-                            store alloced gepOperand
-                        pure mem
-                declaration <- alloca name taggedType
-                functionPointer <- gep declaration [i32 @Integer 0, i32 @Integer 0]
-                environmentPointer <- gep declaration [i32 @Integer 0, i32 @Integer 1]
-                functionOperand <- assembleExpr fun
-                store functionOperand functionPointer
-                store mem environmentPointer
-                load taggedType declaration
-            StructIndexing expr n  -> do
-                operand <- assembleExpr expr
-                extractValue operand [fromInteger n]
-            ExtractFree bindName envName index -> do
-                operand <- gep (localRef (ptr blindPtr) envName) [i32 index]
-                operand <- gep operand [i32 @Integer 0]
-                operand <- load (ptr taggedType) operand
-                operand <- load taggedType operand
-                variable <- alloca bindName taggedType 
-                store operand variable
-                pure variable
+            unit
+        While condition blk -> do
+            comment "While expression"
+            start <- mkLabel "while_start"
+            continue <- mkLabel "while_continue"
+            exit <- mkLabel "while_exit"
+            jump continue
+            label continue
+            expr <- assembleExpr condition
+            br expr start exit
+            label start
+            locally breakLabel (const exit) $ mapM_ assembleExpr blk
+            jump continue
+            label exit
+            unit
+        Closure fun env -> do
+            comment "Closure expression"
+            name <- fresh
+            mem <- case env of
+                [] -> pure $ null (ptr opaquePtr)
+                _ -> do
+                    mem <- malloc (ptr opaquePtr) (i64 (length env * 8))
+                    forM_ (zip [0 ..] env) $ \(index, Typed ty expr) -> do
+                        gepOperand <- gep Nothing mem [i32 @Integer index]
+                        alloced <- malloc (ptr ty) (i32 $ sizeOf ty)
+                        operand <- assembleExpr (Typed ty expr)
+                        store operand alloced
+                        store alloced gepOperand
+                    pure mem
+            declaration <- alloca name taggedType
+            functionPointer <- gep Nothing declaration [i32 @Integer 0, i32 @Integer 0]
+            environmentPointer <- gep Nothing declaration [i32 @Integer 0, i32 @Integer 1]
+            functionOperand <- assembleExpr fun
+            store functionOperand functionPointer
+            store mem environmentPointer
+            load taggedType declaration
+        StructIndexing expr n -> do
+            comment "StructIndexing expression"
+            operand <- assembleExpr expr
+            extractValue Nothing operand [fromInteger n]
+        ExtractFree bindName envName index -> do
+            comment "ExtractFree expression"
+            operand <- gep Nothing (localRef (ptr opaquePtr) envName) [i32 index]
+            operand <- gep Nothing operand [i32 @Integer 0]
+            operand <- load (ptr taggedType) operand
+            operand <- load taggedType operand
+            variable <- alloca bindName taggedType
+            store operand variable
+            pure variable
+        Match scrutinee@(Typed _ _) matchArms (Catch name catchExpr) -> do
+            comment "Match expression"
+            scrutOperand <- assembleExpr scrutinee
+            tag <- extractValue (Just Int64) scrutOperand [0]
+            doneLbl <- mkLabel "Done"
+            catchLbl <- mkLabel "Catch"
+            switchCases <- forM matchArms
+                $ \(MatchArm pat _) ->
+                    (LInt Int64 (indexOf pat),)
+                        <$> mkLabel ("Case_" <> show (indexOf pat))
+            switch tag catchLbl switchCases
+            phiArgs <- forM (zip (fmap snd switchCases) matchArms) $ \(lbl, MatchArm (PCon _ vars) body) -> do
+                label lbl
 
+                forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
+                    var <- alloca name ty
+                    ptr <- extractValue (Just (ptr ty)) scrutOperand [1, index]
+                    ptr <- gep Nothing ptr [i32 @Int 0]
+                    val <- load ty ptr
+                    store val var
+                operand <- NonEmpty.last <$> mapM assembleExpr body
+                jump doneLbl
+                comeFrom <- use predBlock 
+                pure (operand, comeFrom)
+            label catchLbl
+            operand <- NonEmpty.last <$> mapM assembleExpr catchExpr
+            alloced <- alloca name taggedType
+            store operand alloced
+            jump doneLbl
+            label doneLbl
 
-sizeOf :: LlvmType -> Integer
-sizeOf = \case
-    I64 -> 8
-    I32 -> 8
-    I1 -> 8
-    Float -> 8
-    I8 -> 8
-    PointerType _ -> 8
-    BlindPointerType -> 8
-    LlvmVoid -> 8
-    StructType types -> sum (fmap sizeOf types)
-    ArrayType n ty -> n * sizeOf ty
-    FunPtr _ _ -> 8
+            phi (phiArgs <> [(operand, catchLbl)])
+        ToStderrExit var -> do
+            void
+                $ call
+                    (I 1)
+                    (global (TyFun [opaquePtr, ptr Char] Unit) (Ident $ Text.pack printString))
+                    [constant (LNull opaquePtr), global opaquePtr var]
+            void
+                $ call
+                    (I 1)
+                    (global (TyFun [] Void) (Ident $ Text.pack exitFailure))
+                    []
+            pure (undef taggedType)
 
-llvmType :: Type -> LlvmType
-llvmType = \case
-    Void -> LlvmVoid
-    Unit -> I1
-    String -> PointerType I8
-    Char -> I8
-    Int -> I64
-    Double -> Float
-    Bool -> I1
-    Mut ty -> llvmType ty
-    TyFun args ret -> FunPtr (llvmType ret) (fmap llvmType args)
-    Struct tys -> StructType (fmap llvmType tys)
-    Array size ty -> ArrayType (fromIntegral size) (llvmType ty)
-    Ptr ty -> PointerType (llvmType ty)
+indexOf :: Pattern -> Integer
+indexOf = \case
+    PCon n _ -> fromIntegral n
 
 assembleLit :: (Monad m) => Lit -> m Operand
 assembleLit = \case
-    IntLit int -> pure $ ConstantOperand (LInt I64 int)
+    IntLit int -> pure $ ConstantOperand (LInt Int64 int)
     DoubleLit double -> pure $ ConstantOperand (LDouble Float double)
-    CharLit char -> pure $ ConstantOperand (LChar I8 char)
-    BoolLit bool -> pure $ ConstantOperand (LBool I1 bool)
+    CharLit char -> pure $ ConstantOperand (LChar Char char)
+    BoolLit bool -> pure $ ConstantOperand (LBool Bool bool)
     UnitLit -> pure $ ConstantOperand LUnit
-    NullLit -> pure $ ConstantOperand (LNull (PointerType LlvmVoid))
+    NullLit -> pure $ ConstantOperand (LNull (PointerType Void))
 
 unit :: (Monad m) => m Operand
 unit = pure $ ConstantOperand LUnit
 
-llvmBinOp :: BinOp -> (LlvmType -> Operand -> Operand -> IRBuilder Operand)
+llvmBinOp :: BinOp -> (Type -> Operand -> Operand -> IRBuilder Operand)
 llvmBinOp op = case op of
     Mul -> mul
     Div -> div
@@ -218,7 +310,7 @@ llvmBinOp op = case op of
     Eq -> eq
     Neq -> neq
 
-llvmLit :: LlvmType -> Lit -> Constant
+llvmLit :: Type -> Lit -> Constant
 llvmLit ty = \case
     IntLit int -> LInt ty int
     DoubleLit double -> LDouble ty double
@@ -227,8 +319,17 @@ llvmLit ty = \case
     UnitLit -> LUnit
     NullLit -> LNull ty
 
-i32 :: Integral a => a -> Operand
-i32 = ConstantOperand . LInt I32 . fromIntegral
+i32 :: (Integral a) => a -> Operand
+i32 = ConstantOperand . LInt Int32 . fromIntegral
 
-i64 :: Integral a => a -> Operand
-i64 = ConstantOperand . LInt I64 . fromIntegral
+i64 :: (Integral a) => a -> Operand
+i64 = ConstantOperand . LInt Int64 . fromIntegral
+
+getReturnType :: Type -> Type
+getReturnType = \case
+    TyFun _ ty -> ty
+    ty -> error $ "can not extract return type of non-function type: " <> show ty
+
+isFunType :: Type -> Bool
+isFunType (TyFun {}) = True
+isFunType _ = False

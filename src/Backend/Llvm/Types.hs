@@ -7,37 +7,40 @@ import Data.Data (Data)
 import Names (Ident)
 import Origin
 import Relude hiding (Type)
+import Backend.Types (Type (..))
 
 newtype Ir = Ir [Decl]
     deriving (Show)
 
+-- These are declared in the order we want them defined in the ir file
 data Decl
-    = Define !Origin !Ident [Operand] !LlvmType [Named Instruction]
-    | LlvmMain [Named Instruction]
-    | GlobalString !Ident !LlvmType !Text
-    deriving (Show)
+    = LlvmMain [Named Instruction]
+    | Define !Origin !Ident [Operand] !Type [Named Instruction]
+    | TypeDefinition !Ident !Type
+    | GlobalString !Ident !Type !Text
+    deriving (Show, Eq, Ord)
 
 data Operand
-    = LocalReference !LlvmType !Ident
+    = LocalReference !Type !Ident
     | ConstantOperand !Constant
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data ArithOp = LlvmAdd | LlvmSub | LlvmMul | LlvmDiv | LlvmRem
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data CmpOp = LlvmEq | LlvmNeq | LlvmGt | LlvmLt | LlvmGe | LlvmLe
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 newtype Label = L Ident
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data Instruction
-    = Call !LlvmType !Operand [Operand]
-    | Arith !ArithOp !LlvmType !Operand !Operand
-    | Cmp !CmpOp !LlvmType !Operand !Operand
-    | And !LlvmType !Operand !Operand
-    | Or !LlvmType !Operand !Operand
-    | Alloca !LlvmType
+    = Call !Type !Operand [Operand]
+    | Arith !ArithOp !Type !Operand !Operand
+    | Cmp !CmpOp !Type !Operand !Operand
+    | And !Type !Operand !Operand
+    | Or !Type !Operand !Operand
+    | Alloca !Type
     | Malloc !Operand
     | Store !Operand !Operand
     | Load !Operand
@@ -48,63 +51,43 @@ data Instruction
     | Jump !Label
     | GetElementPtr !Operand [Operand]
     | ExtractValue !Operand [Word32]
+    | Phi [(Operand, Label)]
+    | Switch !Operand Label [(Constant, Label)]
     | Blankline
     | Unreachable
-    deriving (Show)
-
-data LlvmType
-    = I64
-    | I32
-    | I1
-    | Float
-    | I8
-    | PointerType LlvmType
-    | BlindPointerType
-    | LlvmVoid
-    | StructType [LlvmType]
-    | ArrayType Integer LlvmType
-    | FunPtr LlvmType [LlvmType]
-    deriving (Show)
+    deriving (Show, Eq, Ord)
 
 data Constant
-    = LInt !LlvmType !Integer
-    | LDouble !LlvmType !Double
-    | LBool !LlvmType !Bool
-    | LChar !LlvmType !Char
+    = LInt !Type !Integer
+    | LDouble !Type !Double
+    | LBool !Type !Bool
+    | LChar !Type !Char
     | LUnit
-    | LNull !LlvmType
-    | GlobalReference !LlvmType !Ident
-    deriving (Show)
+    | LNull !Type
+    | LStruct [Constant]
+    | Undef !Type
+    | GlobalReference !Type !Ident
+    deriving (Show, Eq, Ord)
 
 data Named a = Named Ident a | Nameless a
-    deriving (Show, Functor, Traversable, Foldable, Generic, Data)
+    deriving (Show, Functor, Traversable, Foldable, Generic, Data, Ord, Eq)
 
 class Typed a where
-    typeOf :: a -> LlvmType
-    setType :: LlvmType -> a -> a
+    typeOf :: a -> Type
 
 instance Typed Operand where
     typeOf = \case
         LocalReference ty _ -> ty
         ConstantOperand constant -> typeOf constant
-    setType ty = \case
-        LocalReference _ v -> LocalReference ty v
-        ConstantOperand constant -> ConstantOperand $ setType ty constant
 
 instance Typed Constant where
-    setType ty = \case
-        LInt _ v -> LInt ty v
-        LDouble _ v -> LDouble ty v
-        LBool _ v -> LBool ty v
-        LChar _ v -> LChar ty v
-        LUnit -> error "Setting type of Unit is not possible"
-        LNull _ -> LNull ty
-        GlobalReference _ v -> GlobalReference ty v
     typeOf = \case
         LInt ty _ -> ty
         LDouble ty _ -> ty
         LBool ty _ -> ty
         LChar ty _ -> ty
-        LUnit -> I1
+        LUnit -> I 1
         LNull ty -> ty
+        LStruct constants -> StructType (fmap typeOf constants)
+        Undef ty -> ty
         GlobalReference ty _ -> ty
