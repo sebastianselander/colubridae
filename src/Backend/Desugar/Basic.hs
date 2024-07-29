@@ -10,10 +10,10 @@ import Backend.Llvm.Prelude (globalUnit)
 import Backend.Types
 import Control.Lens (makeLenses)
 import Control.Lens.Getter (use, uses, view)
-import Control.Lens.Setter ( assign, modifying, (+=) )
+import Control.Lens.Setter (assign, modifying, (+=))
 import Control.Monad.Extra (concatMapM)
 import Data.DList hiding (concat)
-import Data.List (nub, (\\))
+import Data.List (nub)
 import Data.Map qualified as Map
 import Data.Maybe (fromJust)
 import Data.Set qualified as Set
@@ -385,7 +385,10 @@ lookupFree env n (ty, var) = Typed ty $ ExtractFree var env n
 
 -- TODO: (Sebastian) Rewrite and make a more robust implementation
 freeVars :: [(Type, Ident)] -> TyExpr -> [(Type, Ident)]
-freeVars xs expr = listify' free expr \\ (xs <> concat (listify' matchParams expr))
+freeVars xs expr =
+    let vars = Set.fromList $ listify' free expr
+        exclude = Set.fromList $ xs <> concat (listify' matchParams expr)
+     in Set.toList $ vars `Set.difference` exclude
   where
     free :: TyExpr -> Maybe (Type, Ident)
     free (Typed ty (Var Free name)) = Just (ty, name)
