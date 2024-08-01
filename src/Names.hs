@@ -30,7 +30,7 @@ instance Pretty Ident where
     pretty (Ident name) = pretty name
 
 getOriginalName' :: Ident -> Names -> Ident
-getOriginalName' name names = fromJust $ Map.lookup name (unNames names)
+getOriginalName' name names = fromMaybe name $ Map.lookup name (unNames names)
 
 getOriginalName :: Ident -> Names -> Maybe Ident
 getOriginalName name names = Map.lookup name (unNames names)

@@ -22,6 +22,7 @@ module Frontend.Renamer.Monad
       insertArg,
       names,
       checkAndinsertConstrutor,
+      resetArgs,
     ) where
 
 import Control.Lens hiding ((<|))
@@ -125,6 +126,9 @@ insertArg name@(Ident nm) = do
     modifying numbering (Map.insert name n)
     modifying arguments (Map.insert name name')
     pure name'
+
+resetArgs :: MonadState Env m => m ()
+resetArgs = assign arguments mempty
 
 checkAndinsertConstrutor ::
     (MonadValidate [RnError] m, MonadState Env m) => SourceInfo -> Ident -> m ()

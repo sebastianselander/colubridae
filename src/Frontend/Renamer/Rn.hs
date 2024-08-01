@@ -3,7 +3,7 @@
 
 module Frontend.Renamer.Rn (rename) where
 
-import Control.Lens (locally)
+import Control.Lens (locally, use)
 import Control.Monad.Validate (MonadValidate)
 import Data.Set qualified as Set
 import Frontend.Builtin (builtInNames)
@@ -42,6 +42,7 @@ uniqueDefs = go builtInNames
 
 rnFunction :: FnPar -> Gen FnRn
 rnFunction (Fn pos name arguments returnType block) = do
+    resetArgs
     arguments <- rnArgs arguments
     returnType <- rnType returnType
     statements <- rnBlock block
