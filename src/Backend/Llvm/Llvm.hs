@@ -233,6 +233,7 @@ assembleExpr (Typed taggedType expr) =
             variable <- alloca bindName taggedType
             store operand variable
             pure variable
+        -- TODO: Rewrite without phi-node, break-expressions cause some pain atm
         Match scrutinee@(Typed _ _) matchArms (Catch name catchExpr) -> do
             comment "Match expression"
             scrutOperand <- assembleExpr scrutinee
