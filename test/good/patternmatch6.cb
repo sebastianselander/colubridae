@@ -1,0 +1,18 @@
+type List {
+    Nil,
+}
+
+def main() {
+    foo();
+}
+
+def foo() {
+    loop {
+        match Nil {
+            Nil => {
+                printString("match");
+                break;
+            }
+        }
+    }
+}
