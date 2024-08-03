@@ -95,7 +95,83 @@ def getNumber(x1: MaybeInt) -> int {
 ```
 här blir det väldigt tydligt att det är x:et som fås ut från `Just` som menas som uttryck i match-kroppen.
 
+Utöver renaming sker även en till traversering över trädet, här tittar vi att
+alla funktioner har ett explicit eller implicit return-expression. Traversering
+säkerställer även att break-expressions endast används inuti loopar.
+
 == Typechecking
+Typechecking är sista steget i frontenden av kompilatorn. Här säkerställs det
+att programmet är typkorrekt, det vill säga att man till exempel inte försöker
+addera ett värde av typen `int` med ett värde av typen `bool`.
+Utöver detta annoteras även varje expression med dess typ. Typinformationen
+behövs då LLVM-IR är statiskt och explicit typat.
+
+== Desugaring/Lowering
+Första steget i kompilatorns backend. Backend börjar här då kompilatorn längre
+inte ska kunna misslyckas att kompilera programmet. 
+I detta steget sker ett flertal hjälpande förvandlingar. Enklast är väl att förklara med några exempel:
+
+=== Assign-update
+```rust
+//innan 
+def foo() {
+    x += 4;
+}
+
+//efter
+def foo() {
+    x = x + 4;
+} 
+```
+
+=== Statement-expressions 
+```rust
+//innan
+def foo() -> int {
+    3 + { let x = 4; x + x }
+}
+
+//efter
+def foo() -> int {
+    let x1;
+    {
+        let x = 4;
+        x1 = x + x
+    }
+    3 + x1
+}
+```
+=== Lambdas/closures
+Den mest intressanta och utan tvekan den svåraste förvandling är av
+lambdas/closures. Här behöver lambdas lyftas till egna funktioner samt fria
+variabler måste fångas och passeras runt som en closure till funktionen.
+```rust
+//innan
+def foo() -> int {
+    let y = 123;
+    // notera att y är en fri variabel i lambdafunktionen
+    let f: fn(int) -> int = \x -> x + y;
+    f(1);
+}
+
+def f(env: void[], x: int) -> int {
+    // metasyntax
+    let y = (int) env[0]
+    return x + y;
+}
+//efter
+def foo() -> int {
+    let y = 123;
+    let env: void[] = { y };
+    f(env, 1);
+
+}
+```
+Closuren behöver även heap-allokeras då den passeras över till en annan funktion.
+== LLVM-IR
+
+Sista steget är att generera LLVM-IR kod. Egentligen det enda viktiga att
+notera här är att LLVM-IR är i static single-assignment form (SSA).
 
 #todo[Beskriv produkten ni skapat. Bifoga gärna skärmdumpar, beskriv designstruktur osv.]
 #todo[Kommentera eventuella alternativa lösningar. Varför valdes de bort under arbetets gång? Sett i efterhand?]
