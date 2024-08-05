@@ -84,6 +84,7 @@ executable colubridae
     , colubridae
     , pretty-simple
     , relude
+    , process
 
   hs-source-dirs:   app
   default-language: GHC2021
