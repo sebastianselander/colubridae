@@ -6,7 +6,9 @@
 
 #Header(1)
 
-#todo_outline
+#let code(text) = [
+    #box(stroke: black, inset: 5%)[#text]
+]
 
 = Sammanfattning
 Colubridae är en kompilator för ett enkelt imperativt programmeringsspråk.
@@ -34,18 +36,33 @@ intresserade att skapa sitt eget språk.
 - Man ska inte vara rädd att refaktorisera mycket och tidigt. Jag har själv
   märkt att det är enkelt att luta sig mot ad-hoc implementationer och det blir
   inte alls bra i längden. Kompilatorer är komplexa projekt som det är.
-#todo[Beskriv kortfattat resultatet av ert arbete: kunskaper ni fått, produkten ni skapat.]
 
 = Produktbeskrivning
 Colubridae ser generellt ut som de flesta andra imperativa programeringsspråk,
 men istället för att skijla på statements och expressions så är allt
-expressions. Detta tillåter exempelvis
+expressions. Detta tillåter exempelvis:
+
+#code(
 ```rust 
-let x = { 4 } + if predicate() { 1 } else { 2 }
+let x 
+    = {
+        4
+    } + if predicate() {
+        1
+    } else {
+        2
+    }
 ```
+)
+
 där `predicate` är en funktion som returnerar ett värde av typen `bool`.
 Värdet av `x` blir då 5 om `predicate()` evaluerar till `true` och annars blir `x == 6`.
 
+Tanken är att Colubridae ska vara ett programmeringsspråk som lägger tyngd på
+statisk garanti, det vill säga, om ett problem kan detekteras vid
+kompileringstid så ska inte programmet kompileras. Användare av Colubridae ska
+heller inte behöva bry sig om minne i större utsträckning än andra
+programmeringsspråk som har en garbage collector.
 
 Kompilatorn består av fem olika interna representationer:
 1. Parsed
@@ -57,17 +74,38 @@ Kompilatorn består av fem olika interna representationer:
 == Parsing
 Första steget i kompilatorn är parsing, här omvandlar vi text (ostrukturerad), till ett abstrakt syntaxträd (strukturerat).
 Nedan är ett exempel på hur resultatet av parsning av en typ av expression ser ut.
-```hs
-parse :: String -> Expression
-parse s = ...
 
--- >>> parse "let mut x: int = 2 + 3"
--- Let (Mutable, Just (TyLit Int)) (Ident "x") (BinOp (Lit (IntLit 2)) Add (Lit (IntLit 3)))
+Givet följande uttryck:
+
+#code(
+```rust
+
+let mut x: int = 2 + 3
+
+
 ```
+)
+
+ser det ut ungefär så här internt i kompilatorn:
+
+#code(
+```hs
+
+Let (Mutable, Just (TyLit Int)) 
+    (Ident "x") 
+    (BinOp 
+        (Lit (IntLit 2)) 
+        Add 
+        (Lit (IntLit 3)))
+
+
+```
+)
 
 == Renaming
 Andra steget, renaming, där döps variabler om så att varje variabel har ett unikt namn.
-Exempelvis: 
+
+#code(
 ```rust
 //before renaming
 type MaybeInt {
@@ -93,10 +131,12 @@ def getNumber(x1: MaybeInt) -> int {
     }
 }
 ```
-här blir det väldigt tydligt att det är x:et som fås ut från `Just` som menas som uttryck i match-kroppen.
+)
+
+här blir det väldigt tydligt att det är x:et som fås ut från `Just` som menas som uttryck i kroppen av match-case.
 
 Utöver renaming sker även en till traversering över trädet, här tittar vi att
-alla funktioner har ett explicit eller implicit return-expression. Traversering
+alla funktioner har ett explicit eller implicit return-expression. Traverseringen
 säkerställer även att break-expressions endast används inuti loopar.
 
 == Typechecking
@@ -106,12 +146,13 @@ addera ett värde av typen `int` med ett värde av typen `bool`.
 Utöver detta annoteras även varje expression med dess typ. Typinformationen
 behövs då LLVM-IR är statiskt och explicit typat.
 
-== Desugaring/Lowering
-Första steget i kompilatorns backend. Backend börjar här då kompilatorn längre
+== Lowering
+Lowering är första steget i kompilatorns backend. Backenden börjar här då kompilatorn längre
 inte ska kunna misslyckas att kompilera programmet. 
 I detta steget sker ett flertal hjälpande förvandlingar. Enklast är väl att förklara med några exempel:
 
 === Assign-update
+#code(
 ```rust
 //innan 
 def foo() {
@@ -123,8 +164,10 @@ def foo() {
     x = x + 4;
 } 
 ```
+)
 
 === Statement-expressions 
+#code(
 ```rust
 //innan
 def foo() -> int {
@@ -141,10 +184,13 @@ def foo() -> int {
     3 + x1
 }
 ```
+)
 === Lambdas/closures
 Den mest intressanta och utan tvekan den svåraste förvandling är av
 lambdas/closures. Här behöver lambdas lyftas till egna funktioner samt fria
 variabler måste fångas och passeras runt som en closure till funktionen.
+
+#code(
 ```rust
 //innan
 def foo() -> int {
@@ -167,37 +213,125 @@ def foo() -> int {
 
 }
 ```
+)
+
 Closuren behöver även heap-allokeras då den passeras över till en annan funktion.
 == LLVM-IR
 
-Sista steget är att generera LLVM-IR kod. Egentligen det enda viktiga att
-notera här är att LLVM-IR är i static single-assignment form (SSA).
+Sista steget är att generera LLVM-IR kod. LLVM-IR skrivs i static
+single-assignment form (SSA). Det innebär att variabler skrivs till exakt en
+gång.
+Följande är ett exempel på hur ett kort Colubridae-program kompileras till LLVM-IR:
 
-#todo[Beskriv produkten ni skapat. Bifoga gärna skärmdumpar, beskriv designstruktur osv.]
-#todo[Kommentera eventuella alternativa lösningar. Varför valdes de bort under arbetets gång? Sett i efterhand?]
+#code(
+```rust
+def main() {
+    let mut a = 1;
+    a += 1;
+    printInt(a + a);
+}
+```
+)
+
+vilket sen blir:
+
+#code(
+```llvm
+define i1 @printInt(i64 %x) {
+    ... 
+}
+
+define void @main() {
+    %named_0 = alloca i64
+    store i64 1, i64* %named_0
+    %a$1 = alloca i64
+    %_0 = load i64, i64* %named_0
+    store i64 %_0, i64* %a$1
+    %named_1 = alloca i64
+    store i64 1, i64* %named_1
+    %named_2 = alloca i1
+    %_1 = load i64, i64* %a$1
+    %_2 = load i64, i64* %named_1
+    %_3 = add i64 %_1, %_2
+    store i64 %_3, i64* %a$1
+    store i64* %a$1, i1* %named_2
+    %named_3 = alloca i1
+    %_4 = load i64, i64* %a$1
+    %_5 = load i64, i64* %a$1
+    %_6 = add i64 %_4, %_5
+    %_7 = call i1 @printInt(i64 %_6)
+    store i1 %_7, i1* %named_3
+    ret void
+}
+```
+)
+
 
 = Produktkvalitet
-#todo[Är slutprodukten i er mening stabil eller finns kända brister?]
+Trots att det finns ett par buggar i kompilatorn är utvecklingen av den
+i ett bra stadie. Kodbasen saknar dokumentation, men koden i sig är
+i relativt god kvalité.
+
+Den mest noterbara buggen just nu dyker upp när man använder en
+break-expression inuti ett match-case.
+```rust
+type Foo {
+    Foo,
+}
+def main() {
+    loop {
+        match Foo {
+            Foo => break,
+        }
+    }
+}
+```
+
+Problemet som uppstår är då att LLVM-IRs phi-nod inte får korrekt föregående
+block som argument. Detta är buggen med högst prioritet.
 
 = Kunskapsanvändning
 
-#todo[Kommentera använd kunskap från föregående kurser. Vad har ni speciellt haft nytta av för moment?]
-#todo[Kommentera eventuella andra informationskällor]
+Då det inte är första gången jag utvecklar en kompilator har jag haft mycket
+nytta av tidigare försök och misslyckanden. Det jag har märkt från tidigare,
+och tänkt på under utvecklingen av Colubridae är nyttan av att ha ett bra
+internt lågnivåspråk som man omvandlar till innan man genererar LLVM-IR.
+
+Denna gången har jag även lagt till några extra tillägg i kompilatorn som
+jag inte gjort förut har jag tagit nytta av extern information där. Enkelt
+exempel är strukturen av expressions och statement-expressions, där har jag
+kikat en del på Rusts grammatik och gjort som det är gjort i där.
+
+I övrigt har jag använt mig av populära implementationstekniker. Två exempel
+som även är nämnda i planeringsrapporten är
+#link("https://www.cl.cam.ac.uk/~nk480/bidir-survey.pdf")[Bidirectional typing]
+och
+#link("https://www.microsoft.com/en-us/research/uploads/prod/2016/11/trees-that-grow.pdf")[Trees
+that grow]. I efterhand vet jag faktiskt inte om jag tyckte valet av att följa
+Trees that grow var ett produktivt, men det har i alla fall varit lärorikt.
 
 = Framgångar
-== Tekniska framgångar
-#todo[Kommentera vad som har gått bra]
-
-== Projektarbetet
-#todo[Kommentera glädjeämnen i projektarbetet]
+Projektet i helhet har varit en succé. Den bit jag är mest nöjd med är att
+kompilatorn är relativt bra skriven, och jag kan därmed fortsätta arbeta på den
+som ett fritidsprojekt.
 
 = Problem
-== Tekniska problem
-#todo[Kommentera ev. problem och hur ni löst dessa]
-
-= Projektarbetsproblem
-#todo[Kommentera ev. problem och hur ni löst dessa.]
+Inga större problem har dykit upp under utvecklingen, men självklart har projektet inte gått felfritt.
+Jag hade lite problem med att implementera closures till higher-order
+functions, till exempel så var vissa variabler annoterad som om de var vanliga
+funktioner fast de var higher-order functions, då blev det fel när man försökte
+anropa dem.
+Som nämnt tidigare återstår minst ett problem, och det är break-expression
+i kroppen av ett match-case. Lösningen på detta är antingen att skriva om utan
+LLVM-IRs phi-nod eller studera phi-noder mer. Personligen föredrar jag att
+studera phi-noder mer så det är ett av nästa stegen.
 
 = Arbetsplan
-#todo[Har ni nått ert mål?]
-#todo[Kommentera betydande avvikelser från plan]
+Arbetet har gått nästan exakt enligt plan. Hann tyvärr inte implementera
+allt som jag önskat, saknar arrayer och därmed användbara strängar.
+I helhet är jag nöjd och har uppfyllt de flesta mål jag satt för mig själv.
+
+= Slutsats
+Projektet har varit lyckat, och jag har uppnått nästan alla de mål jag satte
+för mig själv. Det har varit otroligt skoj att arbeta på Colubridae under
+sommaren, och jag kommer utan tvekan fortsätta med projektet på min fritid.
