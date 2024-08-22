@@ -58,12 +58,12 @@ assembleCon index name ty = \case
         instrs <- fmap snd $ inContext $ do
             name <- fresh
             alloced <- alloca name retty
-            tag <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 0]
+            tag <- gep alloced [i32 @Integer 0, i32 @Integer 0]
             store (i64 index) tag
             void $ flip mapWithIndexM operands $ \index argument -> do
-                value <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
+                value <- gep alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
                 malloced <- malloc (ptr (typeOf argument)) (i64 @Int 10)
-                mallocedPtr <- gep Nothing malloced [i32 @Integer 0]
+                mallocedPtr <- gep malloced [i32 @Integer 0]
                 store argument mallocedPtr
                 store malloced value
             struct <- load retty alloced
@@ -103,8 +103,8 @@ assembleExpr (Typed taggedType expr) =
                             name <- fresh
                             let structType = StructType [taggedType, opaquePtr]
                             alloced <- alloca name structType
-                            funPtr <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 0]
-                            envPtr <- gep Nothing alloced [i32 @Integer 0, i32 @Integer 1]
+                            funPtr <- gep alloced [i32 @Integer 0, i32 @Integer 0]
+                            envPtr <- gep alloced [i32 @Integer 0, i32 @Integer 1]
                             store fun funPtr
                             store (null opaquePtr) envPtr
                             load structType alloced
@@ -114,7 +114,7 @@ assembleExpr (Typed taggedType expr) =
                 Toplevel -> pure $ global taggedType name
                 GlblConst -> do
                     -- NOTE: This will not work with global strings
-                    op <- gep Nothing (global (ptr taggedType) name) [i32 @Integer 0]
+                    op <- gep (global (ptr taggedType) name) [i32 @Integer 0]
                     load taggedType op
                 Argument -> pure $ LocalReference taggedType name
                 Lambda -> load taggedType $ LocalReference (ptr taggedType) name
@@ -207,15 +207,15 @@ assembleExpr (Typed taggedType expr) =
                 _ -> do
                     mem <- malloc (ptr opaquePtr) (i64 (length env * 8))
                     forM_ (zip [0 ..] env) $ \(index, Typed ty expr) -> do
-                        gepOperand <- gep Nothing mem [i32 @Integer index]
+                        gepOperand <- gep mem [i32 @Integer index]
                         alloced <- malloc (ptr ty) (i32 $ sizeOf ty)
                         operand <- assembleExpr (Typed ty expr)
                         store operand alloced
                         store alloced gepOperand
                     pure mem
             declaration <- alloca name taggedType
-            functionPointer <- gep Nothing declaration [i32 @Integer 0, i32 @Integer 0]
-            environmentPointer <- gep Nothing declaration [i32 @Integer 0, i32 @Integer 1]
+            functionPointer <- gep declaration [i32 @Integer 0, i32 @Integer 0]
+            environmentPointer <- gep declaration [i32 @Integer 0, i32 @Integer 1]
             functionOperand <- assembleExpr fun
             store functionOperand functionPointer
             store mem environmentPointer
@@ -226,8 +226,8 @@ assembleExpr (Typed taggedType expr) =
             extractValue Nothing operand [fromInteger n]
         ExtractFree bindName envName index -> do
             comment "ExtractFree expression"
-            operand <- gep Nothing (localRef (ptr opaquePtr) envName) [i32 index]
-            operand <- gep Nothing operand [i32 @Integer 0]
+            operand <- gep (localRef (ptr opaquePtr) envName) [i32 index]
+            operand <- gep operand [i32 @Integer 0]
             operand <- load (ptr taggedType) operand
             operand <- load taggedType operand
             variable <- alloca bindName taggedType
@@ -251,7 +251,7 @@ assembleExpr (Typed taggedType expr) =
                 forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
                     var <- alloca name ty
                     ptr <- extractValue (Just (ptr ty)) scrutOperand [1, index]
-                    ptr <- gep Nothing ptr [i32 @Int 0]
+                    ptr <- gep ptr [i32 @Int 0]
                     val <- load ty ptr
                     store val var
                 operand <- NonEmpty.last <$> mapM assembleExpr body

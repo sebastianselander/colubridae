@@ -205,8 +205,8 @@ jump :: Label -> IRBuilder ()
 jump lbl = unnamed (Jump lbl)
 
 -- | Does not work correctly for structure if gep is used nested
-gep :: Maybe Type -> Operand -> [Operand] -> IRBuilder Operand
-gep ty op ops = LocalReference (fromMaybe (gepType (typeOf op) ops) ty) <$> named (GetElementPtr op ops)
+gep :: Operand -> [Operand] -> IRBuilder Operand
+gep op ops = LocalReference (gepType (typeOf op) ops) <$> named (GetElementPtr op ops)
 
 extractValue :: Maybe Type -> Operand -> [Word32] -> IRBuilder Operand
 extractValue mbty operand indices =
