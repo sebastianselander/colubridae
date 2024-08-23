@@ -10,8 +10,9 @@ def foo() {
     loop {
         match Nil {
             Nil => {
-                printString("match");
+                printString("match\n");
                 break;
+                printString("after break\n")
             }
         }
     }

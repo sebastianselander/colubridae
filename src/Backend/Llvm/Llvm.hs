@@ -16,7 +16,7 @@ import Data.Text qualified as Text
 import Names (Ident (..))
 import Origin (Origin (..))
 import Relude hiding (Type, and, div, exitFailure, null, or, rem)
-import Utils (mapWithIndexM)
+import Utils (mapWithIndexM, catMaybesSnd)
 
 assemble :: Program -> Ir
 assemble (Program defs) =
@@ -254,9 +254,15 @@ assembleExpr (Typed taggedType expr) =
                     ptr <- gep ptr [i32 @Int 0]
                     val <- load ty ptr
                     store val var
+                let isBreak = case NonEmpty.last body of
+                                Typed _ Break -> True
+                                _ -> False
                 operand <- NonEmpty.last <$> mapM assembleExpr body
-                jump doneLbl
-                comeFrom <- use predBlock 
+                comeFrom <- if isBreak 
+                   then pure Nothing
+                   else do
+                        jump doneLbl
+                        Just <$> use predBlock 
                 pure (operand, comeFrom)
             label catchLbl
             operand <- NonEmpty.last <$> mapM assembleExpr catchExpr
@@ -264,6 +270,8 @@ assembleExpr (Typed taggedType expr) =
             store operand alloced
             jump doneLbl
             label doneLbl
+
+            phiArgs <- pure $ catMaybesSnd phiArgs
 
             phi (phiArgs <> [(operand, catchLbl)])
         ToStderrExit var -> do

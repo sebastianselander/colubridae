@@ -35,3 +35,8 @@ mapWithIndex f = snd . mapAccumL (\index a -> (index + 1, f index a)) 0
 
 mapWithIndexM :: (Traversable t, Monad m, Num index) => (index -> a -> m b) -> t a -> m (t b)
 mapWithIndexM f = sequence . snd . mapAccumL (\index a -> (index + 1, f index a)) 0
+
+catMaybesSnd :: [(a, Maybe b)] -> [(a,b)]
+catMaybesSnd [] = []
+catMaybesSnd ((_, Nothing) : xs) = catMaybesSnd xs
+catMaybesSnd ((a, Just b) : xs) = (a, b) : catMaybesSnd xs
