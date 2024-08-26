@@ -58,7 +58,8 @@ rnAdt (AdtX loc name constructors) = AdtX loc name <$> mapM rnConstructor constr
 rnConstructor :: ConstructorPar -> Gen ConstructorRn
 rnConstructor = \case
     EnumCons loc name -> checkAndinsertConstrutor loc name >> pure (EnumCons loc name)
-    FunCons loc name types -> checkAndinsertConstrutor loc name >> FunCons loc name <$> mapM rnType types
+    FunCons loc name types -> checkAndinsertConstrutor loc name >> FunCons loc name 
+        <$> mapM rnType types
 
 rnBlock :: BlockPar -> Gen BlockRn
 rnBlock (BlockX a stmts expr) =
