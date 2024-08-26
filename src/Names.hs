@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Names
     ( Ident (..),
       Names,
@@ -14,7 +15,6 @@ import Data.Map qualified as Map
 import Generics.SYB (everywhere, mkT)
 import Prettyprinter (Pretty (..))
 import Relude
-import Relude.Unsafe (fromJust)
 
 newtype Names = Names {unNames :: Map Ident Ident}
     deriving (Show, Data)
@@ -30,7 +30,7 @@ instance Pretty Ident where
     pretty (Ident name) = pretty name
 
 getOriginalName' :: Ident -> Names -> Ident
-getOriginalName' name names = fromJust $ Map.lookup name (unNames names)
+getOriginalName' name names = fromMaybe (error $ "INTERNAL ERROR: can't find name: " <> show name) $ Map.lookup name (unNames names)
 
 getOriginalName :: Ident -> Names -> Maybe Ident
 getOriginalName name names = Map.lookup name (unNames names)

@@ -52,12 +52,8 @@ getFuns = listify' f
   where
     f :: FnRn -> Maybe (Ident, (TypeTc, SourceInfo))
     f (Fn info name args returnType _) =
-        let funTy = TyFunX NoExtField (fmap argTy args) (typeOf returnType)
+        let funTy = TyFunX NoExtField (fmap typeOf args) (typeOf returnType)
          in Just (name, (funTy, info))
-    argTy :: ArgRn -> TypeTc
-    argTy (ArgX (_, mut) _ ty) = case mut of
-        Mutable -> Mut $ typeOf ty
-        Immutable -> typeOf ty
 
 getCons :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
 getCons = concat . listify' f
@@ -113,12 +109,10 @@ tcFunction names funTable conTable fun@(Fn _ _ args rt _) =
     let varTable =
             foldr
                 ( uncurry Map.insert
-                    . ( \(ArgX (info, mut) name ty) ->
+                    . ( \(ArgX info name ty) ->
                             ( name
                             ,
-                                ( case mut of
-                                    Mutable -> Mut (typeOf ty)
-                                    Immutable -> typeOf ty
+                                ( typeOf ty
                                 , info
                                 )
                             )
@@ -161,7 +155,7 @@ tcBlock expectedTy (BlockX info statements tailExpression) = do
     pure $ BlockX (info, maybe Unit typeOf expr) stmts expr
 
 infArg :: ArgRn -> TcM ArgTc
-infArg (ArgX (_, _) name ty) = pure $ ArgX NoExtField name (typeOf ty)
+infArg (ArgX _ name ty) = pure $ ArgX NoExtField name (typeOf ty)
 
 infStmt :: StmtRn -> TcM StmtTc
 infStmt (SExprX NoExtField expr) = SExprX NoExtField <$> infExpr expr
@@ -220,7 +214,6 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
     AppX info l r -> do
         l <- infExpr l
         let tcApp ty = case ty of
-                Mut ty -> tcApp ty
                 TyFunX NoExtField argTys retTy -> do
                     let argTysLength = length argTys
                     let rLength = length r
@@ -252,11 +245,9 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                     r <- mapM infExpr r
                     pure $ AppX (info, retTy) l r
         tcApp (typeOf l)
-    LetX (info, mut, mbty) name expr -> do
+    LetX (info, mbty) name expr -> do
         expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
-        let ty = case mut of
-                Mutable -> Mut (typeOf expr)
-                Immutable -> typeOf expr
+        let ty = typeOf expr
         insertVar name ty info
         pure $ LetX (StmtType Unit ty info) name expr
     AssX (info, bind) name op expr -> do
@@ -266,11 +257,6 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                     <$> views Ctx.names (getOriginalName' name)
                     >> pure (Any, info)
             _ -> lookupVar name
-        ty <- case ty of
-            Mut ty -> pure ty
-            _ -> do
-                name <- views Ctx.names (getOriginalName' name)
-                Any <$ immutableVariable @TcM info name
         expr <- tcExpr ty expr
         unify info ty expr
         ty <- pure ty
@@ -338,10 +324,8 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                 pure (typeOf x)
         pure $ LoopX (info, ty) block
     LamX info args body -> do
-        let insertArg (LamArgX (info, mut, ty) name) = do
-                let ty' = case mut of
-                        Mutable -> fmap (Mut . typeOf) ty
-                        Immutable -> fmap typeOf ty
+        let insertArg (LamArgX (info, ty) name) = do
+                let ty' = fmap typeOf ty
                 ty <- maybe (Any <$ typeMustBeKnown info name) pure ty'
                 insertVar name ty info
                 pure $ LamArgX ty name
@@ -433,11 +417,9 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
         expr <- infExpr (AppX info fun args)
         unify info expectedTy expr
         pure expr
-    LetX (info, mut, mbty) name expr -> do
+    LetX (info, mbty) name expr -> do
         expr <- maybe (infExpr expr) ((`tcExpr` expr) . typeOf) mbty
-        let ty = case mut of
-                Mutable -> Mut (typeOf expr)
-                Immutable -> typeOf expr
+        let ty = typeOf expr
         unify' info expectedTy Unit
         insertVar name ty info
         pure $ LetX (StmtType Unit ty info) name expr
@@ -495,11 +477,9 @@ unifyLambdaArgs ::
     m [LamArgTc]
 unifyLambdaArgs [] = pure []
 unifyLambdaArgs
-    ((expectedType, LamArgX (loc, mut, mbArgumentType) argumentName) : xs) = do
+    ((expectedType, LamArgX (loc, mbArgumentType) argumentName) : xs) = do
         mapM_ (unify loc expectedType) mbArgumentType
-        let (LamArgX ty name) = case mut of
-                Mutable -> LamArgX @Tc (Mut expectedType) argumentName
-                Immutable -> LamArgX expectedType argumentName
+        let (LamArgX ty name) = LamArgX @Tc expectedType argumentName
         insertVar name ty loc
         rest <- unifyLambdaArgs xs
         pure (LamArgX ty name : rest)
@@ -619,6 +599,12 @@ instance TypeOf LamArgTc where
 instance TypeOf MatchArmTc where
     typeOf (MatchArmX _ _ body) = typeOf body
 
+instance TypeOf ArgTc where
+  typeOf (ArgX _ _ ty) = ty
+
+instance TypeOf ArgRn where
+  typeOf (ArgX _ _ ty) = typeOf ty
+
 unify ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m, TypeOf a) =>
     SourceInfo ->
@@ -645,8 +631,6 @@ unify' info ty1 ty2 = do
             unify' info r1 r2
         (TypeX AnyX, _) -> pure ()
         (_, TypeX AnyX) -> pure ()
-        (ty1, TypeX (MutableX ty2)) -> unify' info ty1 ty2
-        (TypeX (MutableX ty1), ty2) -> unify' info ty1 ty2
         (TyConX NoExtField name1, TyConX NoExtField name2)
             | name1 == name2 -> pure ()
             | otherwise -> tyExpectedGot info [ty1] ty2

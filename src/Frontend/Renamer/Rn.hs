@@ -4,7 +4,6 @@
 module Frontend.Renamer.Rn (rename) where
 
 import Control.Lens (locally)
-import Control.Monad (foldM)
 import Control.Monad.Validate (MonadValidate)
 import Data.Set qualified as Set
 import Frontend.Builtin (builtInNames)
@@ -43,6 +42,7 @@ uniqueDefs = go builtInNames
 
 rnFunction :: FnPar -> Gen FnRn
 rnFunction (Fn pos name arguments returnType block) = do
+    resetArgs
     arguments <- rnArgs arguments
     returnType <- rnType returnType
     statements <- rnBlock block
@@ -58,7 +58,10 @@ rnAdt (AdtX loc name constructors) = AdtX loc name <$> mapM rnConstructor constr
 rnConstructor :: ConstructorPar -> Gen ConstructorRn
 rnConstructor = \case
     EnumCons loc name -> checkAndinsertConstrutor loc name >> pure (EnumCons loc name)
-    FunCons loc name types -> checkAndinsertConstrutor loc name >> FunCons loc name <$> mapM rnType types
+    FunCons loc name types ->
+        checkAndinsertConstrutor loc name
+            >> FunCons loc name
+            <$> mapM rnType types
 
 rnBlock :: BlockPar -> Gen BlockRn
 rnBlock (BlockX a stmts expr) =
@@ -90,14 +93,15 @@ rnExpr = \case
         l <- rnExpr l
         args <- mapM rnExpr args
         pure $ AppX info l args
-    LetX (info, mut, ty) name expr -> do
+    LetX (info, ty) name expr -> do
         expr <- rnExpr expr
         name' <- insertVar name
         ty <- mapM rnType ty
-        pure $ LetX (info, mut, ty) name' expr
+        pure $ LetX (info, ty) name' expr
     AssX info variable op expr -> do
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
+                =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
         expr <- rnExpr expr
         pure (AssX (info, bind) name op expr)
@@ -119,7 +123,7 @@ rnExpr = \case
         pure $ WhileX a b stmts
     LoopX info block -> LoopX info <$> rnBlock block
     LamX info args body -> do
-        args <- reverse <$> rnLamArgs args
+        args <- rnLamArgs args
         body <- newContext $ rnExpr body
         pure $ LamX info args body
     MatchX info scrutinee arms -> do
@@ -134,20 +138,40 @@ rnMatchArm (MatchArmX loc pat body) = newContext $ do
     pure $ MatchArmX loc pat body
 
 rnPattern :: PatternPar -> Gen PatternRn
-rnPattern = \case
-    PVarX loc varName -> PVarX loc <$> insertVar varName
-    PEnumConX loc conName -> pure $ PEnumConX loc conName
-    PFunConX loc conName pats -> PFunConX loc conName <$> mapM rnPattern pats
+rnPattern = fmap snd . go mempty
+  where
+    go :: [Ident] -> PatternPar -> Gen ([Ident], PatternRn)
+    go seen = \case
+        PVarX loc varName -> do
+            when (varName `elem` seen) (conflictingDefinitionArgument loc varName)
+            name <- insertVar varName
+            pure (varName : seen, PVarX loc name)
+        PEnumConX loc conName -> pure ([], PEnumConX loc conName)
+        PFunConX loc conName pats -> do
+            (seen, pats) <- go' seen pats
+            pure (seen, PFunConX loc conName pats)
+          where
+            go' :: [Ident] -> [PatternPar] -> Gen ([Ident], [PatternRn])
+            go' seen [] = pure (seen, [])
+            go' seen (x : xs) = do
+                (seen', pat) <- go seen x
+                (seen'', pats) <- go' (seen <> seen') xs
+                pure (seen <> seen' <> seen'', pat : pats)
 
 rnLamArgs :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgPar] -> m [LamArgRn]
-rnLamArgs = foldM f mempty
+rnLamArgs = fmap (reverse . snd) . foldlM f mempty
   where
-    f :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgRn] -> LamArgPar -> m [LamArgRn]
-    f seen arg@(LamArgX (info, mut, ty) name) = do
-        when (any (eqAlphaLamArg arg) seen) (conflictingDefinitionArgument info name)
+    f ::
+        (MonadState Env m, MonadValidate [RnError] m) =>
+        ([Ident], [LamArgRn]) ->
+        LamArgPar ->
+        m ([Ident], [LamArgRn])
+    f (seen, acc) (LamArgX (info, ty) name) = do
+        let seen' = name : seen
+        when (name `elem` seen) (conflictingDefinitionArgument info name)
         name <- insertArg name
         ty <- mapM rnType ty
-        pure (LamArgX (info, mut, ty) name : seen)
+        pure (seen', LamArgX (info, ty) name : acc)
 
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
@@ -171,20 +195,19 @@ getFunctionNames = listify' fnName
     fnName (Fn info name _ _ _) = Just (info, name)
 
 rnArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]
-rnArgs = fmap reverse . foldlM f mempty
+rnArgs = fmap (reverse . snd) . foldlM f mempty
   where
-    f :: (MonadState Env m, MonadValidate [RnError] m) => [ArgRn] -> ArgPar -> m [ArgRn]
-    f seen arg@(ArgX (info, mut) name ty) = do
-        when (any (eqAlphaArg arg) seen) (conflictingDefinitionArgument info name)
+    f ::
+        (MonadState Env m, MonadValidate [RnError] m) =>
+        ([Ident], [ArgRn]) ->
+        ArgPar ->
+        m ([Ident], [ArgRn])
+    f (seen, acc) (ArgX info name ty) = do
+        let seen' = name : seen
+        when (name `elem` seen) (conflictingDefinitionArgument info name)
         name <- insertArg name
         ty <- rnType ty
-        pure (ArgX (info, mut) name ty : seen)
-
-eqAlphaArg :: forall a b. ArgX a -> ArgX b -> Bool
-eqAlphaArg (ArgX _ name1 _) (ArgX _ name2 _) = name1 == name2
-
-eqAlphaLamArg :: forall a b. LamArgX a -> LamArgX b -> Bool
-eqAlphaLamArg (LamArgX _ name1) (LamArgX _ name2) = name1 == name2
+        pure (seen', ArgX info name ty : acc)
 
 rnType :: (Monad m) => TypePar -> m TypeRn
 rnType = pure . coerceType

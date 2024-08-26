@@ -41,7 +41,7 @@ deriving instance Data PatternPar
 
 type instance XProgram Par = NoExtField
 
-type instance XArg Par = (SourceInfo, Mutability)
+type instance XArg Par = SourceInfo
 
 type instance XDef Par = DataConCantHappen
 type instance XFn Par = SourceInfo
@@ -67,7 +67,7 @@ type instance XEBlock Par = NoExtField
 type instance XBreak Par = SourceInfo
 type instance XIf Par = SourceInfo
 type instance XWhile Par = SourceInfo
-type instance XLet Par = (SourceInfo, Mutability, Maybe TypePar)
+type instance XLet Par = (SourceInfo, Maybe TypePar)
 type instance XAss Par = SourceInfo
 type instance XExpr Par = DataConCantHappen
 
@@ -92,7 +92,7 @@ type instance XTyCon Par = NoExtField
 
 type instance XLoop Par = SourceInfo
 type instance XLam Par = SourceInfo
-type instance XLamArg Par = (SourceInfo, Mutability, Maybe TypePar)
+type instance XLamArg Par = (SourceInfo, Maybe TypePar)
 
 deriving instance Data (LamArgX Par)
     

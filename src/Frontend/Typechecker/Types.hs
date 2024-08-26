@@ -105,12 +105,7 @@ pattern Any <- TypeX AnyX
     where
         Any = TypeX AnyX
 
-pattern Mut :: (XType a ~ MetaTy) => TypeTc -> TypeX a
-pattern Mut ty <- TypeX (MutableX ty)
-  where
-    Mut ty = TypeX (MutableX ty)
- 
-data MetaTy = MutableX TypeTc | AnyX
+data MetaTy = AnyX
     deriving (Show, Eq, Ord, Data)
 
 data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}

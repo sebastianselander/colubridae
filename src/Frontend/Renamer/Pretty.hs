@@ -73,7 +73,7 @@ instance Pretty StmtRn where
     pretty (SExprX NoExtField expr) = Pretty.pretty expr <> Pretty.semi
 
 instance Pretty ArgRn where
-    pretty (ArgX (_, mut) name ty) = Pretty.pretty mut <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty
+    pretty (ArgX _ name ty) = Pretty.pretty name <> ":" <+> Pretty.pretty ty
 
 instance Pretty TypeRn where
     pretty = prettyType1
@@ -141,10 +141,8 @@ prettyExpr7 (VarX _ name) = Pretty.pretty name
 prettyExpr7 (AppX _ l rs) =
     Pretty.pretty l
         <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty rs))
-prettyExpr7 (LetX (_, Immutable, Nothing) name e) = "let" <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
-prettyExpr7 (LetX (_, Mutable, Nothing) name e) = "let mut" <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
-prettyExpr7 (LetX (_, Immutable, Just ty) name e) = "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
-prettyExpr7 (LetX (_, Mutable, Just ty) name e) = "let mut" <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
+prettyExpr7 (LetX (_, Nothing) name e) = "let" <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
+prettyExpr7 (LetX (_, Just ty) name e) = "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
 prettyExpr7 (AssX _ (Ident name) op e) = Pretty.pretty name <+> Pretty.pretty op <+> Pretty.pretty e
 prettyExpr7 (RetX _ Nothing) = "return"
 prettyExpr7 (RetX _ (Just e)) = "return" <+> Pretty.pretty e
@@ -189,10 +187,10 @@ instance Pretty PatternRn where
                     )
 
 instance Pretty LamArgRn where
-    pretty (LamArgX (_, mut, Nothing) name) =
-        Pretty.pretty mut <+> Pretty.pretty name
-    pretty (LamArgX (_, mut, Just ty) name) =
-        Pretty.parens $ Pretty.pretty mut <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty
+    pretty (LamArgX (_, Nothing) name) =
+        Pretty.pretty name
+    pretty (LamArgX (_, Just ty) name) =
+        Pretty.parens $ Pretty.pretty name <> ":" <+> Pretty.pretty ty
 
 instance Pretty LitRn where
     pretty lit = case lit of

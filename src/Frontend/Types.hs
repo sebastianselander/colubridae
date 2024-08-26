@@ -10,8 +10,6 @@ import Data.Kind qualified
 import Data.Tuple.Extra (both)
 import GHC.Show (show)
 import Names
-import Prettyprinter (Pretty)
-import Prettyprinter qualified as Pretty
 import Relude hiding (Type, concat, intercalate, replicate)
 import Relude qualified
 import Text.Megaparsec (Pos, mkPos)
@@ -22,13 +20,6 @@ data NoExtField = NoExtField
 
 data DataConCantHappen
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
-
-data Mutability = Mutable | Immutable
-    deriving (Show, Eq, Ord, Data, Typeable)
-
-instance Pretty Mutability where
-    pretty Mutable = "mut"
-    pretty Immutable = Pretty.emptyDoc
 
 data Span = Span
     { start :: !(Pos, Pos)
