@@ -67,7 +67,7 @@ type instance XBreak Rn = XBreak Par
 type instance XEBlock Rn = NoExtField
 type instance XIf Rn = XIf Par
 type instance XWhile Rn = XWhile Par
-type instance XLet Rn = (SourceInfo, Mutability, Maybe TypeRn)
+type instance XLet Rn = (SourceInfo, Maybe TypeRn)
 type instance XAss Rn = (SourceInfo, Boundedness)
 type instance XSExp Rn = XSExp Par
 type instance XStmt Rn = DataConCantHappen
@@ -101,4 +101,4 @@ type instance XTyCon Rn = NoExtField
 
 type instance XLoop Rn = SourceInfo
 type instance XLam Rn = XLam Par
-type instance XLamArg Rn = (SourceInfo, Mutability, Maybe TypeRn)
+type instance XLamArg Rn = (SourceInfo, Maybe TypeRn)

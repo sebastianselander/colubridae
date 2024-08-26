@@ -92,7 +92,6 @@ prettyType2 = \case
         CharX -> "char"
         BoolX -> "bool"
     ty@TyFunX {} -> Pretty.parens (Pretty.pretty ty)
-    TypeX (MutableX ty) -> Pretty.pretty ty <> "?"
     TypeX AnyX -> "Any"
 
 instance Pretty ExprTc where

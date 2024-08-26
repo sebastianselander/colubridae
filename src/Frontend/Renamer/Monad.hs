@@ -22,6 +22,7 @@ module Frontend.Renamer.Monad
       insertArg,
       names,
       checkAndinsertConstrutor,
+      arguments,
       resetArgs,
     ) where
 
@@ -128,7 +129,7 @@ insertArg name@(Ident nm) = do
     pure name'
 
 resetArgs :: MonadState Env m => m ()
-resetArgs = assign arguments mempty
+resetArgs = modifying arguments mempty
 
 checkAndinsertConstrutor ::
     (MonadValidate [RnError] m, MonadState Env m) => SourceInfo -> Ident -> m ()

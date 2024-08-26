@@ -62,11 +62,10 @@ pFunction = do
 pArg :: Parser ArgPar
 pArg = do
     gs <- spanStart
-    mut <- P.option Immutable $ lexeme (keyword "mut") $> Mutable
     name <- lexeme identifier
     lexeme (keyword ":")
     (ty, info) <- span gs pType
-    pure (ArgX (info, mut) name ty)
+    pure (ArgX info name ty)
 
 pType :: Parser TypePar
 pType = P.choice [pAtom, pFunTy, pTyCon, parens pType] <?> "type"
@@ -163,13 +162,12 @@ pLet :: Parser ExprPar
 pLet = P.label "let" $ do
     gs <- spanStart
     lexeme (keyword "let")
-    mut <- maybe Immutable (const Mutable) <$> P.optional (lexeme (keyword "mut"))
     name <- lexeme identifier
     ty <- P.optional $ lexeme (keyword ":") *> pType
     lexeme (keyword "=")
     expr <- pExpr
     info <- spanEnd gs
-    pure (LetX (info, mut, ty) name expr)
+    pure (LetX (info, ty) name expr)
 
 pAss :: Parser ExprPar
 pAss = P.label "assignment" $ do
@@ -257,14 +255,14 @@ pLam = do
     lamArg :: Parser LamArgPar
     lamArg =
         ( do
-            ArgX (info, mut) name ty <- parens pArg
-            pure (LamArgX (info, mut, Just ty) name)
+            ArgX info name ty <- parens pArg
+            pure (LamArgX (info, Just ty) name)
         )
             <|> ( do
                     gs <- spanStart
                     name <- lexeme identifier
                     info <- spanEnd gs
-                    pure $ LamArgX (info, Immutable, Nothing) name
+                    pure $ LamArgX (info, Nothing) name
                 )
 
 pApp :: Parser ExprPar

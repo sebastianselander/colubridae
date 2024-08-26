@@ -146,7 +146,7 @@ hasInfoExpr = \case
     PrefixX info _ _ -> info
     BinOpX info _ _ _ -> info
     AppX info _ _ -> info
-    LetX (info, _, _) _ _ -> info
+    LetX (info, _) _ _ -> info
     AssX (info, _) _ _ _ -> info
     RetX info _ -> info
     EBlockX NoExtField (BlockX info _ _) -> info

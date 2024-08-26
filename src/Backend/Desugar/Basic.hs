@@ -357,7 +357,6 @@ mkClosureType (Tc.TyFunX NoExtField ls r) = do
     ls <- mapM mkClosureType ls
     r <- mkClosureType r
     pure $ StructType [TyFun ls r, PointerType Void]
-mkClosureType (Tc.TypeX (Tc.MutableX ty)) = Mut <$> mkClosureType ty
 mkClosureType ty = dsType ty
 
 dsType :: (Monad m) => Tc.TypeTc -> m Type
@@ -373,7 +372,6 @@ dsType = \case
         ls <- mapM dsType l
         r <- dsType r
         pure $ TyFun (PointerType Void : ls) r
-    Tc.TypeX (Tc.MutableX ty) -> Mut <$> dsType ty
     Tc.TypeX Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type
     -- of `return` and `break` so that they can be placed anywhere.
 

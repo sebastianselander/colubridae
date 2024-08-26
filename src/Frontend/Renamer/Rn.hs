@@ -58,8 +58,10 @@ rnAdt (AdtX loc name constructors) = AdtX loc name <$> mapM rnConstructor constr
 rnConstructor :: ConstructorPar -> Gen ConstructorRn
 rnConstructor = \case
     EnumCons loc name -> checkAndinsertConstrutor loc name >> pure (EnumCons loc name)
-    FunCons loc name types -> checkAndinsertConstrutor loc name >> FunCons loc name 
-        <$> mapM rnType types
+    FunCons loc name types ->
+        checkAndinsertConstrutor loc name
+            >> FunCons loc name
+            <$> mapM rnType types
 
 rnBlock :: BlockPar -> Gen BlockRn
 rnBlock (BlockX a stmts expr) =
@@ -91,11 +93,11 @@ rnExpr = \case
         l <- rnExpr l
         args <- mapM rnExpr args
         pure $ AppX info l args
-    LetX (info, mut, ty) name expr -> do
+    LetX (info, ty) name expr -> do
         expr <- rnExpr expr
         name' <- insertVar name
         ty <- mapM rnType ty
-        pure $ LetX (info, mut, ty) name' expr
+        pure $ LetX (info, ty) name' expr
     AssX info variable op expr -> do
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
@@ -164,12 +166,12 @@ rnLamArgs = fmap (reverse . snd) . foldlM f mempty
         ([Ident], [LamArgRn]) ->
         LamArgPar ->
         m ([Ident], [LamArgRn])
-    f (seen, acc) (LamArgX (info, mut, ty) name) = do
+    f (seen, acc) (LamArgX (info, ty) name) = do
         let seen' = name : seen
         when (name `elem` seen) (conflictingDefinitionArgument info name)
         name <- insertArg name
         ty <- mapM rnType ty
-        pure (seen', LamArgX (info, mut, ty) name : acc)
+        pure (seen', LamArgX (info, ty) name : acc)
 
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
@@ -200,12 +202,12 @@ rnArgs = fmap (reverse . snd) . foldlM f mempty
         ([Ident], [ArgRn]) ->
         ArgPar ->
         m ([Ident], [ArgRn])
-    f (seen, acc) (ArgX (info, mut) name ty) = do
+    f (seen, acc) (ArgX info name ty) = do
         let seen' = name : seen
         when (name `elem` seen) (conflictingDefinitionArgument info name)
         name <- insertArg name
         ty <- rnType ty
-        pure (seen', ArgX (info, mut) name ty : acc)
+        pure (seen', ArgX info name ty : acc)
 
 rnType :: (Monad m) => TypePar -> m TypeRn
 rnType = pure . coerceType
