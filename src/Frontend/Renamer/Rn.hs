@@ -3,7 +3,7 @@
 
 module Frontend.Renamer.Rn (rename) where
 
-import Control.Lens (locally, use)
+import Control.Lens (locally)
 import Control.Monad.Validate (MonadValidate)
 import Data.Set qualified as Set
 import Frontend.Builtin (builtInNames)
@@ -98,6 +98,7 @@ rnExpr = \case
     AssX info variable op expr -> do
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
+                =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
         expr <- rnExpr expr
         pure (AssX (info, bind) name op expr)

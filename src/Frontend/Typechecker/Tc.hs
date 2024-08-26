@@ -567,7 +567,7 @@ insertVar :: (MonadState Env m) => Ident -> TypeTc -> SourceInfo -> m ()
 insertVar name ty info = modifying variables (Map.insert name (ty, info))
 
 lookupVar :: (MonadState Env m) => Ident -> m (TypeTc, SourceInfo)
-lookupVar name = uses variables (fromJust . Map.lookup name)
+lookupVar name = uses variables (fromMaybe (error $ "INTERNAL ERROR: Could not find variable: " <> show name) . Map.lookup name)
 
 lookupCon :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
 lookupCon name = do
