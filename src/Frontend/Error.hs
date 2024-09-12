@@ -1,393 +1,79 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Frontend.Error where
 
-import Control.Lens.Getter (view)
-import Control.Monad.Validate
-import Data.Text (intercalate, pack)
+import Control.Monad.Validate (MonadValidate (dispute))
 import Data.Text qualified as Text
+import Error.Diagnose qualified as Diagnose
+import Error.Diagnose.Compat.Megaparsec (HasHints (hints))
 import Frontend.Renamer.Pretty ()
-import Frontend.Renamer.Types (ExprRn, PatternRn)
-import Frontend.TH
-import Frontend.Typechecker.Ctx (Ctx, exprStack, names)
+import Frontend.Renamer.Types (PatternRn)
 import Frontend.Typechecker.Pretty (pThing)
 import Frontend.Typechecker.Types
-import Frontend.Types (SourceInfo (..), Span (..))
-import Names (Ident, getOriginalName', renameBack)
+import Names (Ident (Ident))
 import Relude hiding (All, First, intercalate)
-import Text.Megaparsec (unPos)
-import Utils (indent, quote)
+import Text.Megaparsec.Error qualified as P
+import Utils (quote)
 
-data RnError
-    = UnboundVariable SourceInfo Ident
-    | ConflictingDefinitionArgument SourceInfo Ident
-    | DuplicateToplevels SourceInfo Ident
-    deriving (Show)
+data Error
+    = Keyword Text
+    | WildCardName
+    | UnboundVariable Ident
+    | MoreInfo Text
+    | ConflictingDefinitionArgument Ident
+    | DuplicateToplevels Ident
+    | TyExpectedGot [TypeTc] TypeTc
+    | ImmutableVariable Ident
+    | EmptyReturnNonUnit TypeTc
+    | ApplyNonFunction TypeTc
+    | PartiallyAppliedFunction Int Int
+    | TooManyArguments Int Int
+    | AssignNonVariable Ident
+    | ExpectingImmutable
+    | TypeMustBeKnown Ident
+    | ExpectedTyGotLambda TypeTc
+    | ExpectedLambdaNArgs Int Int
+    | ExpectedPatNArgs PatternRn Int Int
+    | BreakOutsideLoop
+    | MissingReturn Ident
+    | UnreachableStatement
+    deriving (Show, Eq, Ord)
 
-data TcError
-    = TyExpectedGot SourceInfo [ExprRn] [TypeTc] TypeTc
-    | ImmutableVariable SourceInfo [ExprRn] Ident
-    | EmptyReturnNonUnit SourceInfo [ExprRn] TypeTc
-    | ApplyNonFunction SourceInfo [ExprRn] TypeTc
-    | PartiallyAppliedFunction SourceInfo [ExprRn] Int Int
-    | TooManyArguments SourceInfo [ExprRn] Int Int
-    | AssignNonVariable SourceInfo [ExprRn] Ident
-    | ExpectingImmutable SourceInfo [ExprRn]
-    | TypeMustBeKnown SourceInfo [ExprRn] Ident
-    | ExpectedTyGotLambda SourceInfo [ExprRn] TypeTc
-    | ExpectedLambdaNArgs SourceInfo [ExprRn] Int Int
-    | ExpectedPatNArgs SourceInfo [ExprRn] PatternRn Int Int
-    deriving (Show)
+instance P.ShowErrorComponent Error where
+    showErrorComponent = \case
+        Keyword word -> "'" <> Text.unpack word <> "' is a keyword"
+        WildCardName -> "Can not use '_' as a variable name"
 
-data ChError
-    = BreakOutsideLoop SourceInfo
-    | MissingReturn SourceInfo Ident
-    | UnreachableStatement SourceInfo
-    deriving (Show)
+instance HasHints Error Text where
+    hints = \case
+        WildCardName -> ["Rename the identifier"]
+        Keyword keyword -> ["Add underscore at the end"]
 
-data TcWarning = MakeExpressionBreak SourceInfo ExprTc
-    deriving (Show)
-
-class Report a where
-    report :: a -> Text
-
-instance (Report a) => Report [a] where
-    report xs = intercalate "\n\n" $ fmap report xs
-
-instance Report RnError where
-    report = reportRnError
-
-instance Report TcError where
-    report = reportTcError
-
-instance Report TcWarning where
-    report = show
-
-instance Report ChError where
-    report = show
-
-reportRnError :: RnError -> Text
-reportRnError err = case err of
-    UnboundVariable info name ->
-        combineRn
-            info
-            (unwords ["Variable", quote $ pThing name, "not in scope"])
-    ConflictingDefinitionArgument info name -> combineRn info (unwords ["Conflicting definitions for", quote $ pThing name])
-    DuplicateToplevels info name -> combineRn info (unwords ["Definition", quote $ pThing name, "already declared earlier"])
-
-reportTcError :: TcError -> Text
-reportTcError err = case err of
-    TyExpectedGot info currExpr expecteds got ->
-        combineTc
-            info
-            currExpr
-            ( unwords
-                [ "Expected type"
-                , intercalate ", " $ fmap (quote . pThing) expecteds
-                , "but got"
-                , quote (pThing got)
-                ]
-            )
-    ImmutableVariable info currExpr name ->
-        combineTc
-            info
-            currExpr
-            (unwords ["Can not mutate immutable variable", quote (pThing name)])
-    EmptyReturnNonUnit info currExpr ty ->
-        combineTc
-            info
-            currExpr
-            (unwords ["Expected a return type of", quote (pThing ty), "but an empty return has type ()"])
-    ApplyNonFunction info currExpr ty ->
-        combineTc
-            info
-            currExpr
-            (unwords ["Can not apply an expression of type", quote (pThing ty)])
-    PartiallyAppliedFunction info currExpr expected got ->
-        combineTc
-            info
-            currExpr
-            ( unwords
-                ["Missing argument to function application, got", show got <> ",", "but expected", show expected]
-            )
-    TooManyArguments info currExpr expected got ->
-        combineTc
-            info
-            currExpr
-            ( unwords
-                ["Too many arguments to function application, got", show got <> ",", "but expected", show expected]
-            )
-    AssignNonVariable info currExpr name ->
-        combineTc
-            info
-            currExpr
-            (unwords ["Can not assign an expression to the non-variable", quote (pThing name)])
-    ExpectingImmutable info currExpr ->
-        combineTc
-            info
-            currExpr
-            (unwords ["Expecting an immutable variable, but got a mutable one"])
-    TypeMustBeKnown info currExpr name ->
-        combineTc
-            info
-            currExpr
-            (unwords ["Type for", quote (pThing name), "must be known at this point"])
-    ExpectedTyGotLambda info currExpr ty ->
-        combineTc
-            info
-            currExpr
-            (unwords ["Expected type", quote (pThing ty), "but got a lambda expression"])
-    ExpectedLambdaNArgs info currExpr expected got ->
-        combineTc
-            info
-            currExpr
-            ( unwords
-                ["Expected a lambda that takes", quote (show expected), "arguments, but it takes", quote (show got)]
-            )
-    ExpectedPatNArgs info currExpr pat expected got ->
-        combineTc
-            info
-            currExpr
-            ( unwords
-                [ "The pattern"
-                , quote (pThing pat)
-                , "has"
-                , show got
-                , "matched fields,"
-                , "but the constructor expects"
-                , show expected
-                , "matched fields"
-                ]
-            )
-
-combineRn :: SourceInfo -> Text -> Text
-combineRn info msg = mconcat [reportSourceInfo info, ":\n", indent 2 ("* " <> msg)]
-
-combineTc :: SourceInfo -> [ExprRn] -> Text -> Text
-combineTc info expr msg =
-    let lastExpr = viaNonEmpty last expr
-        line = Nothing -- fmap (subtract 1 . unPos . fst . start) info.spanInfo
-     in mconcat
-            [ "\n"
-            , reportSourceInfo info
-            , ":\n"
-            , indent 4 msg
-            , "\n"
-            , case lastExpr of
-                Nothing -> ""
-                Just expr ->
-                    indent
-                        4
-                        ("\n" <> Text.unlines (barAndLine line $ Text.lines (pThing expr)))
+reportError :: Error -> Text
+reportError err = case err of
+    UnboundVariable (Ident name) -> "cannot find variable `" <> name <> "` in this scope"
+    ConflictingDefinitionArgument (Ident name) -> "identifier `" <> name <> "` is bound more than once in here"
+    MoreInfo info -> info
+    TyExpectedGot expecteds got ->
+        Text.unwords
+            [ "Expected type"
+            , Text.intercalate ", " $ fmap (quote . pThing) expecteds
+            , "but got"
+            , quote (pThing got)
             ]
 
-barAndLine :: Maybe Int -> [Text] -> [Text]
-barAndLine n ys = go n ys
-  where
-    go _ [] = []
-    go Nothing (x : xs) = "  |  " <> x : go Nothing xs
-    go (Just line) (x : xs) =
-        "  "
-            <> show line
-            <> Text.replicate (maxIndent n ys - length (show @String line) + 1) " "
-            <> "|  "
-            <> x
-            : go (Just $ line + 1) xs
-      where
-        maxIndent Nothing _ = 0
-        maxIndent (Just line) xs = length $ show @String $ line + length xs
+newtype TcWarning = MakeExpressionBreak ExprTc
+    deriving (Show)
 
-reportSourceInfo :: SourceInfo -> Text
-reportSourceInfo info = do
-    let path = pack info.sourceFile
-    let pos = do
-            let (Span (startRow, startCol) (_endRow, _endCol)) = info.spanInfo
-            pure $ mconcat [show $ unPos startRow, ":", show $ unPos startCol]
-    mconcat [path, ":", fromMaybe "?:?" pos]
+reportSimple ::
+    (MonadValidate [Diagnose.Report msg] m) => msg -> [(Diagnose.Position, Diagnose.Marker msg)] -> m ()
+reportSimple msg markers = report msg markers []
 
-tyExpectedGot' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) =>
-    SourceInfo ->
-    [TypeTc] ->
-    TypeTc ->
-    m a
-tyExpectedGot' a c d = do
-    exprStack <- view exprStack
-    refute (return $ TyExpectedGot a exprStack c d)
-
-tyExpectedGot ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) =>
-    SourceInfo ->
-    [TypeTc] ->
-    TypeTc ->
+report ::
+    (MonadValidate [Diagnose.Report msg] m) =>
+    msg ->
+    [(Diagnose.Position, Diagnose.Marker msg)] ->
+    [Diagnose.Note msg] ->
     m ()
-tyExpectedGot a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ TyExpectedGot a exprStack c d)
-
-immutableVariable' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m a
-immutableVariable' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    refute (return $ ImmutableVariable a exprStack name)
-
-immutableVariable ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m ()
-immutableVariable a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    dispute (return $ ImmutableVariable a exprStack name)
-
-emptyReturnNonUnit' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
-emptyReturnNonUnit' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ EmptyReturnNonUnit a exprStack c)
-
-emptyReturnNonUnit ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
-emptyReturnNonUnit a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ EmptyReturnNonUnit a exprStack c)
-
-applyNonFunction' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
-applyNonFunction' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ ApplyNonFunction a exprStack c)
-
-applyNonFunction ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
-applyNonFunction a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ ApplyNonFunction a exprStack c)
-
-partiallyAppliedFunction' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
-partiallyAppliedFunction' a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ PartiallyAppliedFunction a exprStack c d)
-
-partiallyAppliedFunction ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
-partiallyAppliedFunction a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ PartiallyAppliedFunction a exprStack c d)
-
-tooManyArguments' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
-tooManyArguments' a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ TooManyArguments a exprStack c d)
-
-tooManyArguments ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
-tooManyArguments a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ TooManyArguments a exprStack c d)
-
-assignNonVariable' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m a
-assignNonVariable' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    refute (return $ AssignNonVariable a exprStack name)
-
-assignNonVariable ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m ()
-assignNonVariable a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    dispute (return $ AssignNonVariable a exprStack name)
-
-expectingImmutable' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> m a
-expectingImmutable' a = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ ExpectingImmutable a exprStack)
-
-expectingImmutable ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> m ()
-expectingImmutable a = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ ExpectingImmutable a exprStack)
-
-typeMustBeKnown' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m a
-typeMustBeKnown' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    refute (return $ TypeMustBeKnown a exprStack name)
-
-typeMustBeKnown ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m ()
-typeMustBeKnown a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    dispute (return $ TypeMustBeKnown a exprStack name)
-
-expectedTyGotLambda' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
-expectedTyGotLambda' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ ExpectedTyGotLambda a exprStack c)
-
-expectedTyGotLambda ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
-expectedTyGotLambda a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ ExpectedTyGotLambda a exprStack c)
-
-expectedLambdaNArgs' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
-expectedLambdaNArgs' a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ ExpectedLambdaNArgs a exprStack c d)
-
-expectedLambdaNArgs ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
-expectedLambdaNArgs a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ ExpectedLambdaNArgs a exprStack c d)
-
-expectedPatNArgs ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m ()
-expectedPatNArgs loc pat expected got = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    dispute (return $ ExpectedPatNArgs loc exprStack pat expected got)
-
-expectedPatNArgs' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m a
-expectedPatNArgs' loc pat expected got = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    refute (return $ ExpectedPatNArgs loc exprStack pat expected got)
-
-$(gen All "RnError")
-$(gen All "ChError")
+report msg markers hints = dispute [Diagnose.Err Nothing msg markers hints]

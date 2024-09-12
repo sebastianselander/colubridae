@@ -1,5 +1,6 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE LambdaCase #-}
+
 module Backend.Types where
 
 import Relude hiding (Type)

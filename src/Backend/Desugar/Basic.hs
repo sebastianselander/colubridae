@@ -22,12 +22,13 @@ import Data.Tuple.Extra (uncurry3)
 import Frontend.Renamer.Types qualified as Rn (Boundedness (..))
 import Frontend.Typechecker.Types (stmtType, varType)
 import Frontend.Typechecker.Types qualified as Tc
-import Frontend.Types (NoExtField (NoExtField), SourceInfo)
+import Frontend.Types (NoExtField (NoExtField))
 import Frontend.Types qualified as Tc
 import Names (Ident (..), Names, existName, insertName)
 import Origin (Origin (..))
 import Relude hiding (Type, fromList, toList)
 import Utils (listify', mapWithIndexM)
+import Error.Diagnose (Position)
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -302,7 +303,7 @@ dsExpr = \case
         named $ pure $ Typed ty $ uncurry (Match scrutinee) matchArms
 
 -- TODO: Really reconsider if this is the logic we want
-extractCatch :: SourceInfo -> [Either MatchArm Catch] -> DsM ([MatchArm], Catch)
+extractCatch :: Position -> [Either MatchArm Catch] -> DsM ([MatchArm], Catch)
 extractCatch loc arms = (go mempty (lefts arms),) <$> maybe nonexhaustive pure (listToMaybe $ rights arms)
   where
     nonexhaustive :: DsM Catch

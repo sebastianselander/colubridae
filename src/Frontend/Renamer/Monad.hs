@@ -27,7 +27,7 @@ module Frontend.Renamer.Monad
     ) where
 
 import Control.Lens hiding ((<|))
-import Control.Monad.Validate (MonadValidate, Validate, runValidate)
+import Control.Monad.Validate (MonadValidate, Validate, runValidate, mapErrors)
 import Data.List.NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -35,9 +35,9 @@ import Data.Set qualified as Set
 import Frontend.Builtin (builtInNames)
 import Frontend.Error
 import Frontend.Renamer.Types (Boundedness (..))
-import Frontend.Types (SourceInfo)
 import Names (Ident (..))
 import Relude hiding (Map, head)
+import qualified Error.Diagnose as Diagnose
 
 data Env = Env
     { _newToOld :: Map Ident Ident
@@ -54,14 +54,14 @@ newtype Ctx = Ctx {_definitions :: Set Ident}
 $(makeLenses ''Env)
 $(makeLenses ''Ctx)
 
-newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
+newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [Diagnose.Report Error])) a}
     deriving
         ( Functor
         , Applicative
         , Monad
         , MonadState Env
         , MonadReader Ctx
-        , MonadValidate [RnError]
+        , MonadValidate [Diagnose.Report Error]
         )
 
 emptyEnv :: Env
@@ -70,10 +70,10 @@ emptyEnv = Env mempty mempty (return mempty) mempty mempty
 emptyCtx :: Ctx
 emptyCtx = Ctx builtInNames
 
-runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
+runGen :: Env -> Ctx -> Gen a -> Validate [Diagnose.Report Text] a
 runGen env ctx =
-    runValidate
-        . flip runReaderT ctx
+    mapErrors (fmap (fmap reportError)) .
+        flip runReaderT ctx
         . flip evalStateT env
         . runGen'
 
@@ -132,10 +132,10 @@ resetArgs :: MonadState Env m => m ()
 resetArgs = modifying arguments mempty
 
 checkAndinsertConstrutor ::
-    (MonadValidate [RnError] m, MonadState Env m) => SourceInfo -> Ident -> m ()
+    (MonadValidate [Diagnose.Report Error] m, MonadState Env m) => Diagnose.Position -> Ident -> m ()
 checkAndinsertConstrutor loc name = do
     uses constructors (Set.member name) >>= \case
-        True -> conflictingDefinitionArgument loc name
+        True -> undefined
         False -> modifying constructors (Set.insert name)
 
 newContext :: Gen a -> Gen a

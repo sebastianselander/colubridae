@@ -8,13 +8,13 @@ import Control.Monad.Reader (MonadReader)
 import Data.Map (Map)
 import Frontend.Renamer.Types (ExprRn, FnRn)
 import Frontend.Typechecker.Types (TypeTc)
-import Frontend.Types (SourceInfo)
 import Names (Ident, Names)
 import Relude (Show)
+import Error.Diagnose (Position)
 
 data Ctx = Ctx
-    { _functions :: Map Ident (TypeTc, SourceInfo)
-    , _constructors :: Map Ident (TypeTc, SourceInfo)
+    { _functions :: Map Ident (TypeTc, Position)
+    , _constructors :: Map Ident (TypeTc, Position)
     , _returnType :: TypeTc
     , _currentFun :: FnRn
     , _exprStack :: [ExprRn]

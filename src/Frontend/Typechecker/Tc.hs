@@ -12,6 +12,7 @@ import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Data (Data)
 import Data.Map.Strict qualified as Map
+import Error.Diagnose qualified as Diagnose
 import Frontend.Builtin (builtIns)
 import Frontend.Error
 import Frontend.Renamer.Types
@@ -25,7 +26,7 @@ import Relude.Unsafe (fromJust)
 import Utils (chain, listify')
 
 newtype Env = Env
-    { _variables :: Map Ident (TypeTc, SourceInfo)
+    { _variables :: Map Ident (TypeTc, Diagnose.Position)
     }
     deriving (Show)
 
@@ -33,57 +34,57 @@ $(makeLenses ''Env)
 
 newtype TcM a = Tc
     { runTc ::
-        StateT Env (ReaderT Ctx (ValidateT [TcError] (Writer [TcWarning]))) a
+        StateT Env (ReaderT Ctx (ValidateT [Diagnose.Report Error] (Writer [TcWarning]))) a
     }
     deriving
         ( Functor
         , Applicative
         , Monad
         , MonadReader Ctx
-        , MonadValidate [TcError]
+        , MonadValidate [Diagnose.Report Error]
         , MonadState Env
         )
 
-run :: Ctx -> Env -> TcM a -> (Either [TcError] a, [TcWarning])
+run :: Ctx -> Env -> TcM a -> (Either [Diagnose.Report Error] a, [TcWarning])
 run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT env . runTc
 
-getFuns :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
+getFuns :: (Data a) => a -> [(Ident, (TypeTc, Diagnose.Position))]
 getFuns = listify' f
   where
-    f :: FnRn -> Maybe (Ident, (TypeTc, SourceInfo))
+    f :: FnRn -> Maybe (Ident, (TypeTc, Diagnose.Position))
     f (Fn info name args returnType _) =
         let funTy = TyFunX NoExtField (fmap typeOf args) (typeOf returnType)
          in Just (name, (funTy, info))
 
-getCons :: (Data a) => a -> [(Ident, (TypeTc, SourceInfo))]
+getCons :: (Data a) => a -> [(Ident, (TypeTc, Diagnose.Position))]
 getCons = concat . listify' f
   where
-    f :: AdtRn -> Maybe [(Ident, (TypeTc, SourceInfo))]
+    f :: AdtRn -> Maybe [(Ident, (TypeTc, Diagnose.Position))]
     f (AdtX _ name cons) =
         let returnType = TyConX NoExtField name
          in Just $ fmap (g returnType) cons
       where
-        g :: TypeTc -> ConstructorRn -> (Ident, (TypeTc, SourceInfo))
+        g :: TypeTc -> ConstructorRn -> (Ident, (TypeTc, Diagnose.Position))
         g returnType = \case
             EnumCons loc name -> (name, (returnType, loc))
             FunCons loc name argTys ->
                 (name, (TyFunX NoExtField (fmap typeOf argTys) returnType, loc))
 
-tc :: Names -> ProgramRn -> (Either [TcError] ProgramTc, [TcWarning])
+tc :: MonadValidate (Diagnose.Diagnostic Text) m => Names -> ProgramRn -> m ProgramTc
 tc names (ProgramX NoExtField defs) =
     case first partitionEithers $ unzip $ fmap (tcDefs names funTable conTable) defs of
-        (([], defs), warnings) -> (Right $ ProgramX NoExtField defs, mconcat warnings)
-        ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
+        (([], defs), warnings) -> undefined --(Right $ ProgramX NoExtField defs, mconcat warnings)
+        ((errs, _), warnings) -> undefined --(Left $ foldl' Diagnose.addReport mempty (mconcat errs), mconcat warnings)
   where
     funTable = Map.fromList $ getFuns defs
     conTable = Map.fromList $ getCons defs
 
 tcDefs ::
     Names ->
-    Map Ident (TypeTc, SourceInfo) ->
-    Map Ident (TypeTc, SourceInfo) ->
+    Map Ident (TypeTc, Diagnose.Position) ->
+    Map Ident (TypeTc, Diagnose.Position) ->
     DefRn ->
-    (Either [TcError] DefTc, [TcWarning])
+    (Either [Diagnose.Report Error] DefTc, [TcWarning])
 tcDefs names funTable conTable (DefFn fn) =
     first (fmap DefFn) $ tcFunction names funTable conTable fn
 tcDefs _ _ _ (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
@@ -101,10 +102,10 @@ inferConstructor ty = \case
 
 tcFunction ::
     Names ->
-    Map Ident (TypeTc, SourceInfo) ->
-    Map Ident (TypeTc, SourceInfo) ->
+    Map Ident (TypeTc, Diagnose.Position) ->
+    Map Ident (TypeTc, Diagnose.Position) ->
     FnRn ->
-    (Either [TcError] FnTc, [TcWarning])
+    (Either [Diagnose.Report Error] FnTc, [TcWarning])
 tcFunction names funTable conTable fun@(Fn _ _ args rt _) =
     let varTable =
             foldr
@@ -149,7 +150,7 @@ tcBlock expectedTy (BlockX info statements tailExpression) = do
     stmts <- mapM infStmt statements
     expr <- case tailExpression of
         Nothing -> do
-            unless (expectedTy == Unit) (tyExpectedGot info [expectedTy] Unit)
+            unless (expectedTy == Unit) undefined
             pure Nothing
         Just tail -> Just <$> tcExpr expectedTy tail
     pure $ BlockX (info, maybe Unit typeOf expr) stmts expr
@@ -221,19 +222,13 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                         | argTysLength < rLength -> do
                             retTy <-
                                 Any
-                                    <$ tooManyArguments
-                                        info
-                                        argTysLength
-                                        rLength
+                                    <$ undefined
                             r <- mapM infExpr r
                             pure $ AppX (info, retTy) l r
                         | argTysLength > rLength -> do
                             retTy <-
                                 Any
-                                    <$ partiallyAppliedFunction
-                                        info
-                                        argTysLength
-                                        rLength
+                                    <$ undefined
                             r <- mapM infExpr r
                             pure $ AppX (info, retTy) l r
                         | otherwise -> do
@@ -241,7 +236,7 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
                             r <- zipWithM tcExpr argTys r
                             pure $ AppX (info, retTy) l r
                 ty -> do
-                    retTy <- Any <$ applyNonFunction info ty
+                    retTy <- Any <$ undefined
                     r <- mapM infExpr r
                     pure $ AppX (info, retTy) l r
         tcApp (typeOf l)
@@ -253,7 +248,7 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
     AssX (info, bind) name op expr -> do
         (ty, info) <- case bind of
             Toplevel ->
-                assignNonVariable @TcM info
+                undefined
                     <$> views Ctx.names (getOriginalName' name)
                     >> pure (Any, info)
             _ -> lookupVar name
@@ -264,30 +259,30 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
             AddAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info [Int, Double] ty)
+                    (void undefined)
             SubAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info [Int, Double] ty)
+                    (void undefined)
             MulAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info [Int, Double] ty)
+                    (void undefined)
             DivAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info [Int, Double] ty)
+                    (void undefined)
             ModAssign ->
                 unless
                     (ty `elem` [Int, Double])
-                    (void $ tyExpectedGot info [Int, Double] ty)
+                    (void undefined)
             Assign -> pure ()
         pure $ AssX (StmtType Unit ty info, bind) name op expr
     RetX info mbExpr -> do
         returnType <- view Ctx.returnType
         case mbExpr of
             Nothing -> do
-                unless (returnType == Unit) (void $ emptyReturnNonUnit info returnType)
+                unless (returnType == Unit) (void undefined)
                 pure $ RetX (info, Unit) Nothing
             Just expr -> do
                 expr <- tcExpr returnType expr
@@ -326,7 +321,7 @@ infExpr currentExpr = Ctx.push currentExpr $ case currentExpr of
     LamX info args body -> do
         let insertArg (LamArgX (info, ty) name) = do
                 let ty' = fmap typeOf ty
-                ty <- maybe (Any <$ typeMustBeKnown info name) pure ty'
+                ty <- maybe (Any <$ undefined) pure ty'
                 insertVar name ty info
                 pure $ LamArgX ty name
         args <- mapM insertArg args
@@ -374,11 +369,11 @@ tcPat pattype currentPattern = case currentPattern of
                     pats <- zipWithM tcPat argtys pats
                     pure $ PFunConX (loc, pattype) conName pats
                 | otherwise -> do
-                    expectedPatNArgs loc currentPattern (length argtys) (length pats)
+                    undefined
                     pats <- zipWithM tcPat (repeat Any) pats
                     pure $ PFunConX (loc, pattype) conName pats
             other -> do
-                tyExpectedGot loc [pattype] other
+                undefined
                 pats <- zipWithM tcPat (repeat Any) pats
                 pure $ PFunConX (loc, pattype) conName pats
 
@@ -403,7 +398,7 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
             Neg -> do
                 expr <- infExpr expr
                 let ty = typeOf expr
-                unless (ty `elem` [Int, Double]) (tyExpectedGot info [Int, Double] ty)
+                unless (ty `elem` [Int, Double]) undefined
                 pure $ PrefixX (info, ty) op expr
     BinOpX info l op r -> do
         let typeOfOp = operatorType op
@@ -462,8 +457,8 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
                     lamArgs <- unifyLambdaArgs (zip argtys args)
                     body <- tcExpr retty body
                     pure $ LamX (info, expectedTy) lamArgs body
-                | otherwise -> expectedLambdaNArgs' info (length argtys) (length args)
-            _ -> expectedTyGotLambda' info expectedTy
+                | otherwise -> undefined
+            _ -> undefined
     MatchX loc scrutinee matchArms -> do
         scrutinee <- infExpr scrutinee
         let scrutType = typeOf scrutinee
@@ -472,7 +467,7 @@ tcExpr expectedTy currentExpr = Ctx.push currentExpr $ case currentExpr of
 
 -- | Unify the arguments of a lambda with the the given types
 unifyLambdaArgs ::
-    (MonadReader Ctx m, MonadValidate [TcError] m, MonadState Env m) =>
+    (MonadReader Ctx m, MonadValidate [Diagnose.Report Error] m, MonadState Env m) =>
     [(TypeTc, LamArgRn)] ->
     m [LamArgTc]
 unifyLambdaArgs [] = pure []
@@ -484,7 +479,7 @@ unifyLambdaArgs
         rest <- unifyLambdaArgs xs
         pure (LamArgX ty name : rest)
 
-hasInfo :: ExprTc -> SourceInfo
+hasInfo :: ExprTc -> Diagnose.Position
 hasInfo = \case
     LitX info _ -> fst info
     VarX (info, _, _) _ -> info
@@ -543,20 +538,23 @@ infLit = \case
     BoolLitX info b -> (Bool, BoolLitX info b)
     UnitLitX info -> (Unit, UnitLitX info)
 
-insertVar :: (MonadState Env m) => Ident -> TypeTc -> SourceInfo -> m ()
+insertVar :: (MonadState Env m) => Ident -> TypeTc -> Diagnose.Position -> m ()
 insertVar name ty info = modifying variables (Map.insert name (ty, info))
 
-lookupVar :: (MonadState Env m) => Ident -> m (TypeTc, SourceInfo)
-lookupVar name = uses variables (fromMaybe (error $ "INTERNAL ERROR: Could not find variable: " <> show name) . Map.lookup name)
+lookupVar :: (MonadState Env m) => Ident -> m (TypeTc, Diagnose.Position)
+lookupVar name =
+    uses
+        variables
+        (fromMaybe (error $ "INTERNAL ERROR: Could not find variable: " <> show name) . Map.lookup name)
 
-lookupCon :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
+lookupCon :: (MonadReader Ctx m) => Ident -> m (TypeTc, Diagnose.Position)
 lookupCon name = do
     views Ctx.constructors (fromJust . Map.lookup name)
 
 lookupVarTy :: (MonadState Env m) => Ident -> m TypeTc
 lookupVarTy = fmap fst . lookupVar
 
-lookupFun :: (MonadReader Ctx m) => Ident -> m (TypeTc, SourceInfo)
+lookupFun :: (MonadReader Ctx m) => Ident -> m (TypeTc, Diagnose.Position)
 lookupFun name = views Ctx.functions (fromJust . Map.lookup name)
 
 class TypeOf a where
@@ -600,14 +598,14 @@ instance TypeOf MatchArmTc where
     typeOf (MatchArmX _ _ body) = typeOf body
 
 instance TypeOf ArgTc where
-  typeOf (ArgX _ _ ty) = ty
+    typeOf (ArgX _ _ ty) = ty
 
 instance TypeOf ArgRn where
-  typeOf (ArgX _ _ ty) = typeOf ty
+    typeOf (ArgX _ _ ty) = typeOf ty
 
 unify ::
-    (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m, TypeOf a) =>
-    SourceInfo ->
+    (MonadReader Ctx m, MonadState Env m, MonadValidate [Diagnose.Report Error] m, TypeOf a) =>
+    Diagnose.Position ->
     TypeTc ->
     a ->
     m ()
@@ -615,8 +613,8 @@ unify info ty1 a = unify' info ty1 (typeOf a)
 
 -- | Unify two types. The first argument type *must* the expected one!
 unify' ::
-    (MonadState Env m, MonadValidate [TcError] m, MonadReader Ctx m) =>
-    SourceInfo ->
+    (MonadState Env m, MonadValidate [Diagnose.Report Error] m, MonadReader Ctx m) =>
+    Diagnose.Position ->
     TypeTc ->
     TypeTc ->
     m ()
@@ -624,14 +622,14 @@ unify' info ty1 ty2 = do
     case (ty1, ty2) of
         (TyLitX _ lit1, TyLitX _ lit2)
             | lit1 == lit2 -> pure ()
-            | otherwise -> void $ tyExpectedGot info [ty1] ty2
+            | otherwise -> void (reportSimple (TyExpectedGot [ty1] ty2) [(info, Diagnose.This (TyExpectedGot [ty1] ty2))])
         (TyFunX _ l1 r1, TyFunX _ l2 r2) -> do
-            unless (length l1 == length l2) (void $ tyExpectedGot info [ty1] ty2)
+            unless (length l1 == length l2) (void $ undefined)
             zipWithM_ (unify' info) l1 l2
             unify' info r1 r2
         (TypeX AnyX, _) -> pure ()
         (_, TypeX AnyX) -> pure ()
         (TyConX NoExtField name1, TyConX NoExtField name2)
             | name1 == name2 -> pure ()
-            | otherwise -> tyExpectedGot info [ty1] ty2
-        (ty1, ty2) -> void $ tyExpectedGot info [ty1] ty2
+            | otherwise -> undefined
+        (ty1, ty2) -> undefined

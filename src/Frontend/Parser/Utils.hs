@@ -10,32 +10,19 @@ import Control.Lens (makeLenses)
 import Control.Lens.Getter (views)
 import Data.Map qualified as Map
 import Data.Maybe (fromJust)
-import Data.Text (pack, unpack)
-import Frontend.Error (Report, report)
+import Data.Text (pack)
 import Frontend.Types
 import Names (Ident (..))
 import Relude hiding (span)
-import Text.Megaparsec (ParseErrorBundle, Pos, customFailure, (<?>))
+import Text.Megaparsec (customFailure, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as L
-import Text.Megaparsec.Error (errorBundlePretty)
+import Error.Diagnose (Position(..))
+import Frontend.Error (Error (..))
 
-type Parser = P.ParsecT CustomParseError Text (Reader (BindingPowerTable PrefixOp BinOp Void))
+type Parser = P.ParsecT Error Text (Reader (BindingPowerTable PrefixOp BinOp Void))
 
-{-| The order of the errors matters here, the one with the 'greatest' ord
-takes priority if more than one error is thrown *I think*
--}
-data CustomParseError = Keyword Text | WildCardName
-    deriving (Eq, Ord, Show)
-
-instance P.ShowErrorComponent CustomParseError where
-    showErrorComponent = \case
-           Keyword word -> "'" <> unpack word <> "' is a keyword"
-           WildCardName  -> "Can not use '_' as a variable name"
-
-instance Report (ParseErrorBundle Text CustomParseError) where
-    report = pack . errorBundlePretty
 
 keywords :: [Text]
 keywords =
@@ -163,22 +150,25 @@ identifier = do
 
 data Before
 
-newtype GhostSpan a = GS (Pos, Pos)
+newtype GhostSpan a = GS (Int, Int)
 
 spanStart :: Parser (GhostSpan Before)
 spanStart = do
     pos <- P.getSourcePos
-    pure $ GS (pos.sourceLine, pos.sourceColumn)
+    pure $ GS (P.unPos pos.sourceLine, P.unPos pos.sourceColumn)
 
-spanEnd :: GhostSpan Before -> Parser SourceInfo
+spanEnd :: GhostSpan Before -> Parser Position
 spanEnd (GS before) = do
     after <- P.getSourcePos
-    let span = Span {start = before, end = (after.sourceLine, after.sourceColumn)}
-    let info = SourceInfo {sourceFile = after.sourceName, spanInfo = span}
+    let span = Position {
+        begin = before,
+        end = (P.unPos after.sourceLine, P.unPos after.sourceColumn),
+        file = after.sourceName
+    }
     lexeme (return ())
-    pure info
+    pure span
 
-span :: GhostSpan Before -> Parser a -> Parser (a, SourceInfo)
+span :: GhostSpan Before -> Parser a -> Parser (a, Position)
 span gs p = do
     res <- p
     info <- spanEnd gs

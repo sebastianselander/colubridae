@@ -4,8 +4,9 @@
 module Frontend.Renamer.Rn (rename) where
 
 import Control.Lens (locally)
-import Control.Monad.Validate (MonadValidate)
+import Control.Monad.Validate (MonadValidate, Validate)
 import Data.Set qualified as Set
+import Error.Diagnose qualified as Diagnose
 import Frontend.Builtin (builtInNames)
 import Frontend.Error
 import Frontend.Parser.Types
@@ -16,8 +17,8 @@ import Names (Ident (..), Names, mkNames)
 import Relude
 import Utils (listify')
 
-rename :: ProgramPar -> Either [RnError] (ProgramRn, Names)
-rename = runGen emptyEnv emptyCtx . rnProgram
+rename :: ProgramPar -> Validate [Diagnose.Report Text] (ProgramRn, Names)
+rename program = runGen emptyEnv emptyCtx $ rnProgram program
 
 rnProgram :: ProgramPar -> Gen (ProgramRn, Names)
 rnProgram program@(ProgramX a defs) = do
@@ -30,14 +31,14 @@ rnProgram program@(ProgramX a defs) = do
     names <- names
     pure (ProgramX a defs, mkNames names)
 
-uniqueDefs :: (MonadValidate [RnError] m) => [(SourceInfo, Ident)] -> m ()
+uniqueDefs :: (MonadValidate [Diagnose.Report Error] m) => [(Diagnose.Position, Ident)] -> m ()
 uniqueDefs = go builtInNames
   where
-    go :: (MonadValidate [RnError] m) => Set Ident -> [(SourceInfo, Ident)] -> m ()
+    go :: (MonadValidate [Diagnose.Report Error] m) => Set Ident -> [(Diagnose.Position, Ident)] -> m ()
     go _ [] = pure ()
     go seen ((info, name) : xs) =
         if Set.member name seen
-            then duplicateToplevels info name
+            then undefined
             else go (Set.insert name seen) xs
 
 rnFunction :: FnPar -> Gen FnRn
@@ -78,7 +79,17 @@ rnExpr = \case
     LitX info lit -> LitX info <$> rnLit lit
     VarX info variable -> do
         (bind, name) <-
-            maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
+            maybe
+                ( (Free, Ident "unbound")
+                    <$ reportSimple
+                        (UnboundVariable variable)
+                        [
+                            ( info
+                            , Diagnose.This (MoreInfo "not found in this scope")
+                            )
+                        ]
+                )
+                pure
                 =<< maybe (fmap (Constructor,) <$> boundCons variable) (pure . Just)
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
                 =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
@@ -100,7 +111,19 @@ rnExpr = \case
         pure $ LetX (info, ty) name' expr
     AssX info variable op expr -> do
         (bind, name) <-
-            maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
+            maybe
+                ( (Free, Ident "unbound")
+                    <$ reportSimple
+                        (UnboundVariable variable)
+                        [
+                            ( info
+                            , Diagnose.This
+                                ( MoreInfo "not found in this scope"
+                                )
+                            )
+                        ]
+                )
+                pure
                 =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
         expr <- rnExpr expr
@@ -143,7 +166,13 @@ rnPattern = fmap snd . go mempty
     go :: [Ident] -> PatternPar -> Gen ([Ident], PatternRn)
     go seen = \case
         PVarX loc varName -> do
-            when (varName `elem` seen) (conflictingDefinitionArgument loc varName)
+            when
+                (varName `elem` seen)
+                ( reportSimple
+                    (ConflictingDefinitionArgument varName)
+                    [ (loc, Diagnose.This (MoreInfo "used in a pattern more than once here"))
+                    ]
+                )
             name <- insertVar varName
             pure (varName : seen, PVarX loc name)
         PEnumConX loc conName -> pure ([], PEnumConX loc conName)
@@ -158,17 +187,23 @@ rnPattern = fmap snd . go mempty
                 (seen'', pats) <- go' (seen <> seen') xs
                 pure (seen <> seen' <> seen'', pat : pats)
 
-rnLamArgs :: (MonadState Env m, MonadValidate [RnError] m) => [LamArgPar] -> m [LamArgRn]
+rnLamArgs ::
+    (MonadState Env m, MonadValidate [Diagnose.Report Error] m) => [LamArgPar] -> m [LamArgRn]
 rnLamArgs = fmap (reverse . snd) . foldlM f mempty
   where
     f ::
-        (MonadState Env m, MonadValidate [RnError] m) =>
+        (MonadState Env m, MonadValidate [Diagnose.Report Error] m) =>
         ([Ident], [LamArgRn]) ->
         LamArgPar ->
         m ([Ident], [LamArgRn])
     f (seen, acc) (LamArgX (info, ty) name) = do
         let seen' = name : seen
-        when (name `elem` seen) (conflictingDefinitionArgument info name)
+        when
+            (name `elem` seen)
+            ( reportSimple
+                (ConflictingDefinitionArgument name)
+                [(info, Diagnose.This (MoreInfo "used in a pattern more than once here"))]
+            )
         name <- insertArg name
         ty <- mapM rnType ty
         pure (seen', LamArgX (info, ty) name : acc)
@@ -182,29 +217,29 @@ rnLit = \case
     BoolLitX info lit -> pure $ BoolLitX info lit
     UnitLitX info -> pure $ UnitLitX info
 
-getAdtNames :: ProgramPar -> [(SourceInfo, Ident)]
+getAdtNames :: ProgramPar -> [(Diagnose.Position, Ident)]
 getAdtNames = listify' adtName
   where
-    adtName :: AdtPar -> Maybe (SourceInfo, Ident)
+    adtName :: AdtPar -> Maybe (Diagnose.Position, Ident)
     adtName (AdtX info name _) = Just (info, name)
 
-getFunctionNames :: ProgramPar -> [(SourceInfo, Ident)]
+getFunctionNames :: ProgramPar -> [(Diagnose.Position, Ident)]
 getFunctionNames = listify' fnName
   where
-    fnName :: FnPar -> Maybe (SourceInfo, Ident)
+    fnName :: FnPar -> Maybe (Diagnose.Position, Ident)
     fnName (Fn info name _ _ _) = Just (info, name)
 
-rnArgs :: (MonadState Env m, MonadValidate [RnError] m) => [ArgPar] -> m [ArgRn]
+rnArgs :: (MonadState Env m, MonadValidate [Diagnose.Report Error] m) => [ArgPar] -> m [ArgRn]
 rnArgs = fmap (reverse . snd) . foldlM f mempty
   where
     f ::
-        (MonadState Env m, MonadValidate [RnError] m) =>
+        (MonadState Env m, MonadValidate [Diagnose.Report Error] m) =>
         ([Ident], [ArgRn]) ->
         ArgPar ->
         m ([Ident], [ArgRn])
     f (seen, acc) (ArgX info name ty) = do
         let seen' = name : seen
-        when (name `elem` seen) (conflictingDefinitionArgument info name)
+        when (name `elem` seen) undefined
         name <- insertArg name
         ty <- rnType ty
         pure (seen', ArgX info name ty : acc)

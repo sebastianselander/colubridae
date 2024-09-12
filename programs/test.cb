@@ -1,0 +1,11 @@
+type List {
+    Nil,
+    Cons(int, Nil),
+}
+
+def main() {
+    match Nil {
+        Cons(x,x) => 1,
+    };
+    let f = \x x -> x;
+}

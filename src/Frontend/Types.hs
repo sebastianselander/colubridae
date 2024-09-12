@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -7,13 +5,8 @@ module Frontend.Types where
 
 import Data.Data (Data)
 import Data.Kind qualified
-import Data.Tuple.Extra (both)
-import GHC.Show (show)
 import Names
 import Relude hiding (Type, concat, intercalate, replicate)
-import Relude qualified
-import Text.Megaparsec (Pos, mkPos)
-import Text.Megaparsec.Pos (unPos)
 
 data NoExtField = NoExtField
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
@@ -21,38 +14,14 @@ data NoExtField = NoExtField
 data DataConCantHappen
     deriving (Show, Eq, Ord, Data, Typeable, Generic)
 
-data Span = Span
-    { start :: !(Pos, Pos)
-    , end :: !(Pos, Pos)
-    }
-    deriving (Eq, Ord, Data)
-
-emptyInfo :: SourceInfo
-emptyInfo = SourceInfo {sourceFile = "", spanInfo = emptySpan}
-
-emptySpan :: Span
-emptySpan = Span (mkPos 0, mkPos 0) (mkPos 0, mkPos 0)
-
-instance Show Span where
-    show Span {start, end} =
-        let (bl, bc) = both (Relude.show . unPos) start
-         in Relude.concat [bl, ":", bc]
-
-data SourceInfo = SourceInfo
-    { spanInfo :: !Span
-    , sourceFile :: !FilePath
-    }
-    deriving (Eq, Ord, Data)
-
-instance Show SourceInfo where
-    show info = info.sourceFile <> ":" <> Relude.show info.spanInfo
-
 -- Program
 data ProgramX a = ProgramX !(XProgram a) [DefX a]
 type family XProgram a
 
 deriving instance (ForallX Show a) => Show (ProgramX a)
 deriving instance (ForallX Typeable a) => Typeable (ProgramX a)
+deriving instance (ForallX Eq a) => Eq (ProgramX a)
+deriving instance (ForallX Ord a) => Ord (ProgramX a)
 
 -- Definition
 data DefX a
@@ -62,17 +31,23 @@ data DefX a
 type family XDef a
 deriving instance (ForallX Show a) => Show (DefX a)
 deriving instance (ForallX Typeable a) => Typeable (DefX a)
+deriving instance (ForallX Eq a) => Eq (DefX a)
+deriving instance (ForallX Ord a) => Ord (DefX a)
 
 data FnX a = Fn !(XFn a) Ident [ArgX a] (TypeX a) (BlockX a)
 type family XFn a
 
 deriving instance (ForallX Show a) => Show (FnX a)
 deriving instance (ForallX Typeable a) => Typeable (FnX a)
+deriving instance (ForallX Eq a) => Eq (FnX a)
+deriving instance (ForallX Ord a) => Ord (FnX a)
 
 data AdtX a = AdtX !(XAdt a) Ident [ConstructorX a]
 type family XAdt a
 deriving instance (ForallX Show a) => Show (AdtX a)
 deriving instance (ForallX Typeable a) => Typeable (AdtX a)
+deriving instance (ForallX Eq a) => Eq (AdtX a)
+deriving instance (ForallX Ord a) => Ord (AdtX a)
 
 data ConstructorX a
     = EnumCons (XEnumCons a) Ident
@@ -84,6 +59,8 @@ type family XEnumCons a
 type family XFunCons a
 deriving instance (ForallX Show a) => Show (ConstructorX a)
 deriving instance (ForallX Typeable a) => Typeable (ConstructorX a)
+deriving instance (ForallX Eq a) => Eq (ConstructorX a)
+deriving instance (ForallX Ord a) => Ord (ConstructorX a)
 
 -- Argument
 data ArgX a = ArgX !(XArg a) Ident (TypeX a)
@@ -91,6 +68,8 @@ type family XArg a
 
 deriving instance (ForallX Show a) => Show (ArgX a)
 deriving instance (ForallX Typeable a) => Typeable (ArgX a)
+deriving instance (ForallX Eq a) => Eq (ArgX a)
+deriving instance (ForallX Ord a) => Ord (ArgX a)
 
 -- Type
 data TypeX a
@@ -118,12 +97,16 @@ data TyLit = UnitX | StringX | IntX | DoubleX | CharX | BoolX
 
 deriving instance (ForallX Show a) => Show (TypeX a)
 deriving instance (ForallX Typeable a) => Typeable (TypeX a)
+deriving instance (ForallX Eq a) => Eq (TypeX a)
+deriving instance (ForallX Ord a) => Ord (TypeX a)
 
 data BlockX a = BlockX !(XBlock a) [StmtX a] (Maybe (ExprX a))
 type family XBlock a
 
 deriving instance (ForallX Show a) => Show (BlockX a)
 deriving instance (ForallX Typeable a) => Typeable (BlockX a)
+deriving instance (ForallX Eq a) => Eq (BlockX a)
+deriving instance (ForallX Ord a) => Ord (BlockX a)
 
 -- Statement
 data StmtX a
@@ -143,6 +126,8 @@ data AssignOp
 
 deriving instance (ForallX Show a) => Show (StmtX a)
 deriving instance (ForallX Typeable a) => Typeable (StmtX a)
+deriving instance (ForallX Eq a) => Eq (StmtX a)
+deriving instance (ForallX Ord a) => Ord (StmtX a)
 
 -- Expression
 data ExprX a
@@ -165,6 +150,8 @@ data ExprX a
 
 deriving instance (ForallX Show a) => Show (ExprX a)
 deriving instance (ForallX Typeable a) => Typeable (ExprX a)
+deriving instance (ForallX Eq a) => Eq (ExprX a)
+deriving instance (ForallX Ord a) => Ord (ExprX a)
 
 type family XExprStmt a
 type family XLit a
@@ -188,6 +175,8 @@ data MatchArmX a = MatchArmX !(XMatchArm a) (PatternX a) (ExprX a)
 
 deriving instance (ForallX Show a) => Show (MatchArmX a)
 deriving instance (ForallX Typeable a) => Typeable (MatchArmX a)
+deriving instance (ForallX Eq a) => Eq (MatchArmX a)
+deriving instance (ForallX Ord a) => Ord (MatchArmX a)
 
 type family XMatchArm a
 
@@ -198,6 +187,8 @@ data PatternX a
 
 deriving instance (ForallX Show a) => Show (PatternX a)
 deriving instance (ForallX Typeable a) => Typeable (PatternX a)
+deriving instance (ForallX Eq a) => Eq (PatternX a)
+deriving instance (ForallX Ord a) => Ord (PatternX a)
 
 type family XPVar a
 type family XPEnumCon a
@@ -208,6 +199,8 @@ type family XLamArg a
 
 deriving instance (ForallX Show a) => Show (LamArgX a)
 deriving instance (ForallX Typeable a) => Typeable (LamArgX a)
+deriving instance (ForallX Eq a) => Eq (LamArgX a)
+deriving instance (ForallX Ord a) => Ord (LamArgX a)
 
 data PrefixOp = Not | Neg
     deriving (Show, Eq, Ord, Data)
@@ -245,6 +238,8 @@ type family XUnitLit a
 
 deriving instance (ForallX Show a) => Show (LitX a)
 deriving instance (ForallX Typeable a) => Typeable (LitX a)
+deriving instance (ForallX Eq a) => Eq (LitX a)
+deriving instance (ForallX Ord a) => Ord (LitX a)
 
 type ForallX (c :: Data.Kind.Type -> Constraint) a =
     ( c (XApp a)

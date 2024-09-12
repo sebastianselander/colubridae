@@ -73,6 +73,8 @@ library
     , syb
     , template-haskell
     , optparse-applicative
+    , diagnose == 2.5.1
+    , data-default
 
   hs-source-dirs:   src
   default-language: GHC2021
@@ -85,6 +87,7 @@ executable colubridae
     , pretty-simple
     , relude
     , process
+    , diagnose == 2.5.1
 
   hs-source-dirs:   app
   default-language: GHC2021

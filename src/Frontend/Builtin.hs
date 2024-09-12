@@ -8,21 +8,21 @@ import Frontend.Renamer.Types (Rn)
 import Frontend.Typechecker.Types
 import Frontend.Types
     ( NoExtField (NoExtField),
-      SourceInfo (SourceInfo),
       TypeX (..),
       XTyFun,
       XTyLit,
-      emptySpan,
     )
 import Names (Ident (..))
 import Relude
+import Error.Diagnose qualified as Diagnose
+import Data.Default qualified as Default
 
 builtInNames :: Set Ident
 builtInNames = Set.fromList $ Map.keys (builtIns @Rn)
 
-builtIns :: (XTyFun a ~ NoExtField, XTyLit a ~ NoExtField) => Map Ident (TypeX a, SourceInfo)
+builtIns :: (XTyFun a ~ NoExtField, XTyLit a ~ NoExtField) => Map Ident (TypeX a, Diagnose.Position)
 builtIns =
     Map.fromList
-        [ (Ident "printInt", (TyFunX NoExtField [Int] Unit, SourceInfo emptySpan "Built in"))
-        , (Ident "printString", (TyFunX NoExtField [String] Unit, SourceInfo emptySpan "Built in"))
+        [ (Ident "printInt", (TyFunX NoExtField [Int] Unit, Default.def))
+        , (Ident "printString", (TyFunX NoExtField [String] Unit, Default.def))
         ]

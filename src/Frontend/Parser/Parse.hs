@@ -13,17 +13,25 @@ import Relude hiding (span)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
+import Error.Diagnose qualified as Diagnose
+import Error.Diagnose.Compat.Megaparsec (errorDiagnosticFromBundle)
+import Control.Monad.Validate (MonadValidate, refute)
+import Frontend.Error (Error (..))
 
 parse' ::
+    MonadValidate [Diagnose.Report Text] m =>
     BindingPowerTable PrefixOp BinOp Void ->
     String ->
     Text ->
-    Either (ParseErrorBundle Text CustomParseError) ProgramPar
-parse' table file =
-    flip runReader table
-        . P.runParserT (ProgramX NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof)) file
+    m ProgramPar
+parse' table file input = case flip runReader table $ P.runParserT (ProgramX NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof)) file input of
+    Right program -> pure program
+    Left errBundle -> refute $ Diagnose.reportsOf (toReport errBundle)
+  where
+    toReport :: ParseErrorBundle Text Error -> Diagnose.Diagnostic Text
+    toReport = errorDiagnosticFromBundle Nothing "Parse error" Nothing
 
-parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
+parse :: MonadValidate [Diagnose.Report Text] m => String -> Text -> m ProgramPar
 parse = parse' defaultBindingPowerTable
 
 pAdt :: Parser AdtPar
@@ -176,8 +184,9 @@ pAss = P.label "assignment" $ do
         name <- lexeme identifier
         assignOp <- lexeme pAssignOp
         pure (name, assignOp)
+    expr <- pExpr
     info <- spanEnd gs
-    AssX info name op <$> pExpr
+    pure $ AssX info name op expr
 
 pMatch :: Parser ExprPar
 pMatch = do
@@ -231,7 +240,7 @@ pAssignOp =
 pBlock :: Parser BlockPar
 pBlock = uncurry3 BlockX <$> pBlock'
 
-pBlock' :: Parser (SourceInfo, [StmtPar], Maybe ExprPar)
+pBlock' :: Parser (Diagnose.Position, [StmtPar], Maybe ExprPar)
 pBlock' = do
     gs <- spanStart
     (stmts, tail) <-

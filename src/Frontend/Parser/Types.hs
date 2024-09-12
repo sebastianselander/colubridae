@@ -6,6 +6,7 @@ module Frontend.Parser.Types where
 import Data.Data (Data)
 import Relude hiding (intercalate, replicate)
 import Frontend.Types
+import Error.Diagnose (Position(..))
 
 data Par
     deriving (Data)
@@ -41,42 +42,42 @@ deriving instance Data PatternPar
 
 type instance XProgram Par = NoExtField
 
-type instance XArg Par = SourceInfo
+type instance XArg Par = Position
 
 type instance XDef Par = DataConCantHappen
-type instance XFn Par = SourceInfo
+type instance XFn Par = Position
 
-type instance XAdt Par = SourceInfo
-type instance XFunCons Par = SourceInfo
-type instance XEnumCons Par = SourceInfo
+type instance XAdt Par = Position
+type instance XFunCons Par = Position
+type instance XEnumCons Par = Position
 type instance XConstructor Par = DataConCantHappen
 
-type instance XBlock Par = SourceInfo
+type instance XBlock Par = Position
 
 type instance XStmt Par = DataConCantHappen
 type instance XSExp Par = NoExtField
 
-type instance XLit Par = SourceInfo
-type instance XVar Par = SourceInfo
-type instance XPrefix Par = SourceInfo
-type instance XBinOp Par = SourceInfo
-type instance XExprStmt Par = SourceInfo
-type instance XApp Par = SourceInfo
-type instance XRet Par = SourceInfo
+type instance XLit Par = Position
+type instance XVar Par = Position
+type instance XPrefix Par = Position
+type instance XBinOp Par = Position
+type instance XExprStmt Par = Position
+type instance XApp Par = Position
+type instance XRet Par = Position
 type instance XEBlock Par = NoExtField
-type instance XBreak Par = SourceInfo
-type instance XIf Par = SourceInfo
-type instance XWhile Par = SourceInfo
-type instance XLet Par = (SourceInfo, Maybe TypePar)
-type instance XAss Par = SourceInfo
+type instance XBreak Par = Position
+type instance XIf Par = Position
+type instance XWhile Par = Position
+type instance XLet Par = (Position, Maybe TypePar)
+type instance XAss Par = Position
 type instance XExpr Par = DataConCantHappen
 
-type instance XMatchArm Par = SourceInfo
-type instance XMatch Par = SourceInfo
+type instance XMatchArm Par = Position
+type instance XMatch Par = Position
 
-type instance XPVar Par = SourceInfo
-type instance XPEnumCon Par = SourceInfo
-type instance XPFunCon Par = SourceInfo
+type instance XPVar Par = Position
+type instance XPEnumCon Par = Position
+type instance XPFunCon Par = Position
 
 type instance XIntLit Par = NoExtField
 type instance XDoubleLit Par = NoExtField
@@ -90,9 +91,10 @@ type instance XTyFun Par = NoExtField
 type instance XType Par = DataConCantHappen
 type instance XTyCon Par = NoExtField
 
-type instance XLoop Par = SourceInfo
-type instance XLam Par = SourceInfo
-type instance XLamArg Par = (SourceInfo, Maybe TypePar)
+type instance XLoop Par = Position
+type instance XLam Par = Position
+type instance XLamArg Par = (Position, Maybe TypePar)
 
 deriving instance Data (LamArgX Par)
     
+deriving instance Data Position

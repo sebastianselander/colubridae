@@ -7,18 +7,17 @@ import Data.Text (null)
 import Options ( Options(..), cmdlineParser )
 import System.Process
 import qualified Data.Text as Text
+import Error.Diagnose qualified as Diagnose
 
 main :: IO ()
 main = do
     Options {input, dumps} <- cmdlineParser
     contents <- decodeUtf8 <$> readFileBS input
     case runCompile input contents of
-        (Left err, debugs) -> do
-            hPutStrLn' stderr $ showDebugs dumps debugs
-            hPutStrLn' stderr err
+        (Left err) -> do
+            Diagnose.printDiagnostic stderr Diagnose.WithUnicode (Diagnose.TabSize 4) Diagnose.defaultStyle err
             exitFailure
-        (Right prg, debugs) -> do
-            hPutStrLn' stderr $ showDebugs dumps debugs
+        (Right prg) -> do
             writeFileText "out.ll" prg
             let process1 = proc "opt" ["-S", "--O3"]
             optimised <- readCreateProcess process1 (Text.unpack prg)

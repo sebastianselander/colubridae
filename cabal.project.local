@@ -1,1 +1,3 @@
 optimization: False
+package diagnose
+    flags: +megaparsec-compat

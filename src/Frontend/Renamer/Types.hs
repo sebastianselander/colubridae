@@ -8,6 +8,7 @@ import Frontend.Parser.Types
 import Frontend.Types
 import Prettyprinter
 import Relude
+import Error.Diagnose
 
 data Boundedness = Free | Bound | Toplevel | Constructor
     deriving (Show, Eq, Ord, Data)
@@ -67,20 +68,20 @@ type instance XBreak Rn = XBreak Par
 type instance XEBlock Rn = NoExtField
 type instance XIf Rn = XIf Par
 type instance XWhile Rn = XWhile Par
-type instance XLet Rn = (SourceInfo, Maybe TypeRn)
-type instance XAss Rn = (SourceInfo, Boundedness)
+type instance XLet Rn = (Position, Maybe TypeRn)
+type instance XAss Rn = (Position, Boundedness)
 type instance XSExp Rn = XSExp Par
 type instance XStmt Rn = DataConCantHappen
 
-type instance XMatchArm Rn = SourceInfo
-type instance XMatch Rn = SourceInfo
+type instance XMatchArm Rn = Position
+type instance XMatch Rn = Position
 
-type instance XPVar Rn = SourceInfo
-type instance XPEnumCon Rn = SourceInfo
-type instance XPFunCon Rn = SourceInfo
+type instance XPVar Rn = Position
+type instance XPEnumCon Rn = Position
+type instance XPFunCon Rn = Position
 
 type instance XLit Rn = XLit Par
-type instance XVar Rn = (SourceInfo, Boundedness)
+type instance XVar Rn = (Position, Boundedness)
 type instance XBinOp Rn = XBinOp Par
 type instance XPrefix Rn = XBinOp Par
 type instance XExprStmt Rn = XExprStmt Par
@@ -99,6 +100,6 @@ type instance XTyFun Rn = NoExtField
 type instance XType Rn = DataConCantHappen
 type instance XTyCon Rn = NoExtField
 
-type instance XLoop Rn = SourceInfo
+type instance XLoop Rn = Position
 type instance XLam Rn = XLam Par
-type instance XLamArg Rn = (SourceInfo, Maybe TypeRn)
+type instance XLamArg Rn = (Position, Maybe TypeRn)

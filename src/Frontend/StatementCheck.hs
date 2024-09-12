@@ -5,29 +5,30 @@
 module Frontend.StatementCheck (check) where
 
 import Control.Lens
-import Control.Monad.Validate (MonadValidate, Validate, runValidate)
+import Control.Monad.Validate (MonadValidate, Validate, runValidate, refute)
 import Frontend.Error
 import Frontend.Renamer.Types
 import Frontend.Types
 import Relude
+import qualified Error.Diagnose as Diagnose
 
 newtype Ctx = Ctx {_inLoop :: Bool}
     deriving (Show)
 
 $(makeLenses ''Ctx)
 
-newtype ChM a = ChM {runCh :: ReaderT Ctx (Validate [ChError]) a}
-    deriving (Functor, Applicative, Monad, MonadReader Ctx, MonadValidate [ChError])
+newtype ChM a = ChM {runCh :: ReaderT Ctx (Validate [Diagnose.Report Error]) a}
+    deriving (Functor, Applicative, Monad, MonadReader Ctx, MonadValidate [Diagnose.Report Error])
 
-runCheck :: Ctx -> ChM a -> Either [ChError] a
+runCheck :: Ctx -> ChM a -> Either [Diagnose.Report Error] a
 runCheck ctx = runValidate . flip runReaderT ctx . runCh
 
-check :: ProgramRn -> Either [ChError] ProgramRn
+check :: MonadValidate [Diagnose.Report Text] m => ProgramRn -> m ProgramRn
 check prg@(ProgramX NoExtField defs) = case lefts $ map checkDef defs of
     [] -> pure prg
-    xs -> Left $ concat xs
+    xs -> refute (fmap reportError <$> mconcat xs)
 
-checkFunction :: FnRn -> Either [ChError] ()
+checkFunction :: FnRn -> Either [Diagnose.Report Error] ()
 checkFunction (Fn info name _ returnType block) = runCheck (Ctx False) $ case returnType of
     TyLitX NoExtField UnitX -> breakBlock block
     _ -> case block of
@@ -36,11 +37,11 @@ checkFunction (Fn info name _ returnType block) = runCheck (Ctx False) $ case re
             breakBlock block
             returnBlock block >>= \case
                 True -> pure ()
-                False -> missingReturn info name
+                False -> undefined
 
-checkDef :: DefRn -> Either [ChError] ()
-checkDef (DefFn fn) = checkFunction fn
-checkDef (DefAdt _) = pure ()
+checkDef :: DefRn -> Either [Diagnose.Report Error] DefRn
+checkDef (DefFn fn) = checkFunction fn >> pure (DefFn fn)
+checkDef (DefAdt adt) = pure (DefAdt adt)
 
 breakBlock :: BlockRn -> ChM ()
 breakBlock (BlockX _ statements tail) = mapM_ breakStmt statements >> mapM_ breakExpr tail
@@ -65,7 +66,7 @@ breakExpr = \case
         if loop
             then pure ()
             else do
-                breakOutsideLoop info
+                undefined
     IfX _ expr true false -> do
         breakExpr expr
         breakBlock true
@@ -91,7 +92,7 @@ returnStmts (x : xs) = do
         False -> returnStmts xs
         True -> case xs of
             [] -> pure True
-            _ -> unreachableStatement (hasInfoStmt x) >> pure True
+            _ -> undefined
 
 returnStmt :: StmtRn -> ChM Bool
 returnStmt = \case
@@ -113,11 +114,11 @@ returnExpr = \case
         if
             | alwaysTrue expr
             , Just (BlockX info _ _) <- false ->
-                unreachableStatement info >> returnBlock true
+                undefined
             | alwaysTrue expr -> returnBlock true
             | alwaysFalse expr
             , BlockX info _ _ <- true ->
-                unreachableStatement info >> maybe (pure False) returnBlock false
+                undefined
             | otherwise -> (&&) <$> returnBlock true <*> maybe (pure False) returnBlock false
     WhileX _ expr block -> if alwaysTrue expr then returnBlock block else pure False
     LoopX _ block -> returnBlock block
@@ -135,11 +136,11 @@ alwaysTrue = const False
 alwaysFalse :: ExprRn -> Bool
 alwaysFalse = const False
 
-hasInfoStmt :: StmtRn -> SourceInfo
+hasInfoStmt :: StmtRn -> Diagnose.Position
 hasInfoStmt = \case
     SExprX NoExtField expr -> hasInfoExpr expr
 
-hasInfoExpr :: ExprRn -> SourceInfo
+hasInfoExpr :: ExprRn -> Diagnose.Position
 hasInfoExpr = \case
     LitX info _ -> info
     VarX (info, _) _ -> info

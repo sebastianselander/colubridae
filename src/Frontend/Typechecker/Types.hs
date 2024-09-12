@@ -12,6 +12,7 @@ import Relude hiding (Any)
 import Frontend.Types
 import Control.Lens (makeLenses)
 import Frontend.Renamer.Types (Boundedness)
+import Error.Diagnose (Position)
 
 data Tc deriving (Data)
 
@@ -30,8 +31,8 @@ type LamArgTc = LamArgX Tc
 type MatchArmTc = MatchArmX Tc
 type PatternTc = PatternX Tc
 
-type TcInfo = (SourceInfo, TypeTc)
-type TcInfoBound = (SourceInfo, TypeTc, Boundedness)
+type TcInfo = (Position, TypeTc)
+type TcInfoBound = (Position, TypeTc, Boundedness)
 
 deriving instance Data StmtTc
 deriving instance Data BlockTc
@@ -49,7 +50,7 @@ type instance XArg Tc = NoExtField
 type instance XDef Tc = DataConCantHappen
 type instance XFn Tc = NoExtField
 
-type instance XAdt Tc = SourceInfo
+type instance XAdt Tc = Position
 type instance XConstructor Tc = DataConCantHappen
 type instance XEnumCons Tc = TcInfo
 type instance XFunCons Tc = TcInfo
@@ -66,7 +67,7 @@ type instance XLet Tc = StmtType
 type instance XAss Tc = (StmtType, Boundedness)
 type instance XSExp Tc = NoExtField
 
-type instance XMatchArm Tc = SourceInfo
+type instance XMatchArm Tc = Position
 type instance XMatch Tc = TcInfo
 
 type instance XPVar Tc = TcInfo
@@ -97,9 +98,6 @@ type instance XLoop Tc = TcInfo
 type instance XLam Tc = TcInfo
 type instance XLamArg Tc = TypeTc
 
-deriving instance Eq TypeTc
-deriving instance Ord TypeTc
-
 pattern Any :: (XType a ~ MetaTy) => TypeX a
 pattern Any <- TypeX AnyX
     where
@@ -108,7 +106,7 @@ pattern Any <- TypeX AnyX
 data MetaTy = AnyX
     deriving (Show, Eq, Ord, Data)
 
-data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
+data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: Position}
     deriving (Show, Eq, Ord, Data, Typeable)
 $(makeLenses ''StmtType)
 
