@@ -4,26 +4,26 @@
 module Frontend.Parser.Types where
 
 import Data.Data (Data)
-import Relude hiding (intercalate, replicate)
+import Relude hiding (intercalate, replicate, Type)
 import Frontend.Types
 
 data Par
     deriving (Data)
 
-type ExprPar = ExprX Par
-type ProgramPar = ProgramX Par
-type LitPar = LitX Par
-type ArgPar = ArgX Par
-type DefPar = DefX Par
-type FnPar = FnX Par
-type AdtPar = AdtX Par
-type ConstructorPar = ConstructorX Par
-type TypePar = TypeX Par
-type BlockPar = BlockX Par
-type StmtPar = StmtX Par
-type LamArgPar = LamArgX Par
-type MatchArmPar = MatchArmX Par
-type PatternPar = PatternX Par
+type ExprPar = Expr Par
+type ProgramPar = Program Par
+type LitPar = Lit Par
+type ArgPar = Arg Par
+type DefPar = Def Par
+type FnPar = Fn Par
+type AdtPar = Adt Par
+type ConstructorPar = Constructor Par
+type TypePar = Type Par
+type BlockPar = Block Par
+type StmtPar = Stmt Par
+type LamArgPar = LamArg Par
+type MatchArmPar = MatchArm Par
+type PatternPar = Pattern Par
 
 deriving instance Data ExprPar
 deriving instance Data ProgramPar
@@ -94,5 +94,5 @@ type instance XLoop Par = SourceInfo
 type instance XLam Par = SourceInfo
 type instance XLamArg Par = (SourceInfo, Maybe TypePar)
 
-deriving instance Data (LamArgX Par)
+deriving instance Data (LamArg Par)
     

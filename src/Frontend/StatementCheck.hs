@@ -23,15 +23,15 @@ runCheck :: Ctx -> ChM a -> Either [ChError] a
 runCheck ctx = runValidate . flip runReaderT ctx . runCh
 
 check :: ProgramRn -> Either [ChError] ProgramRn
-check prg@(ProgramX NoExtField defs) = case lefts $ map checkDef defs of
+check prg@(Program NoExtField defs) = case lefts $ map checkDef defs of
     [] -> pure prg
     xs -> Left $ concat xs
 
 checkFunction :: FnRn -> Either [ChError] ()
 checkFunction (Fn info name _ returnType block) = runCheck (Ctx False) $ case returnType of
-    TyLitX NoExtField UnitX -> breakBlock block
+    TyLit NoExtField Unit -> breakBlock block
     _ -> case block of
-        BlockX _ _ (Just _) -> breakBlock block
+        Block _ _ (Just _) -> breakBlock block
         _ -> do
             breakBlock block
             returnBlock block >>= \case
@@ -43,46 +43,46 @@ checkDef (DefFn fn) = checkFunction fn
 checkDef (DefAdt _) = pure ()
 
 breakBlock :: BlockRn -> ChM ()
-breakBlock (BlockX _ statements tail) = mapM_ breakStmt statements >> mapM_ breakExpr tail
+breakBlock (Block _ statements tail) = mapM_ breakStmt statements >> mapM_ breakExpr tail
 
 breakStmt :: StmtRn -> ChM ()
 breakStmt = \case
-    SExprX NoExtField expr -> breakExpr expr
+    SExpr NoExtField expr -> breakExpr expr
 
 breakExpr :: ExprRn -> ChM ()
 breakExpr = \case
-    LitX _ _ -> pure ()
-    VarX _ _ -> pure ()
-    PrefixX _ _ r -> breakExpr r
-    BinOpX _ l _ r -> breakExpr l >> breakExpr r
-    AppX _ l rs -> breakExpr l >> mapM_ breakExpr rs
-    LetX _ _ expr -> breakExpr expr
-    AssX _ _ _ expr -> breakExpr expr
-    RetX _ _ -> pure ()
-    EBlockX NoExtField block -> breakBlock block
-    BreakX info _ -> do
+    Lit _ _ -> pure ()
+    Var _ _ -> pure ()
+    Prefix _ _ r -> breakExpr r
+    BinOp _ l _ r -> breakExpr l >> breakExpr r
+    App _ l rs -> breakExpr l >> mapM_ breakExpr rs
+    Let _ _ expr -> breakExpr expr
+    Ass _ _ _ expr -> breakExpr expr
+    Ret _ _ -> pure ()
+    EBlock NoExtField block -> breakBlock block
+    Break info _ -> do
         loop <- view inLoop
         if loop
             then pure ()
             else do
                 breakOutsideLoop info
-    IfX _ expr true false -> do
+    If _ expr true false -> do
         breakExpr expr
         breakBlock true
         mapM_ breakBlock false
-    WhileX _ expr block -> breakExpr expr >> locally inLoop (const True) (breakBlock block)
-    LoopX _ block -> locally inLoop (const True) (breakBlock block)
-    LamX _ _ body -> breakExpr body
-    MatchX _ scrutinee arms -> do
+    While _ expr block -> breakExpr expr >> locally inLoop (const True) (breakBlock block)
+    Loop _ block -> locally inLoop (const True) (breakBlock block)
+    Lam _ _ body -> breakExpr body
+    Match _ scrutinee arms -> do
         breakExpr scrutinee
         mapM_ breakMatchArm arms
 
 breakMatchArm :: MatchArmRn -> ChM ()
-breakMatchArm (MatchArmX _ _ expr) = breakExpr expr
+breakMatchArm (MatchArm _ _ expr) = breakExpr expr
 
 
 returnBlock :: BlockRn -> ChM Bool
-returnBlock (BlockX _ statements _) = returnStmts statements
+returnBlock (Block _ statements _) = returnStmts statements
 
 returnStmts :: [StmtRn] -> ChM Bool
 returnStmts [] = pure False
@@ -95,37 +95,37 @@ returnStmts (x : xs) = do
 
 returnStmt :: StmtRn -> ChM Bool
 returnStmt = \case
-    SExprX NoExtField expr -> returnExpr expr
+    SExpr NoExtField expr -> returnExpr expr
 
 returnExpr :: ExprRn -> ChM Bool
 returnExpr = \case
-    LitX _ _ -> pure False
-    VarX _ _ -> pure False
-    BinOpX _ l _ r -> (||) <$> returnExpr l <*> returnExpr r
-    PrefixX _ _ expr -> returnExpr expr
-    RetX _ _ -> pure True
-    EBlockX NoExtField block -> returnBlock block
-    AppX _ l rs -> (||) <$> returnExpr l <*> anyM returnExpr rs
-    LetX _ _ expr -> returnExpr expr
-    AssX _ _ _ expr -> returnExpr expr
-    BreakX _ _ -> pure False
-    IfX _ expr true false -> do
+    Lit _ _ -> pure False
+    Var _ _ -> pure False
+    BinOp _ l _ r -> (||) <$> returnExpr l <*> returnExpr r
+    Prefix _ _ expr -> returnExpr expr
+    Ret _ _ -> pure True
+    EBlock NoExtField block -> returnBlock block
+    App _ l rs -> (||) <$> returnExpr l <*> anyM returnExpr rs
+    Let _ _ expr -> returnExpr expr
+    Ass _ _ _ expr -> returnExpr expr
+    Break _ _ -> pure False
+    If _ expr true false -> do
         if
             | alwaysTrue expr
-            , Just (BlockX info _ _) <- false ->
+            , Just (Block info _ _) <- false ->
                 unreachableStatement info >> returnBlock true
             | alwaysTrue expr -> returnBlock true
             | alwaysFalse expr
-            , BlockX info _ _ <- true ->
+            , Block info _ _ <- true ->
                 unreachableStatement info >> maybe (pure False) returnBlock false
             | otherwise -> (&&) <$> returnBlock true <*> maybe (pure False) returnBlock false
-    WhileX _ expr block -> if alwaysTrue expr then returnBlock block else pure False
-    LoopX _ block -> returnBlock block
-    LamX {} -> pure False
-    MatchX _ scrutinee arms -> (&&) <$> returnExpr scrutinee <*> allM returnArm arms
+    While _ expr block -> if alwaysTrue expr then returnBlock block else pure False
+    Loop _ block -> returnBlock block
+    Lam {} -> pure False
+    Match _ scrutinee arms -> (&&) <$> returnExpr scrutinee <*> allM returnArm arms
 
 returnArm :: MatchArmRn -> ChM Bool
-returnArm (MatchArmX _ _ body) = returnExpr body
+returnArm (MatchArm _ _ body) = returnExpr body
 
 -- TODO: Make mini evaluator
 alwaysTrue :: ExprRn -> Bool
@@ -137,22 +137,22 @@ alwaysFalse = const False
 
 hasInfoStmt :: StmtRn -> SourceInfo
 hasInfoStmt = \case
-    SExprX NoExtField expr -> hasInfoExpr expr
+    SExpr NoExtField expr -> hasInfoExpr expr
 
 hasInfoExpr :: ExprRn -> SourceInfo
 hasInfoExpr = \case
-    LitX info _ -> info
-    VarX (info, _) _ -> info
-    PrefixX info _ _ -> info
-    BinOpX info _ _ _ -> info
-    AppX info _ _ -> info
-    LetX (info, _) _ _ -> info
-    AssX (info, _) _ _ _ -> info
-    RetX info _ -> info
-    EBlockX NoExtField (BlockX info _ _) -> info
-    BreakX info _ -> info
-    IfX info _ _ _ -> info
-    WhileX info _ _ -> info
-    LoopX info _ -> info
-    LamX info _ _ -> info
-    MatchX info _ _ -> info
+    Lit info _ -> info
+    Var (info, _) _ -> info
+    Prefix info _ _ -> info
+    BinOp info _ _ _ -> info
+    App info _ _ -> info
+    Let (info, _) _ _ -> info
+    Ass (info, _) _ _ _ -> info
+    Ret info _ -> info
+    EBlock NoExtField (Block info _ _) -> info
+    Break info _ -> info
+    If info _ _ _ -> info
+    While info _ _ -> info
+    Loop info _ -> info
+    Lam info _ _ -> info
+    Match info _ _ -> info

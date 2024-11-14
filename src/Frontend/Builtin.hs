@@ -9,20 +9,21 @@ import Frontend.Typechecker.Types
 import Frontend.Types
     ( NoExtField (NoExtField),
       SourceInfo (SourceInfo),
-      TypeX (..),
+      Type (..),
       XTyFun,
       XTyLit,
-      emptySpan,
+      Type(..),
+      emptySpan, TyLit (..),
     )
 import Names (Ident (..))
-import Relude
+import Relude hiding (Type)
 
 builtInNames :: Set Ident
 builtInNames = Set.fromList $ Map.keys (builtIns @Rn)
 
-builtIns :: (XTyFun a ~ NoExtField, XTyLit a ~ NoExtField) => Map Ident (TypeX a, SourceInfo)
+builtIns :: (XTyFun a ~ NoExtField, XTyLit a ~ NoExtField) => Map Ident (Type a, SourceInfo)
 builtIns =
     Map.fromList
-        [ (Ident "printInt", (TyFunX NoExtField [Int] Unit, SourceInfo emptySpan "Built in"))
-        , (Ident "printString", (TyFunX NoExtField [String] Unit, SourceInfo emptySpan "Built in"))
+        [ (Ident "printInt", (TyFun NoExtField [TyLit NoExtField Int] (TyLit NoExtField Unit), SourceInfo emptySpan "Built in"))
+        , (Ident "printString", (TyFun NoExtField [TyLit NoExtField String] (TyLit NoExtField Unit), SourceInfo emptySpan "Built in"))
         ]

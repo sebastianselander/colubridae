@@ -15,7 +15,7 @@ prettyRenamer :: (Pretty a) => a -> Text
 prettyRenamer = show . Pretty.pretty
 
 instance Pretty ProgramRn where
-    pretty (ProgramX NoExtField defs) =
+    pretty (Program NoExtField defs) =
         Pretty.concatWith
             (Pretty.surround (Pretty.hardline <> Pretty.hardline))
             (fmap Pretty.pretty defs)
@@ -25,7 +25,7 @@ instance Pretty DefRn where
     pretty (DefAdt adt) = Pretty.pretty adt
 
 instance Pretty AdtRn where
-    pretty (AdtX _ name cons) =
+    pretty (Adt _ name cons) =
         "type"
             <+> Pretty.pretty name
             <+> Pretty.braces
@@ -64,7 +64,7 @@ instance Pretty FnRn where
             <+> Pretty.pretty block
 
 instance Pretty BlockRn where
-    pretty (BlockX _ stmts tail) =
+    pretty (Block _ stmts tail) =
         Pretty.braces
             ( Pretty.hardline
                 <> Pretty.indent
@@ -81,16 +81,16 @@ instance Pretty DataConCantHappen where
     pretty _ = error "absurd"
 
 instance Pretty StmtRn where
-    pretty (SExprX NoExtField expr) = Pretty.pretty expr <> Pretty.semi
+    pretty (SExpr NoExtField expr) = Pretty.pretty expr <> Pretty.semi
 
 instance Pretty ArgRn where
-    pretty (ArgX _ name ty) = Pretty.pretty name <> ":" <+> Pretty.pretty ty
+    pretty (Arg _ name ty) = Pretty.pretty name <> ":" <+> Pretty.pretty ty
 
 instance Pretty TypeRn where
     pretty = prettyType1
 
 prettyType1 :: TypeRn -> Doc ann
-prettyType1 (TyFunX _ l r) =
+prettyType1 (TyFun _ l r) =
     "fn" <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty l))
         <+> "->"
         <+> Pretty.pretty r
@@ -98,78 +98,78 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeRn -> Doc ann
 prettyType2 = \case
-    TyConX _ name -> Pretty.pretty name
-    TyLitX _ tylit -> case tylit of
-        UnitX -> "()"
-        StringX -> "string"
-        IntX -> "int"
-        DoubleX -> "double"
-        CharX -> "char"
-        BoolX -> "bool"
-    ty@TyFunX {} -> Pretty.parens (Pretty.pretty ty)
+    TyCon _ name -> Pretty.pretty name
+    TyLit _ tylit -> case tylit of
+        Unit -> "()"
+        String -> "string"
+        Int -> "int"
+        Double -> "double"
+        Char -> "char"
+        Bool -> "bool"
+    ty@TyFun {} -> Pretty.parens (Pretty.pretty ty)
 
 instance Pretty ExprRn where
     pretty = prettyExpr1
 
 prettyExpr1 :: ExprRn -> Doc ann
-prettyExpr1 (BinOpX _ l Or r) = Pretty.pretty l <+> "||" <+> Pretty.pretty r
+prettyExpr1 (BinOp _ l Or r) = Pretty.pretty l <+> "||" <+> Pretty.pretty r
 prettyExpr1 e = prettyExpr2 e
 
 prettyExpr2 :: ExprRn -> Doc ann
-prettyExpr2 (BinOpX _ l And r) = Pretty.pretty l <+> "&&" <+> Pretty.pretty r
+prettyExpr2 (BinOp _ l And r) = Pretty.pretty l <+> "&&" <+> Pretty.pretty r
 prettyExpr2 e = prettyExpr3 e
 
 prettyExpr3 :: ExprRn -> Doc ann
-prettyExpr3 (BinOpX _ l Eq r) = Pretty.pretty l <+> "==" <+> Pretty.pretty r
-prettyExpr3 (BinOpX _ l Neq r) = Pretty.pretty l <+> "!=" <+> Pretty.pretty r
+prettyExpr3 (BinOp _ l Eq r) = Pretty.pretty l <+> "==" <+> Pretty.pretty r
+prettyExpr3 (BinOp _ l Neq r) = Pretty.pretty l <+> "!=" <+> Pretty.pretty r
 prettyExpr3 e = prettyExpr4 e
 
 prettyExpr4 :: ExprRn -> Doc ann
-prettyExpr4 (BinOpX _ l Lt r) = Pretty.pretty l <+> "<" <+> Pretty.pretty r
-prettyExpr4 (BinOpX _ l Lte r) = Pretty.pretty l <+> "<=" <+> Pretty.pretty r
-prettyExpr4 (BinOpX _ l Gt r) = Pretty.pretty l <+> ">" <+> Pretty.pretty r
-prettyExpr4 (BinOpX _ l Gte r) = Pretty.pretty l <+> ">=" <+> Pretty.pretty r
+prettyExpr4 (BinOp _ l Lt r) = Pretty.pretty l <+> "<" <+> Pretty.pretty r
+prettyExpr4 (BinOp _ l Lte r) = Pretty.pretty l <+> "<=" <+> Pretty.pretty r
+prettyExpr4 (BinOp _ l Gt r) = Pretty.pretty l <+> ">" <+> Pretty.pretty r
+prettyExpr4 (BinOp _ l Gte r) = Pretty.pretty l <+> ">=" <+> Pretty.pretty r
 prettyExpr4 e = prettyExpr5 e
 
 prettyExpr5 :: ExprRn -> Doc ann
-prettyExpr5 (BinOpX _ l Add r) = Pretty.pretty l <+> "+" <+> Pretty.pretty r
-prettyExpr5 (BinOpX _ l Sub r) = Pretty.pretty l <+> "-" <+> Pretty.pretty r
+prettyExpr5 (BinOp _ l Add r) = Pretty.pretty l <+> "+" <+> Pretty.pretty r
+prettyExpr5 (BinOp _ l Sub r) = Pretty.pretty l <+> "-" <+> Pretty.pretty r
 prettyExpr5 e = prettyExpr6 e
 
 prettyExpr6 :: ExprRn -> Doc ann
-prettyExpr6 (BinOpX _ l Mod r) = Pretty.pretty l <+> "%" <+> Pretty.pretty r
-prettyExpr6 (BinOpX _ l Div r) = Pretty.pretty l <+> "/" <+> Pretty.pretty r
-prettyExpr6 (BinOpX _ l Mul r) = Pretty.pretty l <+> "*" <+> Pretty.pretty r
-prettyExpr6 (PrefixX _ Not r) = "!" <+> Pretty.pretty r
-prettyExpr6 (PrefixX _ Neg r) = "-" <+> Pretty.pretty r
+prettyExpr6 (BinOp _ l Mod r) = Pretty.pretty l <+> "%" <+> Pretty.pretty r
+prettyExpr6 (BinOp _ l Div r) = Pretty.pretty l <+> "/" <+> Pretty.pretty r
+prettyExpr6 (BinOp _ l Mul r) = Pretty.pretty l <+> "*" <+> Pretty.pretty r
+prettyExpr6 (Prefix _ Not r) = "!" <+> Pretty.pretty r
+prettyExpr6 (Prefix _ Neg r) = "-" <+> Pretty.pretty r
 prettyExpr6 e = prettyExpr7 e
 
 prettyExpr7 :: ExprRn -> Doc ann
-prettyExpr7 e@BinOpX {} = Pretty.parens (Pretty.pretty e)
-prettyExpr7 e@PrefixX {} = Pretty.parens (Pretty.pretty e)
-prettyExpr7 (LitX _ lit) = Pretty.pretty lit
-prettyExpr7 (VarX _ name) = Pretty.pretty name
-prettyExpr7 (AppX _ l rs) =
+prettyExpr7 e@BinOp {} = Pretty.parens (Pretty.pretty e)
+prettyExpr7 e@Prefix {} = Pretty.parens (Pretty.pretty e)
+prettyExpr7 (Lit _ lit) = Pretty.pretty lit
+prettyExpr7 (Var _ name) = Pretty.pretty name
+prettyExpr7 (App _ l rs) =
     Pretty.pretty l
         <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty rs))
-prettyExpr7 (LetX (_, Nothing) name e) = "let" <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
-prettyExpr7 (LetX (_, Just ty) name e) = "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
-prettyExpr7 (AssX _ (Ident name) op e) = Pretty.pretty name <+> Pretty.pretty op <+> Pretty.pretty e
-prettyExpr7 (RetX _ Nothing) = "return"
-prettyExpr7 (RetX _ (Just e)) = "return" <+> Pretty.pretty e
-prettyExpr7 (EBlockX _ block) = Pretty.pretty block
-prettyExpr7 (BreakX _ Nothing) = "break"
-prettyExpr7 (BreakX _ (Just e)) = "break" <+> Pretty.pretty e
-prettyExpr7 (IfX _ cond thenB Nothing) = "if" <+> Pretty.pretty cond <+> Pretty.pretty thenB
-prettyExpr7 (IfX a cond thenB (Just elseB)) =
-    Pretty.pretty (IfX a cond thenB Nothing) <+> "else" <+> Pretty.pretty elseB
-prettyExpr7 (WhileX _ cond block) = "while" <+> Pretty.pretty cond <+> Pretty.pretty block
-prettyExpr7 (LoopX _ block) = "loop" <+> Pretty.pretty block
-prettyExpr7 (LamX _ args body) =
+prettyExpr7 (Let (_, Nothing) name e) = "let" <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
+prettyExpr7 (Let (_, Just ty) name e) = "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
+prettyExpr7 (Ass _ (Ident name) op e) = Pretty.pretty name <+> Pretty.pretty op <+> Pretty.pretty e
+prettyExpr7 (Ret _ Nothing) = "return"
+prettyExpr7 (Ret _ (Just e)) = "return" <+> Pretty.pretty e
+prettyExpr7 (EBlock _ block) = Pretty.pretty block
+prettyExpr7 (Break _ Nothing) = "break"
+prettyExpr7 (Break _ (Just e)) = "break" <+> Pretty.pretty e
+prettyExpr7 (If _ cond thenB Nothing) = "if" <+> Pretty.pretty cond <+> Pretty.pretty thenB
+prettyExpr7 (If a cond thenB (Just elseB)) =
+    Pretty.pretty (If a cond thenB Nothing) <+> "else" <+> Pretty.pretty elseB
+prettyExpr7 (While _ cond block) = "while" <+> Pretty.pretty cond <+> Pretty.pretty block
+prettyExpr7 (Loop _ block) = "loop" <+> Pretty.pretty block
+prettyExpr7 (Lam _ args body) =
     "\\" <> Pretty.concatWith (Pretty.surround Pretty.space) (fmap Pretty.pretty args)
         <+> "->"
         <+> Pretty.pretty body
-prettyExpr7 (MatchX _ scrutinee arms) =
+prettyExpr7 (Match _ scrutinee arms) =
     "match"
         <+> Pretty.pretty scrutinee
         <+> Pretty.braces
@@ -184,13 +184,13 @@ prettyExpr7 (MatchX _ scrutinee arms) =
             )
 
 instance Pretty MatchArmRn where
-    pretty (MatchArmX _ pat expr) = Pretty.pretty pat <+> "=>" <+> Pretty.pretty expr
+    pretty (MatchArm _ pat expr) = Pretty.pretty pat <+> "=>" <+> Pretty.pretty expr
 
 instance Pretty PatternRn where
     pretty = \case
-        PVarX _ varName -> Pretty.pretty varName
-        PEnumConX _ conName -> Pretty.pretty conName
-        PFunConX _ conName pats ->
+        PVar _ varName -> Pretty.pretty varName
+        PEnumCon _ conName -> Pretty.pretty conName
+        PFunCon _ conName pats ->
             Pretty.pretty conName
                 <> Pretty.parens
                     ( Pretty.concatWith
@@ -199,24 +199,24 @@ instance Pretty PatternRn where
                     )
 
 instance Pretty LamArgRn where
-    pretty (LamArgX (_, Nothing) name) =
+    pretty (LamArg (_, Nothing) name) =
         Pretty.pretty name
-    pretty (LamArgX (_, Just ty) name) =
+    pretty (LamArg (_, Just ty) name) =
         Pretty.parens $ Pretty.pretty name <> ":" <+> Pretty.pretty ty
 
 instance Pretty LitRn where
     pretty lit = case lit of
-        IntLitX _ l -> Relude.show l
-        DoubleLitX _ l -> Relude.show l
-        StringLitX _ l -> Relude.show l
-        CharLitX _ l -> Relude.show l
-        BoolLitX _ True -> "true"
-        BoolLitX _ False -> "false"
-        UnitLitX _ -> "()"
+        IntLit _ l -> Relude.show l
+        DoubleLit _ l -> Relude.show l
+        StringLit _ l -> Relude.show l
+        CharLit _ l -> Relude.show l
+        BoolLit _ True -> "true"
+        BoolLit _ False -> "false"
+        UnitLit _ -> "()"
 
 --
 -- tcPrettyStmt :: StmtRn -> Doc ann
--- tcPrettyStmt (SExprX _ e) = prettyExpr1 e
+-- tcPrettyStmt (SExpr _ e) = prettyExpr1 e
 
 instance Pretty AssignOp where
     pretty = \case

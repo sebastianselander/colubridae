@@ -8,27 +8,27 @@
 module Frontend.Typechecker.Types where
 
 import Data.Data (Data)
-import Relude hiding (Any)
-import Frontend.Types
+import Relude hiding (Type, Any)
+import Frontend.Types hiding (Bool, Unit, Char, String, Double, Int)
 import Control.Lens (makeLenses)
 import Frontend.Renamer.Types (Boundedness)
 
 data Tc deriving (Data)
 
-type ProgramTc = ProgramX Tc
-type DefTc = DefX Tc
-type FnTc = FnX Tc
-type AdtTc = AdtX Tc
-type ConstructorTc = ConstructorX Tc
-type ArgTc = ArgX Tc
-type ExprTc = ExprX Tc
-type TypeTc = TypeX Tc
-type LitTc = LitX Tc
-type StmtTc = StmtX Tc
-type BlockTc = BlockX Tc
-type LamArgTc = LamArgX Tc
-type MatchArmTc = MatchArmX Tc
-type PatternTc = PatternX Tc
+type ProgramTc = Program Tc
+type DefTc = Def Tc
+type FnTc = Fn Tc
+type AdtTc = Adt Tc
+type ConstructorTc = Constructor Tc
+type ArgTc = Arg Tc
+type ExprTc = Expr Tc
+type TypeTc = Type Tc
+type LitTc = Lit Tc
+type StmtTc = Stmt Tc
+type BlockTc = Block Tc
+type LamArgTc = LamArg Tc
+type MatchArmTc = MatchArm Tc
+type PatternTc = Pattern Tc
 
 type TcInfo = (SourceInfo, TypeTc)
 type TcInfoBound = (SourceInfo, TypeTc, Boundedness)
@@ -100,10 +100,10 @@ type instance XLamArg Tc = TypeTc
 deriving instance Eq TypeTc
 deriving instance Ord TypeTc
 
-pattern Any :: (XType a ~ MetaTy) => TypeX a
-pattern Any <- TypeX AnyX
+pattern Any :: (XType a ~ MetaTy) => Type a
+pattern Any <- Type AnyX
     where
-        Any = TypeX AnyX
+        Any = Type AnyX
 
 data MetaTy = AnyX
     deriving (Show, Eq, Ord, Data)
@@ -111,33 +111,3 @@ data MetaTy = AnyX
 data StmtType = StmtType { _stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
     deriving (Show, Eq, Ord, Data, Typeable)
 $(makeLenses ''StmtType)
-
-pattern Int :: (XTyLit a ~ NoExtField) => TypeX a
-pattern Int <- TyLitX NoExtField IntX
-    where
-        Int = TyLitX NoExtField IntX
-
-pattern Double :: (XTyLit a ~ NoExtField) => TypeX a
-pattern Double <- TyLitX NoExtField DoubleX
-    where
-        Double = TyLitX NoExtField DoubleX
-
-pattern String :: (XTyLit a ~ NoExtField) => TypeX a
-pattern String <- TyLitX NoExtField StringX
-    where
-        String = TyLitX NoExtField StringX
-
-pattern Char :: (XTyLit a ~ NoExtField) => TypeX a
-pattern Char <- TyLitX NoExtField CharX
-    where
-        Char = TyLitX NoExtField CharX
-
-pattern Unit :: (XTyLit a ~ NoExtField) => TypeX a
-pattern Unit <- TyLitX NoExtField UnitX
-    where
-        Unit = TyLitX NoExtField UnitX
-
-pattern Bool :: (XTyLit a ~ NoExtField) => TypeX a
-pattern Bool <- TyLitX NoExtField BoolX
-    where
-        Bool = TyLitX NoExtField BoolX

@@ -48,56 +48,56 @@ instance Show SourceInfo where
     show info = info.sourceFile <> ":" <> Relude.show info.spanInfo
 
 -- Program
-data ProgramX a = ProgramX !(XProgram a) [DefX a]
+data Program a = Program !(XProgram a) [Def a]
 type family XProgram a
 
-deriving instance (ForallX Show a) => Show (ProgramX a)
-deriving instance (ForallX Typeable a) => Typeable (ProgramX a)
+deriving instance (ForallX Show a) => Show (Program a)
+deriving instance (ForallX Typeable a) => Typeable (Program a)
 
 -- Definition
-data DefX a
-    = DefFn (FnX a)
-    | DefAdt (AdtX a)
+data Def a
+    = DefFn (Fn a)
+    | DefAdt (Adt a)
     | DefX !(XDef a)
 type family XDef a
-deriving instance (ForallX Show a) => Show (DefX a)
-deriving instance (ForallX Typeable a) => Typeable (DefX a)
+deriving instance (ForallX Show a) => Show (Def a)
+deriving instance (ForallX Typeable a) => Typeable (Def a)
 
-data FnX a = Fn !(XFn a) Ident [ArgX a] (TypeX a) (BlockX a)
+data Fn a = Fn !(XFn a) Ident [Arg a] (Type a) (Block a)
 type family XFn a
 
-deriving instance (ForallX Show a) => Show (FnX a)
-deriving instance (ForallX Typeable a) => Typeable (FnX a)
+deriving instance (ForallX Show a) => Show (Fn a)
+deriving instance (ForallX Typeable a) => Typeable (Fn a)
 
-data AdtX a = AdtX !(XAdt a) Ident [ConstructorX a]
+data Adt a = Adt !(XAdt a) Ident [Constructor a]
 type family XAdt a
-deriving instance (ForallX Show a) => Show (AdtX a)
-deriving instance (ForallX Typeable a) => Typeable (AdtX a)
+deriving instance (ForallX Show a) => Show (Adt a)
+deriving instance (ForallX Typeable a) => Typeable (Adt a)
 
-data ConstructorX a
+data Constructor a
     = EnumCons (XEnumCons a) Ident
-    | FunCons (XFunCons a) Ident [TypeX a]
+    | FunCons (XFunCons a) Ident [Type a]
     | ConstructorX !(XConstructor a)
 
 type family XConstructor a
 type family XEnumCons a
 type family XFunCons a
-deriving instance (ForallX Show a) => Show (ConstructorX a)
-deriving instance (ForallX Typeable a) => Typeable (ConstructorX a)
+deriving instance (ForallX Show a) => Show (Constructor a)
+deriving instance (ForallX Typeable a) => Typeable (Constructor a)
 
 -- Argument
-data ArgX a = ArgX !(XArg a) Ident (TypeX a)
+data Arg a = Arg !(XArg a) Ident (Type a)
 type family XArg a
 
-deriving instance (ForallX Show a) => Show (ArgX a)
-deriving instance (ForallX Typeable a) => Typeable (ArgX a)
+deriving instance (ForallX Show a) => Show (Arg a)
+deriving instance (ForallX Typeable a) => Typeable (Arg a)
 
 -- Type
-data TypeX a
-    = TyLitX !(XTyLit a) TyLit
-    | TyFunX !(XTyFun a) [TypeX a] (TypeX a)
-    | TypeX !(XType a)
-    | TyConX !(XTyCon a) Ident
+data Type a
+    = TyLit !(XTyLit a) TyLit
+    | TyFun !(XTyFun a) [Type a] (Type a)
+    | Type !(XType a)
+    | TyCon !(XTyCon a) Ident
 type family XTyLit a
 type family XTyFun a
 type family XType a
@@ -105,30 +105,30 @@ type family XTyCon a
 
 coerceType ::
     (XTyLit t1 ~ XTyLit t2, XTyFun t1 ~ XTyFun t2, XType t1 ~ XType t2, XTyCon t1 ~ XTyCon t2) =>
-    TypeX t1 ->
-    TypeX t2
+    Type t1 ->
+    Type t2
 coerceType ty = case ty of
-    TyLitX a b -> TyLitX a b
-    TyFunX a b c -> TyFunX a (fmap coerceType b) (coerceType c)
-    TyConX a b -> TyConX a b
-    TypeX a -> TypeX a
+    TyLit a b -> TyLit a b
+    TyFun a b c -> TyFun a (fmap coerceType b) (coerceType c)
+    TyCon a b -> TyCon a b
+    Type a -> Type a
 
-data TyLit = UnitX | StringX | IntX | DoubleX | CharX | BoolX
+data TyLit = Unit | String | Int | Double | Char | Bool
     deriving (Show, Eq, Ord, Enum, Data)
 
-deriving instance (ForallX Show a) => Show (TypeX a)
-deriving instance (ForallX Typeable a) => Typeable (TypeX a)
+deriving instance (ForallX Show a) => Show (Type a)
+deriving instance (ForallX Typeable a) => Typeable (Type a)
 
-data BlockX a = BlockX !(XBlock a) [StmtX a] (Maybe (ExprX a))
+data Block a = Block !(XBlock a) [Stmt a] (Maybe (Expr a))
 type family XBlock a
 
-deriving instance (ForallX Show a) => Show (BlockX a)
-deriving instance (ForallX Typeable a) => Typeable (BlockX a)
+deriving instance (ForallX Show a) => Show (Block a)
+deriving instance (ForallX Typeable a) => Typeable (Block a)
 
 -- Statement
-data StmtX a
-    = SExprX !(XSExp a) (ExprX a)
-    | StmtX !(XStmt a)
+data Stmt a
+    = SExpr !(XSExp a) (Expr a)
+    | Stmt !(XStmt a)
 type family XSExp a
 type family XStmt a
 
@@ -141,30 +141,30 @@ data AssignOp
     | Assign
     deriving (Show, Eq, Ord, Data)
 
-deriving instance (ForallX Show a) => Show (StmtX a)
-deriving instance (ForallX Typeable a) => Typeable (StmtX a)
+deriving instance (ForallX Show a) => Show (Stmt a)
+deriving instance (ForallX Typeable a) => Typeable (Stmt a)
 
 -- Expression
-data ExprX a
-    = LitX !(XLit a) (LitX a)
-    | VarX !(XVar a) Ident
-    | BinOpX !(XBinOp a) (ExprX a) BinOp (ExprX a)
-    | PrefixX !(XPrefix a) PrefixOp (ExprX a)
-    | AppX !(XApp a) (ExprX a) [ExprX a]
-    | LetX !(XLet a) Ident (ExprX a)
-    | AssX !(XAss a) Ident AssignOp (ExprX a)
-    | RetX !(XRet a) (Maybe (ExprX a))
-    | EBlockX !(XEBlock a) (BlockX a)
-    | BreakX !(XBreak a) (Maybe (ExprX a))
-    | IfX !(XIf a) (ExprX a) (BlockX a) (Maybe (BlockX a))
-    | WhileX !(XWhile a) (ExprX a) (BlockX a)
-    | LoopX !(XLoop a) (BlockX a)
-    | LamX !(XLam a) [LamArgX a] (ExprX a)
-    | MatchX !(XMatch a) (ExprX a) [MatchArmX a]
-    | ExprX !(XExpr a)
+data Expr a
+    = Lit !(XLit a) (Lit a)
+    | Var !(XVar a) Ident
+    | BinOp !(XBinOp a) (Expr a) BinOp (Expr a)
+    | Prefix !(XPrefix a) PrefixOp (Expr a)
+    | App !(XApp a) (Expr a) [Expr a]
+    | Let !(XLet a) Ident (Expr a)
+    | Ass !(XAss a) Ident AssignOp (Expr a)
+    | Ret !(XRet a) (Maybe (Expr a))
+    | EBlock !(XEBlock a) (Block a)
+    | Break !(XBreak a) (Maybe (Expr a))
+    | If !(XIf a) (Expr a) (Block a) (Maybe (Block a))
+    | While !(XWhile a) (Expr a) (Block a)
+    | Loop !(XLoop a) (Block a)
+    | Lam !(XLam a) [LamArg a] (Expr a)
+    | Match !(XMatch a) (Expr a) [MatchArm a]
+    | Expr !(XExpr a)
 
-deriving instance (ForallX Show a) => Show (ExprX a)
-deriving instance (ForallX Typeable a) => Typeable (ExprX a)
+deriving instance (ForallX Show a) => Show (Expr a)
+deriving instance (ForallX Typeable a) => Typeable (Expr a)
 
 type family XExprStmt a
 type family XLit a
@@ -184,30 +184,30 @@ type family XLoop a
 type family XLam a
 type family XMatch a
 
-data MatchArmX a = MatchArmX !(XMatchArm a) (PatternX a) (ExprX a)
+data MatchArm a = MatchArm !(XMatchArm a) (Pattern a) (Expr a)
 
-deriving instance (ForallX Show a) => Show (MatchArmX a)
-deriving instance (ForallX Typeable a) => Typeable (MatchArmX a)
+deriving instance (ForallX Show a) => Show (MatchArm a)
+deriving instance (ForallX Typeable a) => Typeable (MatchArm a)
 
 type family XMatchArm a
 
-data PatternX a
-    = PVarX !(XPVar a) Ident
-    | PEnumConX !(XPEnumCon a) Ident
-    | PFunConX !(XPFunCon a) Ident [PatternX a]
+data Pattern a
+    = PVar !(XPVar a) Ident
+    | PEnumCon !(XPEnumCon a) Ident
+    | PFunCon !(XPFunCon a) Ident [Pattern a]
 
-deriving instance (ForallX Show a) => Show (PatternX a)
-deriving instance (ForallX Typeable a) => Typeable (PatternX a)
+deriving instance (ForallX Show a) => Show (Pattern a)
+deriving instance (ForallX Typeable a) => Typeable (Pattern a)
 
 type family XPVar a
 type family XPEnumCon a
 type family XPFunCon a
 
-data LamArgX a = LamArgX !(XLamArg a) Ident
+data LamArg a = LamArg !(XLamArg a) Ident
 type family XLamArg a
 
-deriving instance (ForallX Show a) => Show (LamArgX a)
-deriving instance (ForallX Typeable a) => Typeable (LamArgX a)
+deriving instance (ForallX Show a) => Show (LamArg a)
+deriving instance (ForallX Typeable a) => Typeable (LamArg a)
 
 data PrefixOp = Not | Neg
     deriving (Show, Eq, Ord, Data)
@@ -229,13 +229,13 @@ data BinOp
     deriving (Show, Eq, Ord, Data)
 
 -- Literal
-data LitX a
-    = IntLitX !(XIntLit a) Integer
-    | DoubleLitX !(XDoubleLit a) Double
-    | StringLitX !(XStringLit a) Text
-    | CharLitX !(XCharLit a) Char
-    | BoolLitX !(XBoolLit a) Bool
-    | UnitLitX !(XUnitLit a)
+data Lit a
+    = IntLit !(XIntLit a) Integer
+    | DoubleLit !(XDoubleLit a) Double
+    | StringLit !(XStringLit a) Text
+    | CharLit !(XCharLit a) Char
+    | BoolLit !(XBoolLit a) Bool
+    | UnitLit !(XUnitLit a)
 type family XIntLit a
 type family XDoubleLit a
 type family XStringLit a
@@ -243,8 +243,8 @@ type family XCharLit a
 type family XBoolLit a
 type family XUnitLit a
 
-deriving instance (ForallX Show a) => Show (LitX a)
-deriving instance (ForallX Typeable a) => Typeable (LitX a)
+deriving instance (ForallX Show a) => Show (Lit a)
+deriving instance (ForallX Typeable a) => Typeable (Lit a)
 
 type ForallX (c :: Data.Kind.Type -> Constraint) a =
     ( c (XApp a)

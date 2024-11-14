@@ -21,7 +21,7 @@ parse' ::
     Either (ParseErrorBundle Text CustomParseError) ProgramPar
 parse' table file =
     flip runReader table
-        . P.runParserT (ProgramX NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof)) file
+        . P.runParserT (Program NoExtField <$> (lexeme (return ()) *> P.many pDef <* P.eof)) file
 
 parse :: String -> Text -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
 parse = parse' defaultBindingPowerTable
@@ -33,7 +33,7 @@ pAdt = do
     adtName <- lexeme upperIdentifier
     constructors <- curlyBrackets (commaSepEnd pConstructor)
     loc <- spanEnd gs
-    pure (AdtX loc adtName constructors)
+    pure (Adt loc adtName constructors)
 
 pConstructor :: Parser ConstructorPar
 pConstructor = do
@@ -54,7 +54,7 @@ pFunction = do
     lexeme (keyword "def")
     name <- lexeme identifier
     args <- parens (commaSep pArg)
-    ty <- P.option (TyLitX NoExtField UnitX) (lexeme (keyword "->") *> pType)
+    ty <- P.option (TyLit NoExtField Unit) (lexeme (keyword "->") *> pType)
     expressions <- pBlock
     info <- spanEnd gs
     pure (Fn info name args ty expressions)
@@ -65,7 +65,7 @@ pArg = do
     name <- lexeme identifier
     lexeme (keyword ":")
     (ty, info) <- span gs pType
-    pure (ArgX info name ty)
+    pure (Arg info name ty)
 
 pType :: Parser TypePar
 pType = P.choice [pAtom, pFunTy, pTyCon, parens pType] <?> "type"
@@ -73,35 +73,35 @@ pType = P.choice [pAtom, pFunTy, pTyCon, parens pType] <?> "type"
     pTyCon :: Parser TypePar
     pTyCon = do
         name <- lexeme upperIdentifier
-        pure $ TyConX NoExtField name
+        pure $ TyCon NoExtField name
 
     pFunTy :: Parser TypePar
     pFunTy = do
         lexeme $ keyword "fn"
         argTys <- parens (commaSep pType)
         lexeme $ keyword "->"
-        TyFunX NoExtField argTys <$> pType
+        TyFun NoExtField argTys <$> pType
 
     pAtom :: Parser TypePar
     pAtom = P.choice [pInt, pDouble, pChar, pString, pUnit, pBool]
 
     pInt :: Parser TypePar
-    pInt = TyLitX NoExtField IntX <$ lexeme (keyword "int")
+    pInt = TyLit NoExtField Int <$ lexeme (keyword "int")
 
     pDouble :: Parser TypePar
-    pDouble = TyLitX NoExtField DoubleX <$ lexeme (keyword "double")
+    pDouble = TyLit NoExtField Double <$ lexeme (keyword "double")
 
     pChar :: Parser TypePar
-    pChar = TyLitX NoExtField CharX <$ lexeme (keyword "char")
+    pChar = TyLit NoExtField Char <$ lexeme (keyword "char")
 
     pString :: Parser TypePar
-    pString = TyLitX NoExtField StringX <$ lexeme (keyword "string")
+    pString = TyLit NoExtField String <$ lexeme (keyword "string")
 
     pUnit :: Parser TypePar
-    pUnit = TyLitX NoExtField UnitX <$ lexeme (keyword "()")
+    pUnit = TyLit NoExtField Unit <$ lexeme (keyword "()")
 
     pBool :: Parser TypePar
-    pBool = TyLitX NoExtField BoolX <$ lexeme (keyword "bool")
+    pBool = TyLit NoExtField Bool <$ lexeme (keyword "bool")
 
 -- TODO: Remove needing semicolon after if, loop, while!
 pStmtColon :: Parser (Maybe StmtPar)
@@ -123,7 +123,7 @@ pIf = P.label "if" $ do
     thenB <- pBlock
     elseB <- P.optional (lexeme (keyword "else") *> pBlock)
     info <- spanEnd gs
-    pure (IfX info cond thenB elseB)
+    pure (If info cond thenB elseB)
 
 pWhile :: Parser ExprPar
 pWhile = P.label "while" $ do
@@ -132,7 +132,7 @@ pWhile = P.label "while" $ do
     cond <- pExpr
     loopBody <- pBlock
     info <- spanEnd gs
-    pure (WhileX info cond loopBody)
+    pure (While info cond loopBody)
 
 pLoop :: Parser ExprPar
 pLoop = P.label "loop" $ do
@@ -140,7 +140,7 @@ pLoop = P.label "loop" $ do
     lexeme (keyword "loop")
     body <- pBlock
     info <- spanEnd gs
-    pure $ LoopX info body
+    pure $ Loop info body
 
 pRet :: Parser ExprPar
 pRet = P.label "return" $ do
@@ -148,7 +148,7 @@ pRet = P.label "return" $ do
     lexeme (keyword "return")
     expr <- P.optional pExpr
     info <- spanEnd gs
-    pure (RetX info expr)
+    pure (Ret info expr)
 
 pBreak :: Parser ExprPar
 pBreak = P.label "break" $ do
@@ -156,7 +156,7 @@ pBreak = P.label "break" $ do
     lexeme (keyword "break")
     expr <- P.optional pExpr
     info <- spanEnd gs
-    pure $ BreakX info expr
+    pure $ Break info expr
 
 pLet :: Parser ExprPar
 pLet = P.label "let" $ do
@@ -167,7 +167,7 @@ pLet = P.label "let" $ do
     lexeme (keyword "=")
     expr <- pExpr
     info <- spanEnd gs
-    pure (LetX (info, ty) name expr)
+    pure (Let (info, ty) name expr)
 
 pAss :: Parser ExprPar
 pAss = P.label "assignment" $ do
@@ -177,7 +177,7 @@ pAss = P.label "assignment" $ do
         assignOp <- lexeme pAssignOp
         pure (name, assignOp)
     info <- spanEnd gs
-    AssX info name op <$> pExpr
+    Ass info name op <$> pExpr
 
 pMatch :: Parser ExprPar
 pMatch = do
@@ -186,7 +186,7 @@ pMatch = do
     scrutinee <- pExpr
     matchArms <- curlyBrackets $ commaSepEnd pMatchArm
     loc <- spanEnd gs
-    pure $ MatchX loc scrutinee matchArms
+    pure $ Match loc scrutinee matchArms
   where
     pMatchArm :: Parser MatchArmPar
     pMatchArm = do
@@ -195,7 +195,7 @@ pMatch = do
         keyword "=>"
         body <- pExpr
         loc <- spanEnd gs
-        pure $ MatchArmX loc pattern body
+        pure $ MatchArm loc pattern body
       where
         pPattern :: Parser PatternPar
         -- NOTE: Must parse wildcard before normal variable or it will be tried as a variable
@@ -208,14 +208,14 @@ pMatch = do
                 arguments <- P.optional (parens (commaSep pPattern))
                 loc <- spanEnd gs
                 case arguments of
-                    Nothing -> pure $ PEnumConX loc name
-                    Just args -> pure $ PFunConX loc name args
+                    Nothing -> pure $ PEnumCon loc name
+                    Just args -> pure $ PFunCon loc name args
             pPVar :: Parser PatternPar
             pPVar = do
                 gs <- spanStart
                 name <- identifier
                 loc <- spanEnd gs
-                pure $ PVarX loc name
+                pure $ PVar loc name
 
 pAssignOp :: Parser AssignOp
 pAssignOp =
@@ -229,7 +229,7 @@ pAssignOp =
         ]
 
 pBlock :: Parser BlockPar
-pBlock = uncurry3 BlockX <$> pBlock'
+pBlock = uncurry3 Block <$> pBlock'
 
 pBlock' :: Parser (SourceInfo, [StmtPar], Maybe ExprPar)
 pBlock' = do
@@ -241,7 +241,7 @@ pBlock' = do
     pure (info, catMaybes stmts, tail)
 
 pSExp :: Parser StmtPar
-pSExp = SExprX NoExtField <$> pExpr
+pSExp = SExpr NoExtField <$> pExpr
 
 pLam :: Parser ExprPar
 pLam = do
@@ -250,19 +250,19 @@ pLam = do
     args <- lexeme $ P.many lamArg
     keyword "->"
     info <- spanEnd gs
-    LamX info args <$> pExpr
+    Lam info args <$> pExpr
   where
     lamArg :: Parser LamArgPar
     lamArg =
         ( do
-            ArgX info name ty <- parens pArg
-            pure (LamArgX (info, Just ty) name)
+            Arg info name ty <- parens pArg
+            pure (LamArg (info, Just ty) name)
         )
             <|> ( do
                     gs <- spanStart
                     name <- lexeme identifier
                     info <- spanEnd gs
-                    pure $ LamArgX (info, Nothing) name
+                    pure $ LamArg (info, Nothing) name
                 )
 
 pApp :: Parser ExprPar
@@ -270,7 +270,7 @@ pApp = do
     gs <- spanStart
     expr <- pExprAtom
     args <- P.many $ (,) <$> spanEnd gs <*> parens (commaSep pExpr)
-    let res = foldl' (\l (info, rs) -> AppX info l rs) expr args
+    let res = foldl' (\l (info, rs) -> App info l rs) expr args
     pure res
 
 pExpr :: Parser ExprPar
@@ -286,7 +286,7 @@ pExprAtom =
         , pLoop
         , pBreak
         , pLet
-        , EBlockX NoExtField <$> pBlock
+        , EBlock NoExtField <$> pBlock
         , pLit
         , pVar
         , parens pExpr
@@ -297,7 +297,7 @@ pExprAtom =
         gs <- spanStart
         name <- identifier <|> upperIdentifier
         info <- spanEnd gs
-        pure (VarX info name)
+        pure (Var info name)
 
 pLit :: Parser ExprPar
 pLit =
@@ -313,37 +313,37 @@ pLit =
     pUnit :: Parser ExprPar
     pUnit = do
         gs <- spanStart
-        res <- UnitLitX NoExtField <$ keyword "()"
+        res <- UnitLit NoExtField <$ keyword "()"
         info <- spanEnd gs
-        pure (LitX info res)
+        pure (Lit info res)
 
     pBool :: Parser ExprPar
     pBool = do
         gs <- spanStart
-        res <- BoolLitX NoExtField <$> (True <$ keyword "true" <|> False <$ keyword "false")
+        res <- BoolLit NoExtField <$> (True <$ keyword "true" <|> False <$ keyword "false")
         info <- spanEnd gs
-        pure (LitX info res)
+        pure (Lit info res)
 
     pNumber :: Parser ExprPar
     pNumber = do
         gs <- spanStart
-        res <- DoubleLitX NoExtField <$> P.try P.float <|> IntLitX NoExtField <$> P.decimal
+        res <- DoubleLit NoExtField <$> P.try P.float <|> IntLit NoExtField <$> P.decimal
         info <- spanEnd gs
-        pure (LitX info res)
+        pure (Lit info res)
 
     pString :: Parser ExprPar
     pString = do
         gs <- spanStart
-        res <- StringLitX NoExtField <$> stringLiteral
+        res <- StringLit NoExtField <$> stringLiteral
         info <- spanEnd gs
-        pure (LitX info res)
+        pure (Lit info res)
 
     pChar :: Parser ExprPar
     pChar = do
         gs <- spanStart
-        res <- CharLitX NoExtField <$> charLiteral
+        res <- CharLit NoExtField <$> charLiteral
         info <- spanEnd gs
-        pure (LitX info res)
+        pure (Lit info res)
 
 pPrefix :: Parser PrefixOp
 pPrefix =
@@ -410,7 +410,7 @@ prattExpr prefixParser infixParser atomParser = exprbp 0
                 rhs <- exprbp bp
                 info <- spanEnd gs
                 gs <- spanStart
-                go gs minBp $ PrefixX info r rhs
+                go gs minBp $ Prefix info r rhs
       where
         go :: GhostSpan Before -> Int -> ExprPar -> Parser ExprPar
         go gs minBp l = P.withRecovery (\_ -> pure l) $ do
@@ -422,4 +422,4 @@ prattExpr prefixParser infixParser atomParser = exprbp 0
                     _ <- pInfix
                     r <- exprbp rbp
                     info <- spanEnd gs
-                    go gs minBp (BinOpX info l operator r)
+                    go gs minBp (BinOp info l operator r)

@@ -5,9 +5,9 @@ module Frontend.Renamer.Types where
 
 import Data.Data (Data)
 import Frontend.Parser.Types
-import Frontend.Types
 import Prettyprinter
-import Relude
+import Relude hiding (Type)
+import Frontend.Types
 
 data Boundedness = Free | Bound | Toplevel | Constructor
     deriving (Show, Eq, Ord, Data)
@@ -18,20 +18,20 @@ instance Pretty Boundedness where
 data Rn
     deriving (Data)
 
-type ProgramRn = ProgramX Rn
-type DefRn = DefX Rn
-type FnRn = FnX Rn
-type AdtRn = AdtX Rn
-type ConstructorRn = ConstructorX Rn
-type ArgRn = ArgX Rn
-type ExprRn = ExprX Rn
-type TypeRn = TypeX Rn
-type LitRn = LitX Rn
-type StmtRn = StmtX Rn
-type BlockRn = BlockX Rn
-type LamArgRn = LamArgX Rn
-type MatchArmRn = MatchArmX Rn
-type PatternRn = PatternX Rn
+type ProgramRn = Program Rn
+type DefRn = Def Rn
+type FnRn = Fn Rn
+type AdtRn = Adt Rn
+type ConstructorRn = Constructor Rn
+type ArgRn = Arg Rn
+type ExprRn = Expr Rn
+type TypeRn = Type Rn
+type LitRn = Lit Rn
+type StmtRn = Stmt Rn
+type BlockRn = Block Rn
+type LamArgRn = LamArg Rn
+type MatchArmRn = MatchArm Rn
+type PatternRn = Pattern Rn
 
 deriving instance Data ExprRn
 deriving instance Data ProgramRn

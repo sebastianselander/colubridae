@@ -20,7 +20,7 @@ rename :: ProgramPar -> Either [RnError] (ProgramRn, Names)
 rename = runGen emptyEnv emptyCtx . rnProgram
 
 rnProgram :: ProgramPar -> Gen (ProgramRn, Names)
-rnProgram program@(ProgramX a defs) = do
+rnProgram program@(Program a defs) = do
     let functions = getFunctionNames program
     let adts = getAdtNames program
     uniqueDefs adts
@@ -28,7 +28,7 @@ rnProgram program@(ProgramX a defs) = do
     let toplevelSet = Set.fromList $ fmap snd functions
     defs <- locally definitions (Set.union toplevelSet) (mapM rnDef defs)
     names <- names
-    pure (ProgramX a defs, mkNames names)
+    pure (Program a defs, mkNames names)
 
 uniqueDefs :: (MonadValidate [RnError] m) => [(SourceInfo, Ident)] -> m ()
 uniqueDefs = go builtInNames
@@ -53,7 +53,7 @@ rnDef (DefFn fn) = DefFn <$> rnFunction fn
 rnDef (DefAdt adt) = DefAdt <$> rnAdt adt
 
 rnAdt :: AdtPar -> Gen AdtRn
-rnAdt (AdtX loc name constructors) = AdtX loc name <$> mapM rnConstructor constructors
+rnAdt (Adt loc name constructors) = Adt loc name <$> mapM rnConstructor constructors
 
 rnConstructor :: ConstructorPar -> Gen ConstructorRn
 rnConstructor = \case
@@ -64,92 +64,92 @@ rnConstructor = \case
             <$> mapM rnType types
 
 rnBlock :: BlockPar -> Gen BlockRn
-rnBlock (BlockX a stmts expr) =
-    uncurry (BlockX a) <$> newContext ((,) <$> mapM rnStatement stmts <*> mapM rnExpr expr)
+rnBlock (Block a stmts expr) =
+    uncurry (Block a) <$> newContext ((,) <$> mapM rnStatement stmts <*> mapM rnExpr expr)
 
 rnStatement :: StmtPar -> Gen StmtRn
 rnStatement = \case
-    SExprX a b -> do
+    SExpr a b -> do
         b <- rnExpr b
-        pure $ SExprX a b
+        pure $ SExpr a b
 
 rnExpr :: ExprPar -> Gen ExprRn
 rnExpr = \case
-    LitX info lit -> LitX info <$> rnLit lit
-    VarX info variable -> do
+    Lit info lit -> Lit info <$> rnLit lit
+    Var info variable -> do
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
                 =<< maybe (fmap (Constructor,) <$> boundCons variable) (pure . Just)
                 =<< maybe (fmap (Toplevel,) <$> boundFun variable) (pure . Just)
                 =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
-        pure $ VarX (info, bind) name
-    PrefixX info op expr -> PrefixX info op <$> rnExpr expr
-    BinOpX info l op r -> do
+        pure $ Var (info, bind) name
+    Prefix info op expr -> Prefix info op <$> rnExpr expr
+    BinOp info l op r -> do
         l <- rnExpr l
         r <- rnExpr r
-        pure $ BinOpX info l op r
-    AppX info l args -> do
+        pure $ BinOp info l op r
+    App info l args -> do
         l <- rnExpr l
         args <- mapM rnExpr args
-        pure $ AppX info l args
-    LetX (info, ty) name expr -> do
+        pure $ App info l args
+    Let (info, ty) name expr -> do
         expr <- rnExpr expr
         name' <- insertVar name
         ty <- mapM rnType ty
-        pure $ LetX (info, ty) name' expr
-    AssX info variable op expr -> do
+        pure $ Let (info, ty) name' expr
+    Ass info variable op expr -> do
         (bind, name) <-
             maybe ((Free, Ident "unbound") <$ unboundVariable info variable) pure
                 =<< maybe (fmap (Free,) <$> boundArg variable) (pure . Just)
                 =<< boundVar variable
         expr <- rnExpr expr
-        pure (AssX (info, bind) name op expr)
-    RetX a b -> do
+        pure (Ass (info, bind) name op expr)
+    Ret a b -> do
         b' <- mapM rnExpr b
-        pure $ RetX a b'
-    EBlockX info block -> EBlockX info <$> rnBlock block
-    BreakX a expr -> do
+        pure $ Ret a b'
+    EBlock info block -> EBlock info <$> rnBlock block
+    Break a expr -> do
         b' <- mapM rnExpr expr
-        pure $ BreakX a b'
-    IfX a b true false -> do
+        pure $ Break a b'
+    If a b true false -> do
         b <- rnExpr b
         true <- newContext $ rnBlock true
         false <- newContext $ mapM rnBlock false
-        pure $ IfX a b true false
-    WhileX a b block -> do
+        pure $ If a b true false
+    While a b block -> do
         b <- rnExpr b
         stmts <- newContext $ rnBlock block
-        pure $ WhileX a b stmts
-    LoopX info block -> LoopX info <$> rnBlock block
-    LamX info args body -> do
+        pure $ While a b stmts
+    Loop info block -> Loop info <$> rnBlock block
+    Lam info args body -> do
         args <- rnLamArgs args
         body <- newContext $ rnExpr body
-        pure $ LamX info args body
-    MatchX info scrutinee arms -> do
+        pure $ Lam info args body
+    Match info scrutinee arms -> do
         scrutinee <- rnExpr scrutinee
         arms <- mapM rnMatchArm arms
-        pure $ MatchX info scrutinee arms
+        pure $ Match info scrutinee arms
 
 rnMatchArm :: MatchArmPar -> Gen MatchArmRn
-rnMatchArm (MatchArmX loc pat body) = newContext $ do
+rnMatchArm (MatchArm loc pat body) = newContext $ do
     pat <- rnPattern pat
     body <- rnExpr body
-    pure $ MatchArmX loc pat body
+    pure $ MatchArm loc pat body
 
 rnPattern :: PatternPar -> Gen PatternRn
 rnPattern = fmap snd . go mempty
   where
     go :: [Ident] -> PatternPar -> Gen ([Ident], PatternRn)
     go seen = \case
-        PVarX loc varName -> do
+        PVar loc varName -> do
             when (varName `elem` seen) (conflictingDefinitionArgument loc varName)
             name <- insertVar varName
-            pure (varName : seen, PVarX loc name)
-        PEnumConX loc conName -> pure ([], PEnumConX loc conName)
-        PFunConX loc conName pats -> do
+            pure (varName : seen, PVar loc name)
+        PEnumCon loc conName -> pure ([], PEnumCon loc conName)
+        PFunCon loc conName pats -> do
             (seen, pats) <- go' seen pats
-            pure (seen, PFunConX loc conName pats)
+            pure (seen, PFunCon loc conName pats)
           where
             go' :: [Ident] -> [PatternPar] -> Gen ([Ident], [PatternRn])
             go' seen [] = pure (seen, [])
@@ -166,27 +166,27 @@ rnLamArgs = fmap (reverse . snd) . foldlM f mempty
         ([Ident], [LamArgRn]) ->
         LamArgPar ->
         m ([Ident], [LamArgRn])
-    f (seen, acc) (LamArgX (info, ty) name) = do
+    f (seen, acc) (LamArg (info, ty) name) = do
         let seen' = name : seen
         when (name `elem` seen) (conflictingDefinitionArgument info name)
         name <- insertArg name
         ty <- mapM rnType ty
-        pure (seen', LamArgX (info, ty) name : acc)
+        pure (seen', LamArg (info, ty) name : acc)
 
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
-    IntLitX info lit -> pure $ IntLitX info lit
-    DoubleLitX info lit -> pure $ DoubleLitX info lit
-    StringLitX info lit -> pure $ StringLitX info lit
-    CharLitX info lit -> pure $ CharLitX info lit
-    BoolLitX info lit -> pure $ BoolLitX info lit
-    UnitLitX info -> pure $ UnitLitX info
+    IntLit info lit -> pure $ IntLit info lit
+    DoubleLit info lit -> pure $ DoubleLit info lit
+    StringLit info lit -> pure $ StringLit info lit
+    CharLit info lit -> pure $ CharLit info lit
+    BoolLit info lit -> pure $ BoolLit info lit
+    UnitLit info -> pure $ UnitLit info
 
 getAdtNames :: ProgramPar -> [(SourceInfo, Ident)]
 getAdtNames = listify' adtName
   where
     adtName :: AdtPar -> Maybe (SourceInfo, Ident)
-    adtName (AdtX info name _) = Just (info, name)
+    adtName (Adt info name _) = Just (info, name)
 
 getFunctionNames :: ProgramPar -> [(SourceInfo, Ident)]
 getFunctionNames = listify' fnName
@@ -202,12 +202,12 @@ rnArgs = fmap (reverse . snd) . foldlM f mempty
         ([Ident], [ArgRn]) ->
         ArgPar ->
         m ([Ident], [ArgRn])
-    f (seen, acc) (ArgX info name ty) = do
+    f (seen, acc) (Arg info name ty) = do
         let seen' = name : seen
         when (name `elem` seen) (conflictingDefinitionArgument info name)
         name <- insertArg name
         ty <- rnType ty
-        pure (seen', ArgX info name ty : acc)
+        pure (seen', Arg info name ty : acc)
 
 rnType :: (Monad m) => TypePar -> m TypeRn
 rnType = pure . coerceType
