@@ -41,20 +41,20 @@ library
     Frontend.Parser.Types
     Frontend.Parser.Utils
     Frontend.Renamer.Monad
+    Frontend.Renamer.Pretty
     Frontend.Renamer.Rn
     Frontend.Renamer.Types
-    Frontend.Renamer.Pretty
     Frontend.StatementCheck
+    Frontend.Tc
     Frontend.TH
-    Frontend.Typechecker.Tc
-    Frontend.Typechecker.Types
     Frontend.Typechecker.Ctx
     Frontend.Typechecker.Pretty
+    Frontend.Typechecker.Types
     Frontend.Types
     Names
+    Options
     Origin
     Utils
-    Options
 
   build-depends:
     , base
@@ -65,6 +65,7 @@ library
     , megaparsec
     , monad-validate
     , mtl
+    , optparse-applicative
     , parser-combinators
     , pretty-simple
     , prettyprinter
@@ -72,7 +73,6 @@ library
     , string-interpolate
     , syb
     , template-haskell
-    , optparse-applicative
 
   hs-source-dirs:   src
   default-language: GHC2021
@@ -83,8 +83,8 @@ executable colubridae
   build-depends:
     , colubridae
     , pretty-simple
-    , relude
     , process
+    , relude
 
   hs-source-dirs:   app
   default-language: GHC2021

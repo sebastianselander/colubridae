@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Frontend.Typechecker.Tc where
+module Frontend.Tc where
 
 import Control.Lens.Getter (uses, view, views)
 import Control.Lens.Setter (locally, modifying)
