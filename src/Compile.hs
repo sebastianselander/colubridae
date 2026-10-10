@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
 {-# HLINT ignore "Use concatMap" #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Compile where
 
@@ -44,13 +44,12 @@ import Backend.Llvm.Lower (llvmOut)
 import Backend.Llvm.Prelude (prelude)
 import Backend.Llvm.Types (Ir, updateDecls)
 import Frontend.Builtin (builtins)
-import Frontend.Error (Report (..), TcError, TcWarning)
-import Frontend.Monomorphizer (monomorphize)
+import Frontend.Error (Report (..))
+import Frontend.Monomorphizer (apply_rename, monomorphize)
 import Frontend.MonomorphizerCollector
     ( Collection (..),
       Item (..),
       collect,
-      prettyItem,
     )
 import Frontend.Parser.Parse (parse)
 import Frontend.Parser.Types (Par)
@@ -59,12 +58,14 @@ import Frontend.Renamer.Rn (rename)
 import Frontend.StatementCheck (check)
 import Frontend.Tc2 (TypeCons (..), getFuns, getTypesAndCons, typecheck)
 import Frontend.Typechecker.Pretty (pThing)
-import Frontend.Typechecker.Types (ProgramTc)
 import Frontend.Types (Adt (Adt), Def (..), Fn (Fn), Program (Program))
+import Impossible (__IMPOSSIBLE__)
 import Names (Ident (..), Namespace (Namespace), combine)
 import Options (Pass (..))
 import Table (DefTable (..))
 import Utils (File (name), zipNE)
+
+import Backend.Core.Types qualified as Core
 
 
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
@@ -134,16 +135,15 @@ compile passes files = do
                     $ fmap (\(Program ns defs) -> Map.singleton ns (Map.fromList (cons (getTypesAndCons defs)))) res
                 )
     programs <- case fmap (typecheck defTable names) res of
-        xs ->
-            let single ::
-                    (Either [TcError] ProgramTc, [TcWarning]) -> ExceptT Text (WriterT DebugOutputs IO) ProgramTc
-                single x =
-                    case x of
-                        (res, warnings) -> do
-                            res <- liftEither $ left report res
-                            log passes (Debug TypeCheck (Just $ pThing res) (toStrict $ pShow res)) (fmap report warnings)
-                            pure res
-             in mapM single xs
+        xs -> forM xs $ \x -> do
+            case x of
+                (res, warnings) -> do
+                    res <- liftEither $ left report res
+                    log
+                        passes
+                        (Debug TypeCheck (Just $ pThing res) "" {- (toStrict $ pShow res) -})
+                        (fmap report warnings)
+                    pure res
 
     let collections = fmap collect programs
     let should_monomorphize_map =
@@ -164,18 +164,29 @@ compile passes files = do
     --                 >> traverse_ (Text.hPutStrLn stderr . ("  " <>) . prettyItem) (toList collection.items)
     --         )
     --         collections
-    let programs' =
-            fmap
-                ( \prg@(Program namespace _) ->
-                    monomorphize
-                        prg
-                        (fromMaybe [] (Map.lookup namespace should_monomorphize_map))
-                )
-                programs
 
-    res <- case fmap (lowerToCore names) programs' of
-        res -> forM res $ \res -> do
-            log passes (Debug Core (Just $ prettyCore res) (toStrict $ pShow res)) []
+    -- FIXME: STILL USING THE POLYMORPHIC FUNCTION. IMPORTS/DECLARES NEED TO BE ADJUSTED TOO
+    let (programs', Map.unionsWith __IMPOSSIBLE__ -> rename_table) =
+            Functor.unzip
+                $ fmap
+                    ( \prg@(Program namespace _) ->
+                        monomorphize
+                            prg
+                            (fromMaybe [] (Map.lookup namespace should_monomorphize_map))
+                    )
+                    programs
+    let programs'' = fmap (apply_rename rename_table) programs'
+
+    res <- case fmap (lowerToCore names) programs'' of
+        res -> forM res $ \res@(Core.Program namespace _) -> do
+            log
+                passes
+                ( Debug
+                    Core
+                    (Just $ prettyCore res)
+                    ("Namespace: " <> show (Pretty.pretty namespace {- (toStrict $ pShow res) -}))
+                )
+                []
             pure res
 
     case fmap assemble res of
