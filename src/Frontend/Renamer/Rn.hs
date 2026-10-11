@@ -129,6 +129,10 @@ Transforms `import foo.bar as baz` to `import foo.bar (f)`
 Transforms `import foo.bar` to `import foo.bar (f)`
     if `foo.bar.f` is used somewhere in the program.
 -}
+
+-- FIXME: Something is not right here..
+-- We should use `symbols` from Env here to sanity check then add them to importedDefinitions.
+-- Perhaps imports should be resolved before renaming even beings
 rnImport :: ImportPar -> Gen ImportRn
 rnImport (ImportExplicit loc namespace symbols) = do
     exist <- doesNamespaceExist namespace
