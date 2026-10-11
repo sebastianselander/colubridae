@@ -7,28 +7,33 @@ module Frontend.Monomorphizer where
 
 import Control.Monad (foldM)
 import Data.Either.Extra (fromEither)
-import Data.Generics (everywhere, mkT)
+import Data.Generics (everywhere, everywhereM, mkM, mkT)
+import Data.Text.Lazy (unpack)
+import Data.Tuple.Extra (uncurry3)
 import Relude hiding (Type)
+import Text.Pretty.Simple (pShow)
 
 import Data.Map qualified as Map
 import Prettyprinter qualified as Pretty
 
 import Frontend.MonomorphizerCollector (Item (..))
 import Frontend.Substitution (Substitution (Subst), apply)
-import Frontend.Typechecker.Types (Tc, TypeApp (TypeApp))
+import Frontend.Typechecker.Types (FnType (..), Tc, TypeApp (TypeApp))
 import Frontend.Types
     ( Arg (Arg),
-      Def (DefFn),
+      Boundedness (Imported),
+      Def (DefFn, DefImport),
       Expr (Expr, Var),
       Fn (Fn),
+      Import (ImportExplicit),
       NoExtField (NoExtField),
       Program (Program),
-      Type (TypeVar),
+      Type (TyFun, TypeVar),
       emptyTyParamList,
       toList,
     )
 import Impossible (__IMPOSSIBLE__)
-import Names (Ident)
+import Names (Ident, Namespace)
 
 import Names qualified
 
@@ -42,18 +47,26 @@ monomorphize prg items = runState (foldM insert_mono_fn prg (deduplicate items))
 
 -- FIXME(sebsel): Apply rename to imports too
 apply_rename :: RenameTable -> Program Tc -> Program Tc
-apply_rename tbl = everywhere (mkT (rename tbl))
+apply_rename tbl prg =
+    let (Program namespace defs, extra_imports) = runState (everywhereM (mkM (rename tbl)) prg) []
+     in Program namespace (fmap (DefImport . uncurry3 make_import) extra_imports <> defs)
 
 
-rename :: RenameTable -> Expr Tc -> Expr Tc
+make_import :: Ident -> Namespace -> FnType -> Import Tc
+make_import name namespace fnType = ImportExplicit [fnType] namespace [name]
+
+
+rename :: (MonadState ([(Ident, Namespace, FnType)]) m) => RenameTable -> Expr Tc -> m (Expr Tc)
 rename tbl expr = case expr of
     Expr (TypeApp (Var (loc, namespace, ty, bind) name) type_args) ->
-        Expr
-            ( TypeApp
-                (Var (loc, namespace, ty, bind) (fromMaybe name (Map.lookup (name, type_args) tbl)))
-                type_args
-            )
-    _ -> expr
+        case Map.lookup (name, type_args) tbl of
+            Just name -> do
+                let TyFun NoExtField args ret = ty
+                when (bind == Imported)
+                    $ modify ((name, namespace, FnType {tyvars = [], retType = ret, argTypes = args}) :)
+                pure $ Expr (TypeApp (Var (loc, namespace, ty, bind) name) type_args)
+            Nothing -> pure $ Expr (TypeApp (Var (loc, namespace, ty, bind) name) type_args)
+    _ -> pure expr
 
 
 make_mono_name ::
