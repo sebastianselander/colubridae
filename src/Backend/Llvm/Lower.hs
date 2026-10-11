@@ -13,6 +13,10 @@ import Backend.Types (Type (..))
 import Impossible (__IMPOSSIBLE__)
 
 
+target :: Doc ann
+target = "target triple = \"x86_64-pc-linux-gnu\""
+
+
 llvmOut :: (Pretty a) => a -> Text
 llvmOut = renderStrict . layoutPretty (LayoutOptions {layoutPageWidth = Unbounded}) . pretty
 
@@ -26,8 +30,8 @@ indentedBlock instr = indent indentLevel (hcat $ punctuate hardline (fmap pretty
 
 
 instance Pretty Ir where
-    pretty (IrMain decls) = hcat $ punctuate (hardline <> hardline) $ fmap pretty decls
-    pretty (IrLib decls) = hcat $ punctuate (hardline <> hardline) $ fmap pretty decls
+    pretty (IrMain decls) = target <> hardline <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
+    pretty (IrLib decls) = target <> hardline <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
 
 
 instance Pretty Decl where
