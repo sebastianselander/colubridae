@@ -29,9 +29,6 @@ instance Pretty Boundedness where
     pretty = Relude.show
 
 
-type HaskellType = Data.Kind.Type
-
-
 data NoExtField = NoExtField
     deriving (Data, Eq, Generic, Ord, Show)
 
