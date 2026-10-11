@@ -154,28 +154,21 @@ compile passes files = do
                 , item <- toList collection.items
                 ]
 
-    -- liftIO $ Text.putStrLn $ toStrict $ pShow should_monomorphize_map
-    -- liftIO $ putStrLn ""
-    --
-    -- liftIO
-    --     $ traverse_
-    --         ( \collection ->
-    --             Text.hPutStrLn stderr ("Namespace: " <> show (Pretty.pretty collection.namespace))
-    --                 >> traverse_ (Text.hPutStrLn stderr . ("  " <>) . prettyItem) (toList collection.items)
-    --         )
-    --         collections
-
-    -- FIXME: STILL USING THE POLYMORPHIC FUNCTION. IMPORTS/DECLARES NEED TO BE ADJUSTED TOO
-    let (programs', Map.unionsWith __IMPOSSIBLE__ -> rename_table) =
-            Functor.unzip
-                $ fmap
-                    ( \prg@(Program namespace _) ->
-                        monomorphize
+    (programs', Map.unionsWith __IMPOSSIBLE__ -> rename_table) <-
+        Functor.unzip
+            <$> mapM
+                ( \prg@(Program namespace _) -> do
+                    pure
+                        $ monomorphize
                             prg
                             (fromMaybe [] (Map.lookup namespace should_monomorphize_map))
-                    )
-                    programs
+                )
+                programs
+
     let programs'' = fmap (apply_rename rename_table) programs'
+
+    forM_ programs'' $ \prg -> do
+        log passes (Debug Monomorphize (Just $ pThing prg) "") []
 
     res <- case fmap (lowerToCore names) programs'' of
         res -> forM res $ \res@(Core.Program namespace _) -> do

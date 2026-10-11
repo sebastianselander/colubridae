@@ -9,7 +9,7 @@ import Relude
 import Data.Set qualified as Set
 
 
-data Pass = Parse | Rename | StCheck | TypeCheck | Core | Llvm
+data Pass = Parse | Rename | StCheck | TypeCheck | Monomorphize | Core | Llvm
     deriving (Eq, Ord, Show)
 
 
@@ -48,6 +48,7 @@ pDumps =
                 (Just StCheck)
                 (long "dump-st" <> help "Show the output of the statement checking phase")
             , flag Nothing (Just TypeCheck) (long "dump-typecheck" <> help "Show the output of the typechecker")
+            , flag Nothing (Just Monomorphize) (long "dump-mono" <> help "Show the output of the monomorphizer")
             , flag Nothing (Just Core) (long "dump-core" <> help "Show the output of the core phase")
             , flag Nothing (Just Llvm) (long "dump-llvm" <> help "Dump the generated llvm-ir code")
             ]
