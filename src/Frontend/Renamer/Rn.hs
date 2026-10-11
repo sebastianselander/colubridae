@@ -29,6 +29,21 @@ import Utils (listify')
 import Frontend.Builtin qualified as Builtins
 
 
+{-
+
+Rewrite:
+\* Program should be [Module] instead of [Def]
+\* Have the renamer make several passes of the ast
+    - Gather all names
+    - Check no duplicates
+    - Apply renaming
+        - store the old name in the node
+        - make namespaces explicit on all names
+\* We probably need to parameterize the ast type with name like this:
+    - Program Ident Par
+    - Program (Namespace, Ident) Rn
+-}
+
 rename :: Set Namespace -> Map Ident Namespace -> ProgramPar -> Either [RnError] (ProgramRn, Names)
 rename namespaces symbolMap prg@(Program namespace defs) =
     runGen (emptyEnv symbolMap) (createCtx namespace builtins allVars namespaces types)
