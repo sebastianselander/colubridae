@@ -7,18 +7,24 @@ module Frontend.Monomorphizer where
 
 import Control.Monad (foldM)
 import Data.Either.Extra (fromEither)
-import Data.Generics (everywhere, everywhereM, mkM, mkT)
-import Data.Text.Lazy (unpack)
-import Data.Tuple.Extra (uncurry3)
+import Data.Generics (everywhereM, mkM)
 import Relude hiding (Type)
-import Text.Pretty.Simple (pShow)
 
 import Data.Map qualified as Map
 import Prettyprinter qualified as Pretty
 
 import Frontend.MonomorphizerCollector (Item (..))
 import Frontend.Substitution (Substitution (Subst), apply)
-import Frontend.Typechecker.Types (FnType (..), Tc, TypeApp (TypeApp))
+import Frontend.Typechecker.Types
+    ( DefTc,
+      ExprTc,
+      FnTc,
+      FnType (..),
+      ImportTc,
+      ProgramTc,
+      TypeApp (TypeApp),
+      TypeTc,
+    )
 import Frontend.Types
     ( Arg (Arg),
       Boundedness (Imported),
@@ -33,66 +39,69 @@ import Frontend.Types
       toList,
     )
 import Impossible (__IMPOSSIBLE__)
-import Names (Ident, Namespace)
+import Names (ExplicitName)
 
 import Names qualified
+import Names qualified as ExplicitName
 
 
-type RenameTable = Map (Ident, [Type Tc]) Ident
+type RenameTable = Map (ExplicitName, [TypeTc]) ExplicitName
 
 
-monomorphize :: Program Tc -> [Item] -> (Program Tc, RenameTable)
+monomorphize :: ProgramTc -> [Item] -> (ProgramTc, RenameTable)
 monomorphize prg items = runState (foldM insert_mono_fn prg (deduplicate items)) Map.empty
 
 
 -- FIXME(sebsel): Apply rename to imports too
-apply_rename :: RenameTable -> Program Tc -> Program Tc
+apply_rename :: RenameTable -> ProgramTc -> ProgramTc
 apply_rename tbl prg =
     let (Program namespace defs, extra_imports) = runState (everywhereM (mkM (rename tbl)) prg) []
-     in Program namespace (fmap (DefImport . uncurry3 make_import) extra_imports <> defs)
+     in Program namespace (fmap (DefImport . uncurry make_import) extra_imports <> defs)
 
 
-make_import :: Ident -> Namespace -> FnType -> Import Tc
-make_import name namespace fnType = ImportExplicit [fnType] namespace [name]
+make_import :: ExplicitName -> FnType -> ImportTc
+make_import name fnType = ImportExplicit [fnType] name.namespace [name]
 
 
-rename :: (MonadState ([(Ident, Namespace, FnType)]) m) => RenameTable -> Expr Tc -> m (Expr Tc)
+rename :: (MonadState ([(ExplicitName, FnType)]) m) => RenameTable -> ExprTc -> m ExprTc
 rename tbl expr = case expr of
-    Expr (TypeApp (Var (loc, namespace, ty, bind) name) type_args) ->
+    Expr (TypeApp (Var (loc, ty, bind) name) type_args) ->
         case Map.lookup (name, type_args) tbl of
             Just name -> do
                 let TyFun NoExtField args ret = ty
                 when (bind == Imported)
-                    $ modify ((name, namespace, FnType {tyvars = [], retType = ret, argTypes = args}) :)
-                pure $ Expr (TypeApp (Var (loc, namespace, ty, bind) name) type_args)
-            Nothing -> pure $ Expr (TypeApp (Var (loc, namespace, ty, bind) name) type_args)
+                    $ modify ((name, FnType {tyvars = [], retType = ret, argTypes = args}) :)
+                pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
+            Nothing -> pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
     _ -> pure expr
 
 
 make_mono_name ::
     -- | Type arguments
-    [Type Tc] ->
+    [TypeTc] ->
     -- | Original name
-    Ident ->
+    ExplicitName ->
     -- \| New name
-    Ident
-make_mono_name type_args =
-    Names.prepend "\""
-        . Names.append
-            ( show
-                ( Pretty.angles
-                    ( Pretty.concatWith
-                        (Pretty.surround Pretty.comma)
-                        (fmap Pretty.pretty type_args)
+    ExplicitName
+make_mono_name type_args name =
+    name
+        { ExplicitName.name =
+            Names.append
+                ( show
+                    ( Pretty.angles
+                        ( Pretty.concatWith
+                            (Pretty.surround Pretty.comma)
+                            (fmap Pretty.pretty type_args)
+                        )
                     )
-                    <> "\""
                 )
-            )
+                name.name
+        }
 
 
 -- We can optimize this by grouping items by the function they are monomorphizing.
 insert_mono_fn ::
-    (MonadState RenameTable m) => Program Tc -> Item -> m (Program Tc)
+    (MonadState RenameTable m) => ProgramTc -> Item -> m ProgramTc
 insert_mono_fn (Program namespace defs) item = do
     fn <- mono_fn
     pure (Program namespace (DefFn fn : defs))
@@ -121,14 +130,14 @@ insert_mono_fn (Program namespace defs) item = do
 
 find_fn ::
     -- | Function we're looking for
-    Ident ->
+    ExplicitName ->
     -- | All defs in the program
-    [Def Tc] ->
+    [DefTc] ->
     -- | Pair of function X we were looking for and all defs \\ function X
-    Maybe (Fn Tc)
+    Maybe FnTc
 find_fn name = foldr f Nothing
   where
-    f :: Def Tc -> Maybe (Fn Tc) -> Maybe (Fn Tc)
+    f :: DefTc -> Maybe FnTc -> Maybe FnTc
     f _ (Just fn) = Just fn
     f def Nothing = case def of
         DefFn fn@(Fn _ fnname _ _ _ _) | name == fnname -> Just fn
@@ -138,7 +147,7 @@ find_fn name = foldr f Nothing
 deduplicate :: [Item] -> [Item]
 deduplicate = Map.elems . fromEither . foldM f Map.empty
   where
-    f acc item@(Item {name, namespace = _, type_args, ty = _, loc = _}) =
+    f acc item@(Item {name, type_args, ty = _, loc = _}) =
         case Map.lookup (name, type_args) acc of
             Just _ -> Left acc
             Nothing -> Right (Map.insert (name, type_args) item acc)

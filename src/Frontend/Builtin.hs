@@ -17,53 +17,79 @@ import Frontend.Types
       Type (..),
       emptySpan,
     )
-import Names (Ident (..), Namespace (Namespace))
+import Names (ExplicitName (..), Ident (..), Namespace (Namespace))
 
 
-newtype Builtins a = Builtins (Map Namespace (Map Ident (PolyType a, SourceInfo)))
+newtype Builtins a = Builtins (Map ExplicitName (PolyType, SourceInfo))
 
 
 deriving instance (Forall Show a) => Show (Builtins a)
 
 
-names :: Builtins a -> Set Ident
-names (Builtins builtins) = Set.unions [Set.fromList (Map.keys el) | el <- Map.elems builtins]
+names :: Builtins a -> Set ExplicitName
+names (Builtins builtins) = Set.fromList (Map.keys builtins)
 
 
-isBuiltin :: Namespace -> Ident -> Builtins a -> Bool
-isBuiltin namespace ident (Builtins m) = isJust $ Map.lookup ident =<< Map.lookup namespace m
+isBuiltin :: ExplicitName -> Builtins a -> Bool
+isBuiltin name (Builtins m) = isJust $ Map.lookup name m
 
 
-lookup :: Namespace -> Ident -> Builtins a -> Maybe (PolyType a, SourceInfo)
-lookup namespace name (Builtins m) = Map.lookup name =<< Map.lookup namespace m
+lookup :: ExplicitName -> Builtins a -> Maybe (PolyType, SourceInfo)
+lookup name (Builtins m) = Map.lookup name m
 
 
 builtins :: Builtins Tc
 builtins =
     Builtins
-        $ Map.singleton
-            (Namespace ("std" :| []))
-            ( Map.fromList
-                [
-                    ( Ident "printInt"
-                    ,
-                        ( PolyType [] $ TyFun NoExtField [TyLit NoExtField Int] (TyLit NoExtField Unit)
-                        , SourceInfo emptySpan "Built in"
-                        )
-                    )
+        ( Map.fromList
+            [
+                ( ( EName
+                        { namespace =
+                            Namespace ("std" :| [])
+                        , name = Ident "printInt"
+                        , oldname = Ident "printInt"
+                        }
+                  )
                 ,
-                    ( Ident "printString"
-                    ,
-                        ( PolyType [] $ TyFun NoExtField [TyLit NoExtField String] (TyLit NoExtField Unit)
-                        , SourceInfo emptySpan "Built in"
-                        )
+                    ( PolyType []
+                        $ TyFun
+                            NoExtField
+                            [TyLit NoExtField Int]
+                            (TyLit NoExtField Unit)
+                    , SourceInfo emptySpan "Built in"
                     )
+                )
+            ,
+                ( ( EName
+                        { namespace = Namespace ("std" :| [])
+                        , name = Ident "printString"
+                        , oldname = Ident "printString"
+                        }
+                  )
                 ,
-                    ( Ident "printChar"
-                    ,
-                        ( PolyType [] $ TyFun NoExtField [TyLit NoExtField Char] (TyLit NoExtField Unit)
-                        , SourceInfo emptySpan "Built in"
-                        )
+                    ( PolyType []
+                        $ TyFun
+                            NoExtField
+                            [TyLit NoExtField String]
+                            (TyLit NoExtField Unit)
+                    , SourceInfo emptySpan "Built in"
                     )
-                ]
-            )
+                )
+            ,
+                ( ( EName
+                        { namespace = Namespace ("std" :| [])
+                        , name = Ident "printChar"
+                        , oldname = Ident "printChar"
+                        }
+                  )
+                ,
+                    ( PolyType []
+                        $ TyFun
+                            NoExtField
+                            [TyLit NoExtField Char]
+                            (TyLit NoExtField Unit)
+                    , SourceInfo emptySpan "Built in"
+                    )
+                )
+            ]
+        )

@@ -28,7 +28,7 @@ import Frontend.Types
       SourceInfo,
     )
 import Impossible (__IMPOSSIBLE__)
-import Names (Ident (..), Names, Namespace, existName, insertName, toPythonStyle)
+import Names (ExplicitName (EName, name), Ident (..), Namespace, toPythonStyle)
 import Utils (mapWithIndexM)
 
 import Frontend.Typechecker.Types qualified as Tc
@@ -43,11 +43,11 @@ newtype DsM a = DsM {runDsm :: StateT Env (Reader Ctx) a}
 
 data Env = Env
     { _expressions :: DList TyExpr
-    , _names :: Names
     , _nameCounter :: Int
     , _lifted :: DList Def
-    , _staticStrings :: [(Ident, Type, Text)]
-    , _constructorIndex :: Map Ident Int
+    , _staticStrings :: [(ExplicitName, Type, Text)]
+    , _constructorIndex :: Map ExplicitName Int
+    , _names :: Set Ident
     }
 
 
@@ -61,8 +61,12 @@ $(makeLenses ''Ctx)
 $(makeLenses ''Env)
 
 
-run :: Map Ident Int -> Ctx -> Names -> Int -> DsM a -> (a, Env)
-run cons f names n = flip runReader f . flip runStateT (Env mempty names n mempty mempty cons) . runDsm
+basicCore :: Tc.ProgramTc -> Program
+basicCore program@(Tc.Program namespace _) = fst $ run mempty (Ctx (const $ pure ()) namespace) 0 mempty $ dsProgram program
+
+
+run :: Map ExplicitName Int -> Ctx -> Int -> Set Ident -> DsM a -> (a, Env)
+run cons f n names = flip runReader f . flip runStateT (Env mempty n mempty mempty cons names) . runDsm
 
 
 emit :: TyExpr -> DsM ()
@@ -85,12 +89,12 @@ unitVarible :: DsM TyExpr
 unitVarible = named (pure unit)
 
 
-unitGlobalName :: Ident
-unitGlobalName = Ident globalUnit
+unitGlobalName :: Namespace -> ExplicitName
+unitGlobalName namespace = EName namespace (Ident globalUnit) (Ident globalUnit)
 
 
-unitGlobalVariable :: DsM TyExpr
-unitGlobalVariable = pure $ Typed Unit (Var GlobalConstant unitGlobalName)
+unitGlobalVariable :: Namespace -> DsM TyExpr
+unitGlobalVariable namespace = pure $ Typed Unit (Var GlobalConstant (unitGlobalName namespace))
 
 
 unnamed :: DsM TyExpr -> DsM ()
@@ -100,7 +104,7 @@ unnamed thing = do
     pure ()
 
 
-declare :: Type -> DsM Ident
+declare :: Type -> DsM ExplicitName
 declare (I 1) = do
     name <- fresh "declare"
     emit $ Typed Unit $ Let name Unit (Just unit)
@@ -111,22 +115,21 @@ declare ty = do
     pure name
 
 
-fresh :: Text -> DsM Ident
+fresh :: Text -> DsM ExplicitName
 fresh prefix = go 0
   where
-    go :: Int -> DsM Ident
+    go :: Int -> DsM ExplicitName
     go n = do
-        let freshName = Ident $ prefix <> "_" <> show n
-        nameMap <- use names
-        if existName freshName nameMap
+        namespace <- view namespace
+        nms <- use names
+        let freshName = Ident $ "$" <> prefix <> "_" <> show n
+        if Set.member freshName nms
             then go (n + 1)
             else do
-                modifying names (insertName freshName)
-                pure freshName
-
-
-basicCore :: Names -> Tc.ProgramTc -> Program
-basicCore names program@(Tc.Program namespace _) = fst $ run mempty (Ctx (const $ pure ()) namespace) names 0 $ dsProgram program
+                modifying
+                    names
+                    (Set.insert freshName)
+                pure (EName namespace freshName freshName)
 
 
 dsProgram :: Tc.ProgramTc -> DsM Program
@@ -138,7 +141,7 @@ dsProgram (Tc.Program namespace defs) = do
 
 
 isMain :: Tc.FnTc -> Bool
-isMain (Tc.Fn NoExtField (Ident "main") _tyParams _ _ _) = True
+isMain (Tc.Fn NoExtField name _tyParams _ _ _) | name.name == "main" = True
 isMain _ = False
 
 
@@ -157,8 +160,9 @@ dsFunction def@(Tc.Fn NoExtField name _tyParams args returnType (Tc.Block (_info
                 else void $ unnamed $ pure $ Typed returnType (Return tail)
     emits <- use expressions
     assign expressions mempty
+    namespace <- view namespace
     if isMain def
-        then pure $ Main (toList emits)
+        then pure $ Main namespace (toList emits)
         else case returnType of
             (I 1) -> pure $ Fn Origin.Function name args returnType (toList $ emits `snoc` Typed (I 1) (Return unit))
             _ -> pure $ Fn Origin.Function name args returnType (toList emits)
@@ -169,7 +173,7 @@ dsDef (Tc.DefFn fn) = pure <$> dsFunction fn
 dsDef (Tc.DefAdt adt) = dsAdt adt
 dsDef (Tc.DefImport (ImportExplicit tys namespace names)) = zipWithM (declare namespace) tys names
   where
-    declare :: (Monad m) => Namespace -> FnType -> Ident -> m Def
+    declare :: (Monad m) => Namespace -> FnType -> ExplicitName -> m Def
     declare namespace fnType name =
         Decl namespace <$> dsType fnType.retType <*> pure name <*> mapM dsType fnType.argTypes
 
@@ -202,7 +206,7 @@ constructorAllocSize (Tc.FunCons (_loc, _) _ tys : cons) = do
     pure (max (fromIntegral size) rest)
 
 
-dsArg :: Tc.Arg Tc.Tc -> DsM Arg
+dsArg :: Tc.ArgTc -> DsM Arg
 dsArg (Tc.Arg NoExtField name ty) = Arg name <$> dsType ty
 
 
@@ -216,7 +220,7 @@ dsExpr = \case
     Tc.Lit (_info, ty) lit -> do
         lit <- dsLit lit
         named $ typed ty lit
-    Tc.Var (_info, _namespace, ty, binding) name -> Typed <$> dsType ty <*> pure (Var (dsBound binding) name)
+    Tc.Var (_info, ty, binding) name -> Typed <$> dsType ty <*> pure (Var (dsBound binding) name)
     Tc.BinOp (_, ty) l op r -> do
         l <- dsExpr l
         let op' = dsBinOp op
@@ -238,12 +242,14 @@ dsExpr = \case
         let exprTy = view varType info
         exprTy <- dsType exprTy
         unnamed $ typed letTy (Let name exprTy (Just expr))
-        unitGlobalVariable
+        namespace <- view namespace
+        unitGlobalVariable namespace
     Tc.Ass (info, binding) name op expr -> named $ typed (view stmtType info) =<< ass name (view varType info) binding op expr
     Tc.Ret (_info, ty) expr -> do
         expr <- mapM dsExpr expr
         unnamed $ typed ty (Return (fromMaybe unit expr))
-        unitGlobalVariable
+        namespace <- view namespace
+        unitGlobalVariable namespace
     Tc.EBlock NoExtField block@(Tc.Block (_, ty) _ _) -> do
         ty <- dsType ty
         var <- declare ty
@@ -261,7 +267,8 @@ dsExpr = \case
             Just expr -> do
                 f expr
                 unnamed $ typed ty Break
-                unitGlobalVariable
+                namespace <- view namespace
+                unitGlobalVariable namespace
     Tc.If (_info, ty) cond trueBlk mbFalseBlk -> do
         ty' <- dsType ty
         var <- declare ty'
@@ -325,9 +332,14 @@ extractCatch loc arms = (go mempty (lefts arms),) <$> maybe nonexhaustive pure (
         modifying staticStrings ((name, ArrayType (Text.length errString - 1) (I 8), errString <> "\\00") :)
         n <- use nameCounter
         nameCounter += 1
+        namespace <- view namespace
         pure
             $ Catch
-                (Ident $ "$nomatch$" <> show n)
+                ( EName
+                    namespace
+                    (Ident $ "$nomatch$" <> show n)
+                    (Ident $ "$nomatch$" <> show n)
+                )
                 (pure $ Typed Unit $ ToStderrExit name)
     go :: Set Int -> [MatchArm] -> [MatchArm]
     go _ [] = []
@@ -347,7 +359,7 @@ dsMatchArms (Tc.MatchArm _loc pat body : rest) = do
         Right pat -> (Left (MatchArm pat body) :) <$> dsMatchArms rest
 
 
-dsPat :: Tc.PatternTc -> DsM (Either Ident Pattern)
+dsPat :: Tc.PatternTc -> DsM (Either ExplicitName Pattern)
 dsPat = \case
     Tc.PVar _loc name -> pure $ Left name
     Tc.PEnumCon _loc name -> do
@@ -388,39 +400,39 @@ mkArg (Tc.LamArg ty name) = do
 
 
 -- TODO: Rewrite
-dsBlock :: Ctx -> Ident -> Tc.Block Tc.Tc -> DsM [TyExpr]
+dsBlock :: Ctx -> ExplicitName -> Tc.BlockTc -> DsM [TyExpr]
 dsBlock f _ (Tc.Block (_, Tc.TyLit NoExtField Tc.Unit) stmts tail) = do
-    names' <- use names
+    nms <- use names
     n <- use nameCounter
     cons <- use constructorIndex
-    let ((), Env emits names'' n' lifteds strings _) =
-            run cons f names' n $ mapM_ dsStmt (stmts <> maybe [] (\x -> [Tc.SExpr NoExtField x]) tail)
-    assign names names''
+    let ((), Env emits n' lifteds strings _ names') =
+            run cons f n nms $ mapM_ dsStmt (stmts <> maybe [] (\x -> [Tc.SExpr NoExtField x]) tail)
+    assign names names'
     assign nameCounter n'
     modifying lifted (<> lifteds)
     modifying staticStrings (<> strings)
     pure (toList emits)
 dsBlock f _ (Tc.Block _ stmts Nothing) = do
-    names' <- use names
+    nms <- use names
     n <- use nameCounter
     cons <- use constructorIndex
-    let ((), Env emits names'' n' lifteds strings _) = run cons f names' n $ mapM_ dsStmt stmts
-    assign names names''
+    let ((), Env emits n' lifteds strings _ names') = run cons f n nms $ mapM_ dsStmt stmts
+    assign names names'
     assign nameCounter n'
     modifying lifted (<> lifteds)
     modifying staticStrings (<> strings)
     pure (toList emits)
 dsBlock f variable (Tc.Block (_, ty) stmts (Just tail)) = do
-    names' <- use names
+    nms <- use names
     n <- use nameCounter
     cons <- use constructorIndex
-    let ((), Env emits names'' n' lifteds strings _) =
-            run cons f names' n $ do
+    let ((), Env emits n' lifteds strings _ names') =
+            run cons f n nms $ do
                 ty <- dsType ty
                 mapM_ dsStmt stmts
                 tail <- dsExpr tail
                 emit $ Typed Unit $ Ass variable ty tail
-    assign names names''
+    assign names names'
     assign nameCounter n'
     modifying lifted (<> lifteds)
     modifying staticStrings (<> strings)
@@ -441,7 +453,7 @@ dsLit = \case
     Tc.UnitLit NoExtField -> pure $ Constant UnitLit
 
 
-ass :: Ident -> Tc.TypeTc -> Bound.Boundedness -> Tc.AssignOp -> Tc.Expr Tc.Tc -> DsM Expr
+ass :: ExplicitName -> Tc.TypeTc -> Bound.Boundedness -> Tc.AssignOp -> Tc.ExprTc -> DsM Expr
 ass name typ binding op xpr = do
     expr <- dsExpr xpr
     ty <- dsType typ
@@ -472,7 +484,7 @@ typed :: Tc.TypeTc -> Expr -> DsM TyExpr
 typed ty expr = Typed <$> dsType ty <*> pure expr
 
 
-lookupCon :: Ident -> DsM Int
+lookupCon :: ExplicitName -> DsM Int
 lookupCon name = uses constructorIndex (fromJust . Map.lookup name)
 
 

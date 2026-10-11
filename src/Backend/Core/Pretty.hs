@@ -31,7 +31,7 @@ pType = \case
     Bool -> "bool"
     Mut ty -> pType ty <> "?"
     I n -> "i" <> show n
-    TyCon name -> pretty name
+    TyCon name -> pretty name.name
     PointerType ty -> pType ty <> "*"
     OpaquePointer -> "ptr"
     StructType tys -> braces (concatWith (surround (comma <> space)) (fmap pType tys))
@@ -88,23 +88,23 @@ pDef (Decl namespace ty name tys) =
         <+> pType ty
         <+> pretty namespace
         <> "::"
-        <> pretty name
+        <> pretty name.name
         <> parens (concatWith (surround (comma <> space)) (fmap pType tys))
-pDef (TypeSyn name ty) = "type" <+> pretty name <+> "=" <+> pType ty
+pDef (TypeSyn name ty) = "type" <+> pretty name.name <+> "=" <+> pType ty
 pDef (Con index name ty arguments) =
     show index
         <> "#"
-        <> pretty name
+        <> pretty name.name
         <> maybe "" (\xs -> parens (concatWith (surround (comma <> space)) $ fmap pType xs)) arguments
         <> ":"
         <+> pType ty
-pDef (StaticString name ty str) = "const" <+> pretty name <> ":" <+> pType ty <+> "=" <+> pretty str
-pDef (Main exprs) = pDef (Fn Origin.Function (Ident "main") [] Unit exprs)
+pDef (StaticString name ty str) = "const" <+> pretty name.name <> ":" <+> pType ty <+> "=" <+> pretty str
+pDef (Main namespace exprs) = pDef (Fn Origin.Function (EName namespace (Ident "main") (Ident "main")) [] Unit exprs)
 pDef (Fn _ name args typ exprs) =
     concatWith
         (<+>)
         [ "def"
-        , pIdent name
+        , pIdent name.name
         , parens (cat (punctuate comma (fmap pArg args)))
         , "->"
         , pType typ
@@ -122,7 +122,7 @@ pIdent (Ident name) = pretty name
 
 pArg :: Arg -> Doc ann
 pArg (EnvArg ty) = "env:" <+> pType ty
-pArg (Arg name ty) = pIdent name <> ":" <+> pType ty
+pArg (Arg name ty) = pIdent name.name <> ":" <+> pType ty
 
 
 pExpr :: TyExpr -> Doc ann
@@ -130,12 +130,12 @@ pExpr (Typed _ expr) = go expr
   where
     go = \case
         Constant lit -> pLit lit
-        Var _ ident -> pIdent ident
+        Var _ ident -> pIdent ident.name
         BinOp l op r -> pExpr l <+> pBinOp op <+> pExpr r
         PrefixOp op expr -> pPrefixOp op <+> pExpr expr
         App l rs -> pExpr l <> parens (hcat (punctuate comma $ fmap pExpr rs))
-        Let name ty expr -> "let" <+> pIdent name <> ":" <+> pType ty <+> maybe emptyDoc (\e -> "=" <+> pExpr e) expr
-        Ass name ty expr -> pIdent name <> ":" <+> pType ty <+> "=" <+> pExpr expr
+        Let name ty expr -> "let" <+> pIdent name.name <> ":" <+> pType ty <+> maybe emptyDoc (\e -> "=" <+> pExpr e) expr
+        Ass name ty expr -> pIdent name.name <> ":" <+> pType ty <+> "=" <+> pExpr expr
         Return expr -> "return" <+> pExpr expr
         Break -> "break"
         If cond true mbfalse ->
@@ -172,16 +172,16 @@ pExpr (Typed _ expr) = go expr
         StructIndexing expr n ->
             "get" <> parens (pExpr expr <> "," <+> show n)
         ExtractFree bindName envName index ->
-            "let" <+> pretty bindName <+> "=" <+> pretty envName <> brackets (show index)
+            "let" <+> pretty bindName.name <+> "=" <+> pretty envName.name <> brackets (show index)
         Match scrutinee arms catch ->
             "match"
                 <+> pExpr scrutinee
                 <+> braces (hardline <> prettyArms arms <> hardline <> pCatch catch <> hardline)
-        ToStderrExit txt -> "exit: " <> pretty txt
+        ToStderrExit txt -> "exit: " <> pretty txt.name
 
 
 pCatch :: Catch -> Doc ann
-pCatch (Catch name expr) = pretty name <+> "=>" <+> concatWith (surround (semi <> hardline)) (fmap pExpr (toList expr))
+pCatch (Catch name expr) = pretty name.name <+> "=>" <+> concatWith (surround (semi <> hardline)) (fmap pExpr (toList expr))
 
 
 prettyArms :: [MatchArm] -> Doc ann
@@ -204,4 +204,5 @@ prettyShowPat = renderStrict . layoutPretty defaultLayoutOptions . prettyPat
 
 prettyPat :: Pattern -> Doc ann
 prettyPat = \case
-    PCon name args -> pretty name <> parens (concatWith (surround (comma <> space)) (fmap (pretty . fst) args))
+    PCon name args ->
+        pretty name <> parens (concatWith (surround (comma <> space)) (fmap (pretty . (.name) . fst) args))

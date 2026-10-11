@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Names
     ( Ident (..),
       Names,
       Namespace (..),
+      ExplicitName (..),
       mkNames,
       getOriginalName,
       mkNamespace,
@@ -29,6 +31,7 @@ import System.FilePath (splitDirectories)
 
 import Data.Map qualified as Map
 import Data.Text qualified as Text
+import Prettyprinter qualified as Pretty
 
 import Impossible (__IMPOSSIBLE__)
 
@@ -62,6 +65,22 @@ newtype Namespace = Namespace (NonEmpty Text)
 -- Identifier: `foo`
 newtype Ident = Ident Text
     deriving (Data, Eq, IsString, Monoid, Ord, Semigroup, Show)
+
+
+data ExplicitName = EName {namespace :: Namespace, name :: Ident, oldname :: Ident}
+    deriving (Data, Ord, Show)
+
+
+instance Pretty ExplicitName where
+    pretty name =
+        Pretty.dquotes
+            $ Pretty.pretty name.namespace
+            <> Pretty.dot
+            <> Pretty.pretty name.name
+
+
+instance Eq ExplicitName where
+    a == b = a.namespace == b.namespace && a.name == b.name
 
 
 getText :: Ident -> Text

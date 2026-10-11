@@ -16,7 +16,7 @@ import Backend.Llvm.Prelude (exitFailure, printString)
 import Backend.Llvm.Types
 import Backend.Types
 import Impossible (__IMPOSSIBLE__)
-import Names (Ident (..), Namespace)
+import Names (ExplicitName (EName, name), Ident (..), Namespace)
 import Origin (Origin (..))
 import Utils (catMaybesSnd, mapWithIndexM)
 
@@ -24,17 +24,17 @@ import Backend.Core.Types qualified as Core
 
 
 assemble :: Core.Program -> Ir
-assemble (Core.Program (_namespace :: Namespace) defs) =
+assemble (Core.Program namespace defs) =
     IrMain
         . sortBy (comparing Down)
-        <$> runAssembler
+        <$> runAssembler namespace
         $ concatMapM assembleDecl defs
 
 
 assembleDecl :: Core.Def -> IRBuilder [Decl]
 assembleDecl (Core.Decl _namespace ty name args) = pure [Declare ty name args NoEllipsis]
 assembleDecl (Core.StaticString name ty text) = pure [GlobalString name ty text]
-assembleDecl (Core.Main block) = do
+assembleDecl (Core.Main _namespace block) = do
     clearInstructions
     mapM_ assembleExpr block
     pure . LlvmMain <$> extractInstructions
@@ -49,7 +49,7 @@ assembleDecl (Core.Con index name ty tyArgs) = do
     assembleCon index name ty tyArgs
 
 
-assembleCon :: Int -> Ident -> Type -> Maybe [Type] -> IRBuilder [Decl]
+assembleCon :: Int -> ExplicitName -> Type -> Maybe [Type] -> IRBuilder [Decl]
 assembleCon index name ty = \case
     Nothing -> do
         instrs <- fmap snd $ inContext $ do
@@ -61,7 +61,7 @@ assembleCon index name ty = \case
         pure [Define ConstructorFn name [] ty instrs]
     Just tys -> do
         -- NOTE: Can we just inline `mkName`??
-        let constructorFun = Ident "mk" <> name
+        let constructorFun = name {name = Ident "mk" <> name.name}
         operands <- mapM (\name -> fmap (LocalReference name) fresh) tys
         let retty = getReturnType ty
         instrs <- fmap snd $ inContext $ do
@@ -91,9 +91,11 @@ assembleCon index name ty = \case
 
 
 assembleArg :: Core.Arg -> IRBuilder Operand
-assembleArg (Core.EnvArg ty) = pure $ LocalReference ty (Ident "env")
+assembleArg (Core.EnvArg ty) = do
+    namespace <- view namespace
+    pure $ LocalReference ty (EName namespace (Ident "env") (Ident "env"))
 assembleArg (Core.Arg name ty) = do
-    let arg = LocalReference ty (mkArgName name)
+    let arg = LocalReference ty (name {name = mkArgName name.name})
     fakeArg <- alloca name ty
     store arg fakeArg
     pure arg

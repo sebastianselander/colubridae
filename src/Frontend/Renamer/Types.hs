@@ -8,56 +8,56 @@ import Relude hiding (Type)
 
 import Frontend.Parser.Types
 import Frontend.Types
-import Names (Namespace)
+import Names (ExplicitName)
 
 
 data Rn
     deriving (Data)
 
 
-type ProgramRn = Program Rn
+type ProgramRn = Program ExplicitName Rn
 
 
-type DefRn = Def Rn
+type DefRn = Def ExplicitName Rn
 
 
-type ImportRn = Import Rn
+type ImportRn = Import ExplicitName Rn
 
 
-type FnRn = Fn Rn
+type FnRn = Fn ExplicitName Rn
 
 
-type AdtRn = Adt Rn
+type AdtRn = Adt ExplicitName Rn
 
 
-type ConstructorRn = Constructor Rn
+type ConstructorRn = Constructor ExplicitName Rn
 
 
-type ArgRn = Arg Rn
+type ArgRn = Arg ExplicitName Rn
 
 
-type ExprRn = Expr Rn
+type ExprRn = Expr ExplicitName Rn
 
 
-type TypeRn = Type Rn
+type TypeRn = Type ExplicitName Rn
 
 
 type LitRn = Lit Rn
 
 
-type StmtRn = Stmt Rn
+type StmtRn = Stmt ExplicitName Rn
 
 
-type BlockRn = Block Rn
+type BlockRn = Block ExplicitName Rn
 
 
-type LamArgRn = LamArg Rn
+type LamArgRn = LamArg ExplicitName Rn
 
 
-type MatchArmRn = MatchArm Rn
+type MatchArmRn = MatchArm ExplicitName Rn
 
 
-type PatternRn = Pattern Rn
+type PatternRn = Pattern ExplicitName Rn
 
 
 deriving instance Data ExprRn
@@ -108,7 +108,7 @@ deriving instance Data PatternRn
 type instance XProgram Rn = XProgram Par
 
 
-type instance XArg Rn = (SourceInfo, Namespace)
+type instance XArg Rn = SourceInfo
 
 
 type instance XDef Rn = XDef Par
@@ -156,7 +156,7 @@ type instance XWhile Rn = XWhile Par
 type instance XLet Rn = (SourceInfo, Maybe TypeRn)
 
 
-type instance XAss Rn = (SourceInfo, Boundedness, Namespace)
+type instance XAss Rn = (SourceInfo, Boundedness)
 
 
 type instance XSExp Rn = XSExp Par
@@ -174,16 +174,16 @@ type instance XMatch Rn = SourceInfo
 type instance XPVar Rn = SourceInfo
 
 
-type instance XPEnumCon Rn = (SourceInfo, Namespace)
+type instance XPEnumCon Rn = SourceInfo
 
 
-type instance XPFunCon Rn = (SourceInfo, Namespace)
+type instance XPFunCon Rn = SourceInfo
 
 
 type instance XLit Rn = XLit Par
 
 
-type instance XVar Rn = (SourceInfo, Namespace, Boundedness)
+type instance XVar Rn = (SourceInfo, Boundedness)
 
 
 type instance XBinOp Rn = XBinOp Par
@@ -240,4 +240,4 @@ type instance XLoop Rn = SourceInfo
 type instance XLam Rn = XLam Par
 
 
-type instance XLamArg Rn = (SourceInfo, Maybe TypeRn, Namespace)
+type instance XLamArg Rn = (SourceInfo, Maybe TypeRn)

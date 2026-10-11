@@ -12,7 +12,7 @@ import Data.Data (Data)
 import Relude hiding (Any, Type)
 
 import Frontend.Types hiding (Bool, Char, Double, Int, String, Unit)
-import Names (Namespace)
+import Names (ExplicitName, Namespace)
 
 
 data Tc deriving (Data)
@@ -22,55 +22,52 @@ data FnType = FnType {tyvars :: [TyVar], retType :: TypeTc, argTypes :: [TypeTc]
     deriving (Data, Eq, Ord, Show)
 
 
-type ProgramTc = Program Tc
+type ProgramTc = Program ExplicitName Tc
 
 
-type DefTc = Def Tc
+type DefTc = Def ExplicitName Tc
 
 
-type ImportTc = Import Tc
+type ImportTc = Import ExplicitName Tc
 
 
-type FnTc = Fn Tc
+type FnTc = Fn ExplicitName Tc
 
 
-type AdtTc = Adt Tc
+type AdtTc = Adt ExplicitName Tc
 
 
-type ConstructorTc = Constructor Tc
+type ConstructorTc = Constructor ExplicitName Tc
 
 
-type ArgTc = Arg Tc
+type ArgTc = Arg ExplicitName Tc
 
 
-type ExprTc = Expr Tc
+type ExprTc = Expr ExplicitName Tc
 
 
-type TypeTc = Type Tc
+type TypeTc = Type ExplicitName Tc
 
 
 type LitTc = Lit Tc
 
 
-type StmtTc = Stmt Tc
+type StmtTc = Stmt ExplicitName Tc
 
 
-type BlockTc = Block Tc
+type BlockTc = Block ExplicitName Tc
 
 
-type LamArgTc = LamArg Tc
+type LamArgTc = LamArg ExplicitName Tc
 
 
-type MatchArmTc = MatchArm Tc
+type MatchArmTc = MatchArm ExplicitName Tc
 
 
-type PatternTc = Pattern Tc
+type PatternTc = Pattern ExplicitName Tc
 
 
 type TcInfo = (SourceInfo, TypeTc)
-
-
-type TcInfoBound = (SourceInfo, Namespace, TypeTc, Boundedness)
 
 
 deriving instance Data ProgramTc
@@ -196,7 +193,7 @@ type instance XPFunCon Tc = TcInfo
 type instance XLit Tc = TcInfo
 
 
-type instance XVar Tc = TcInfoBound
+type instance XVar Tc = (SourceInfo, TypeTc, Boundedness)
 
 
 type instance XPrefix Tc = TcInfo
@@ -267,13 +264,13 @@ deriving instance Eq TypeTc
 deriving instance Ord TypeTc
 
 
-pattern Any :: (XType a ~ MetaTy) => Type a
+pattern Any :: (XType a ~ MetaTy) => Type name a
 pattern Any <- Type AnyX
     where
         Any = Type AnyX
 
 
-pattern Monotype :: (XType a ~ MetaTy) => Int -> Type a
+pattern Monotype :: (XType a ~ MetaTy) => Int -> Type name a
 pattern Monotype n <- Type (Mono (MonoType n))
     where
         Monotype n = Type (Mono $ MonoType n)
@@ -287,23 +284,12 @@ newtype MonoType = MonoType Int
     deriving (Data, Eq, Ord, Show)
 
 
-data StmtType = StmtType {_stmtType :: TypeTc, _varType :: Type Tc, _stmtInfo :: SourceInfo}
+data StmtType = StmtType {_stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
     deriving (Data, Eq, Ord, Show)
 
 
-data PolyType a = PolyType {tvars :: [TyVar], ty :: Type a}
-
-
-deriving instance (Forall Show a) => Show (PolyType a)
-
-
-deriving instance Eq (PolyType Tc)
-
-
-deriving instance Ord (PolyType Tc)
-
-
-deriving instance Data (PolyType Tc)
+data PolyType = PolyType {tvars :: [TyVar], ty :: TypeTc}
+    deriving (Data, Eq, Ord, Show)
 
 
 $(makeLenses ''StmtType)

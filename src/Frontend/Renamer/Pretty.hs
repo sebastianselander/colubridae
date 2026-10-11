@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -12,7 +13,7 @@ import Prettyprinter qualified as Pretty
 import Frontend.Parser.Utils (namespaceSeparator)
 import Frontend.Renamer.Types
 import Frontend.Types hiding (toList)
-import Names (Ident (..))
+import Names (ExplicitName (..))
 
 
 prettyRenamer :: (Pretty a) => a -> Text
@@ -37,13 +38,13 @@ instance Pretty ImportRn where
         "import"
             <+> Pretty.pretty namespace
             <+> Pretty.parens
-                (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap pretty imports))
+                (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap (pretty . name) imports))
 
 
 instance Pretty AdtRn where
     pretty (Adt _ name cons) =
         "type"
-            <+> Pretty.pretty name
+            <+> Pretty.pretty name.name
             <+> Pretty.braces
                 ( Pretty.hardline
                     <> Pretty.indent
@@ -58,9 +59,9 @@ instance Pretty AdtRn where
 
 instance Pretty ConstructorRn where
     pretty = \case
-        EnumCons _ name -> Pretty.pretty name
+        EnumCons _ name -> Pretty.pretty name.name
         FunCons _ name types ->
-            Pretty.pretty name
+            Pretty.pretty name.name
                 <> Pretty.parens
                     ( Pretty.concatWith
                         (Pretty.surround (Pretty.comma <> Pretty.space))
@@ -76,9 +77,9 @@ instance Pretty TyParamList where
 
 
 instance Pretty FnRn where
-    pretty (Fn _ (Ident name) tyParams args ty block) =
+    pretty (Fn _ name tyParams args ty block) =
         "def"
-            <+> Pretty.pretty name
+            <+> Pretty.pretty name.name
                 <> Pretty.pretty tyParams
                 <> Pretty.parens
                     ( Pretty.concatWith
@@ -114,7 +115,9 @@ instance Pretty StmtRn where
 
 
 instance Pretty ArgRn where
-    pretty (Arg (_, namespace) name ty) = Pretty.pretty namespace <> namespaceSeparator <> Pretty.pretty name <> ":" <+> Pretty.pretty ty
+    pretty (Arg _ name ty) =
+        Pretty.pretty name.namespace <> namespaceSeparator <> Pretty.pretty name.name <> ":"
+            <+> Pretty.pretty ty
 
 
 instance Pretty TypeRn where
@@ -131,7 +134,7 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeRn -> Doc ann
 prettyType2 = \case
-    TyCon _ name -> Pretty.pretty name
+    TyCon _ name -> Pretty.pretty name.name
     TyLit _ tylit -> case tylit of
         Unit -> "()"
         String -> "string"
@@ -190,13 +193,13 @@ prettyExpr7 :: ExprRn -> Doc ann
 prettyExpr7 e@BinOp {} = Pretty.parens (Pretty.pretty e)
 prettyExpr7 e@Prefix {} = Pretty.parens (Pretty.pretty e)
 prettyExpr7 (Lit _ lit) = Pretty.pretty lit
-prettyExpr7 (Var (_, namespace, _) name) = Pretty.pretty namespace <> namespaceSeparator <> Pretty.pretty name
+prettyExpr7 (Var (_, _) name) = Pretty.pretty name.namespace <> namespaceSeparator <> Pretty.pretty name.name
 prettyExpr7 (App _ l rs) =
     Pretty.pretty l
         <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty rs))
-prettyExpr7 (Let (_, Nothing) name e) = "let" <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
-prettyExpr7 (Let (_, Just ty) name e) = "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
-prettyExpr7 (Ass _ (Ident name) op e) = Pretty.pretty name <+> Pretty.pretty op <+> Pretty.pretty e
+prettyExpr7 (Let (_, Nothing) name e) = "let" <+> Pretty.pretty name.name <+> "=" <+> Pretty.pretty e
+prettyExpr7 (Let (_, Just ty) name e) = "let" <+> Pretty.pretty name.name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
+prettyExpr7 (Ass _ name op e) = Pretty.pretty name.name <+> Pretty.pretty op <+> Pretty.pretty e
 prettyExpr7 (Ret _ Nothing) = "return"
 prettyExpr7 (Ret _ (Just e)) = "return" <+> Pretty.pretty e
 prettyExpr7 (EBlock _ block) = Pretty.pretty block
@@ -232,10 +235,10 @@ instance Pretty MatchArmRn where
 
 instance Pretty PatternRn where
     pretty = \case
-        PVar _ varName -> Pretty.pretty varName
-        PEnumCon _ conName -> Pretty.pretty conName
+        PVar _ varName -> Pretty.pretty varName.name
+        PEnumCon _ conName -> Pretty.pretty conName.name
         PFunCon _ conName pats ->
-            Pretty.pretty conName
+            Pretty.pretty conName.name
                 <> Pretty.parens
                     ( Pretty.concatWith
                         (Pretty.surround (Pretty.comma <> Pretty.space))
@@ -244,10 +247,10 @@ instance Pretty PatternRn where
 
 
 instance Pretty LamArgRn where
-    pretty (LamArg (_, Nothing, namespace) name) =
-        Pretty.pretty namespace <> namespaceSeparator <> Pretty.pretty name
-    pretty (LamArg (_, Just ty, namespace) name) =
-        Pretty.parens $ Pretty.pretty namespace <> namespaceSeparator <> Pretty.pretty name <> ":"
+    pretty (LamArg (_, Nothing) name) =
+        Pretty.pretty name.namespace <> namespaceSeparator <> Pretty.pretty name.name
+    pretty (LamArg (_, Just ty) name) =
+        Pretty.parens $ Pretty.pretty name.namespace <> namespaceSeparator <> Pretty.pretty name.name <> ":"
             <+> Pretty.pretty ty
 
 

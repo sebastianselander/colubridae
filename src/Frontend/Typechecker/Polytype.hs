@@ -18,26 +18,26 @@ import Frontend.Typechecker.Types
     ( MetaTy (..),
       MonoType,
       PolyType (PolyType),
-      Tc,
+      TypeTc,
       pattern Monotype,
     )
 import Frontend.Types (NoExtField (NoExtField), TyVar (TyVar), Type (..))
 import Names (Ident (Ident))
 
 
-instantiate_with :: Map TyVar MonoType -> PolyType Tc -> Type Tc
+instantiate_with :: Map TyVar MonoType -> PolyType -> TypeTc
 instantiate_with tbl (PolyType tyvars ty) =
     assert (and [Map.member tyvar tbl | tyvar <- tyvars])
         $ replaceTyVars (Map.map (Type . Mono) tbl) ty
 
 
-instantiate :: Int -> PolyType Tc -> (Type Tc, Int)
+instantiate :: Int -> PolyType -> (TypeTc, Int)
 instantiate n (PolyType typevars ty) =
     let tvars_to_replace = Map.fromList $ zipWith (\ty n -> (ty, Monotype n)) typevars [n ..]
      in (replaceTyVars tvars_to_replace ty, n + Map.size tvars_to_replace)
 
 
-replaceTyVars :: Map TyVar (Type Tc) -> Type Tc -> Type Tc
+replaceTyVars :: Map TyVar TypeTc -> TypeTc -> TypeTc
 replaceTyVars tbl = \case
     TyLit NoExtField lit -> TyLit NoExtField lit
     TyFun tyParamList args ret -> TyFun tyParamList (fmap (replaceTyVars tbl) args) (replaceTyVars tbl ret)
@@ -46,7 +46,7 @@ replaceTyVars tbl = \case
     Type meta -> Type meta
 
 
-occurs :: MonoType -> Type Tc -> Bool
+occurs :: MonoType -> TypeTc -> Bool
 occurs mono ty = case ty of
     TyLit NoExtField _ -> False
     TyCon NoExtField _ -> False
@@ -56,7 +56,7 @@ occurs mono ty = case ty of
     Type AnyX -> False
 
 
-generalize :: Type Tc -> (PolyType Tc, Substitution Tc)
+generalize :: TypeTc -> (PolyType, Substitution)
 generalize ty =
     let (monos, tvars) = find_all_monotypes ty
         generalized_tvars = TyVar <$> tvar_names tvars
@@ -64,7 +64,7 @@ generalize ty =
         subst = Subst $ Map.fromList [(Type (Mono k), TypeVar NoExtField v) | (k, v) <- table]
      in (PolyType (fmap snd table) $ apply subst ty, subst)
   where
-    find_all_monotypes :: Type Tc -> (Set MonoType, Set Ident)
+    find_all_monotypes :: TypeTc -> (Set MonoType, Set Ident)
     find_all_monotypes ty = case ty of
         TyFun NoExtField args ret ->
             let (monos, tvars) = foldr f (mempty, mempty) args
@@ -91,9 +91,9 @@ tvar_names exclude =
 
 {- ===== Testing ====== -}
 
-tyvar :: Text -> Type Tc
+tyvar :: Text -> TypeTc
 tyvar name = TypeVar NoExtField (TyVar $ Ident name)
 
 
-ty :: PolyType Tc
+ty :: PolyType
 ty = PolyType [TyVar "a"] $ TyFun NoExtField [tyvar "b", tyvar "a"] (tyvar "a")

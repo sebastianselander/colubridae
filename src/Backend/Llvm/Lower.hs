@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -11,10 +12,20 @@ import Relude hiding (Type)
 import Backend.Llvm.Types
 import Backend.Types (Type (..))
 import Impossible (__IMPOSSIBLE__)
+import Names (ExplicitName (..))
 
 
 target :: Doc ann
 target = "target triple = \"x86_64-pc-linux-gnu\""
+
+
+libc :: Doc ann
+libc =
+    hcat
+        [ "declare void @exit(i64)"
+        , "declare i32 @printf(ptr, ...)"
+        , "declare ptr @malloc(i64)"
+        ]
 
 
 llvmOut :: (Pretty a) => a -> Text
@@ -30,8 +41,18 @@ indentedBlock instr = indent indentLevel (hcat $ punctuate hardline (fmap pretty
 
 
 instance Pretty Ir where
-    pretty (IrMain decls) = target <> hardline <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
-    pretty (IrLib decls) = target <> hardline <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
+    pretty (IrMain decls) =
+        target
+            <> hardline
+            <> libc
+            <> hardline
+            <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
+    pretty (IrLib decls) =
+        target
+            <> hardline
+            <> libc
+            <> hardline
+            <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
 
 
 instance Pretty Decl where

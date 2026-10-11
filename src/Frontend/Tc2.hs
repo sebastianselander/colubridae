@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
@@ -29,7 +30,7 @@ import Frontend.Typechecker.Types
 import Frontend.Typechecker.Unify (typeOf, unify)
 import Frontend.Types
 import Impossible (__IMPOSSIBLE__)
-import Names (Ident, Names, Namespace, getOriginalName')
+import Names (ExplicitName (..))
 import Table (DefTable, builtIns, functions)
 import Utils (listify')
 
@@ -40,7 +41,7 @@ import Table qualified as DefTable
 
 
 data Env = Env
-    { _variables :: Map Ident (Type Tc, SourceInfo)
+    { _variables :: Map ExplicitName (TypeTc, SourceInfo)
     , _fresh :: Int
     }
     deriving (Show)
@@ -68,35 +69,33 @@ run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT e
 
 
 typecheck ::
-    DefTable Tc (PolyType Tc) SourceInfo ->
-    Names ->
+    DefTable Tc PolyType SourceInfo ->
     ProgramRn ->
     (Either [TcError] ProgramTc, [TcWarning])
-typecheck defTable names (Program namespace defs) =
-    case first partitionEithers $ unzip $ fmap (tcDefs names defTable) defs of
+typecheck defTable (Program namespace defs) =
+    case first partitionEithers $ unzip $ fmap (tcDefs defTable) defs of
         (([], defs), warnings) -> (Right $ Program namespace defs, mconcat warnings)
         ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
 
 
 tcDefs ::
-    Names ->
-    DefTable Tc (PolyType Tc) SourceInfo ->
+    DefTable Tc PolyType SourceInfo ->
     DefRn ->
     (Either [TcError] DefTc, [TcWarning])
-tcDefs names table (DefFn fn) =
-    first (fmap DefFn) $ tcFunction names table fn
-tcDefs _ _ (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
-tcDefs _ table (DefImport imp) = (Right (DefImport (tcImport table imp)), [])
+tcDefs table (DefFn fn) =
+    first (fmap DefFn) $ tcFunction table fn
+tcDefs _ (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
+tcDefs table (DefImport imp) = (Right (DefImport (tcImport table imp)), [])
 
 
-tcImport :: DefTable Tc (PolyType Tc) SourceInfo -> ImportRn -> ImportTc
+tcImport :: DefTable Tc PolyType SourceInfo -> ImportRn -> ImportTc
 tcImport table (ImportExplicit _ namespace names) =
-    let funs :: Map Ident (PolyType Tc, SourceInfo)
+    let funs :: Map ExplicitName (PolyType, SourceInfo)
         funs =
             fromMaybe
                 __IMPOSSIBLE__
                 $ Map.lookup namespace (view functions table)
-        tys :: [(PolyType Tc, SourceInfo)]
+        tys :: [(PolyType, SourceInfo)]
         tys =
             fmap
                 ( \symbol ->
@@ -105,7 +104,7 @@ tcImport table (ImportExplicit _ namespace names) =
                         (Map.lookup symbol funs)
                 )
                 names
-        mkFnType :: (PolyType Tc, SourceInfo) -> FnType
+        mkFnType :: (PolyType, SourceInfo) -> FnType
         mkFnType (ty, _) = case ty of
             PolyType tvars (TyFun _ args ret) -> FnType tvars ret args
             _ -> __IMPOSSIBLE__
@@ -126,11 +125,10 @@ inferConstructor ty = \case
 
 
 tcFunction ::
-    Names ->
-    DefTable Tc (PolyType Tc) SourceInfo ->
+    DefTable Tc PolyType SourceInfo ->
     FnRn ->
     (Either [TcError] FnTc, [TcWarning])
-tcFunction names defTable fun@(Fn _ _ _ args rt _) =
+tcFunction defTable fun@(Fn _ _ _ args rt _) =
     let argTable =
             foldr
                 ( uncurry Map.insert
@@ -138,18 +136,18 @@ tcFunction names defTable fun@(Fn _ _ _ args rt _) =
                             ( name
                             ,
                                 ( typeOf ty -- NOTE: Is empty list correct?
-                                , fst info
+                                , info
                                 )
                             )
                       )
                 )
                 mempty
                 args
-        ctx = Ctx.Ctx defTable (typeOf rt) fun [] names
+        ctx = Ctx.Ctx defTable (typeOf rt) fun []
         env = Env argTable 1
      in run ctx env $ go fun
   where
-    go :: Fn Rn -> TcM (Fn Tc)
+    go :: FnRn -> TcM FnTc
     go (Fn _ name tyParams args rt block) =
         locally Ctx.currentFun (const fun) $ do
             args <- mapM infer_arg args
@@ -158,12 +156,12 @@ tcFunction names defTable fun@(Fn _ _ _ args rt _) =
             block <- locally Ctx.returnType (const retTy) $ case block of
                 Block info stmts (Just expr) -> do
                     -- NOTE: Not sure if using mapM is viable
-                    (subs, stmts) <- unzip <$> mapM infer_stmt stmts
+                    (subs, stmts) <- mapAndUnzipM infer_stmt stmts
                     let sub1 = foldr Sub.compose Sub.empty subs
                     (sub2, expr) <- check_expr retTy expr
                     pure $ apply (Sub.compose sub2 sub1) $ Block (info, retTy) stmts (Just expr)
                 Block info stmts Nothing -> do
-                    (subs, stmts) <- unzip <$> mapM infer_stmt stmts
+                    (subs, stmts) <- mapAndUnzipM infer_stmt stmts
                     let sub = foldr Sub.compose Sub.empty subs
                     pure $ apply sub $ Block (info, Any) stmts Nothing
             pure (Fn NoExtField name tyParams args retTy block)
@@ -173,35 +171,35 @@ infer_arg :: (Monad m) => ArgRn -> m ArgTc
 infer_arg (Arg _ name ty) = pure $ Arg NoExtField name (typeOf ty)
 
 
-getFuns :: (Data a) => a -> [(Ident, (PolyType Tc, SourceInfo))]
+getFuns :: (Data a) => a -> [(ExplicitName, (PolyType, SourceInfo))]
 getFuns = listify' f
   where
-    f :: FnRn -> Maybe (Ident, (PolyType Tc, SourceInfo))
+    f :: FnRn -> Maybe (ExplicitName, (PolyType, SourceInfo))
     f (Fn info name (Params _ tyvars) args returnType _) =
         let funTy = PolyType tyvars (TyFun NoExtField (fmap typeOf args) (typeOf returnType))
          in Just (name, (funTy, info))
 
 
 data TypeCons = TypeCons
-    { types :: [(Ident, (PolyType Tc, SourceInfo))]
-    , cons :: [(Ident, (PolyType Tc, SourceInfo))]
+    { types :: [(ExplicitName, (PolyType, SourceInfo))]
+    , cons :: [(ExplicitName, (PolyType, SourceInfo))]
     }
 
 
 getTypesAndCons :: (Data a) => a -> TypeCons
 getTypesAndCons a = TypeCons {types = listify' h a, cons = concat (listify' f a)}
   where
-    h :: AdtRn -> Maybe (Ident, (PolyType Tc, SourceInfo))
+    h :: AdtRn -> Maybe (ExplicitName, (PolyType, SourceInfo))
     -- TODO: Add type params to polytype
     h (Adt loc name _) = Just (name, (PolyType [] $ TyCon NoExtField name, loc))
 
-    f :: AdtRn -> Maybe [(Ident, (PolyType Tc, SourceInfo))]
+    f :: AdtRn -> Maybe [(ExplicitName, (PolyType, SourceInfo))]
     f (Adt _ name cons) =
         -- TODO: Add type params to polytype
         let returnType = TyCon NoExtField name
          in Just $ fmap (g returnType) cons
       where
-        g :: TypeTc -> ConstructorRn -> (Ident, (PolyType Tc, SourceInfo))
+        g :: TypeTc -> ConstructorRn -> (ExplicitName, (PolyType, SourceInfo))
         g returnType = \case
             EnumCons loc name -> (name, (PolyType [] returnType, loc))
             FunCons loc name argTys ->
@@ -210,14 +208,14 @@ getTypesAndCons a = TypeCons {types = listify' h a, cons = concat (listify' f a)
 
 check_expr ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    TypeTc -> ExprRn -> m (Substitution Tc, ExprTc)
+    TypeTc -> ExprRn -> m (Substitution, ExprTc)
 check_expr expected_type current_expr = Ctx.push current_expr $ case current_expr of
     Lit info lit -> do
         (sub1, lit) <- infer_lit info lit
         sub2 <- unify info expected_type (typeOf lit)
         pure (Sub.compose sub2 sub1, lit)
-    Var (info, namespace, boundedness) name -> do
-        (sub1, expr) <- infer_var info namespace boundedness name
+    Var (info, boundedness) name -> do
+        (sub1, expr) <- infer_var info boundedness name
         sub2 <- unify info expected_type (typeOf expr)
         let sub3 = Sub.compose sub2 sub1
         modifying variables (Map.map (first (apply sub3)))
@@ -244,8 +242,8 @@ check_expr expected_type current_expr = Ctx.push current_expr $ case current_exp
         (sub1, expr) <- infer_let info mbty name expr
         sub2 <- unify info expected_type (typeOf expr)
         pure (Sub.compose sub2 sub1, expr)
-    Ass (info, bind, namespace) name op expr -> do
-        (sub1, expr) <- infer_ass info bind namespace name op expr
+    Ass (info, bind) name op expr -> do
+        (sub1, expr) <- infer_ass info bind name op expr
         sub2 <- unify info expected_type (typeOf expr)
         pure (Sub.compose sub2 sub1, expr)
     Ret info maybe_expr -> do
@@ -300,7 +298,7 @@ check_expr expected_type current_expr = Ctx.push current_expr $ case current_exp
 
 check_exprs ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    [(TypeTc, ExprRn)] -> m (Substitution Tc, [ExprTc])
+    [(TypeTc, ExprRn)] -> m (Substitution, [ExprTc])
 check_exprs = fmap (second reverse) . foldM f (Sub.empty, [])
   where
     f (sub1, exprs) (ty, expr) = do
@@ -312,15 +310,15 @@ check_exprs = fmap (second reverse) . foldM f (Sub.empty, [])
 -- FIXME(sebsel): Figure out when/how to apply substitution to the environment
 infer_expr ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    ExprRn -> m (Substitution Tc, ExprTc)
+    ExprRn -> m (Substitution, ExprTc)
 infer_expr current_expr = Ctx.push current_expr $ case current_expr of
     Lit info lit -> infer_lit info lit
-    Var (info, namespace, boundedness) name -> infer_var info namespace boundedness name
+    Var (info, boundedness) name -> infer_var info boundedness name
     Prefix info op expr -> infer_prefix info op expr
     BinOp info left op right -> infer_binop info left op right
     App info lExpr rExprs -> infer_app info lExpr rExprs
     Let (info, mbty) name expr -> infer_let info mbty name expr
-    Ass (info, bind, namespace) name op expr -> infer_ass info bind namespace name op expr
+    Ass (info, bind) name op expr -> infer_ass info bind name op expr
     Ret info maybe_expr -> infer_ret info maybe_expr
     EBlock NoExtField block -> second (EBlock NoExtField) <$> infer_block block
     Break info maybe_expr -> infer_break info maybe_expr
@@ -333,7 +331,7 @@ infer_expr current_expr = Ctx.push current_expr $ case current_expr of
 
 infer_exprs ::
     (MonadState Env m, MonadReader Ctx m, MonadValidate [TcError] m) =>
-    [ExprRn] -> m (Substitution Tc, [ExprTc])
+    [ExprRn] -> m (Substitution, [ExprTc])
 infer_exprs = fmap (second reverse) . foldM f (Sub.empty, [])
   where
     f (sub1, exprs) expr = do
@@ -342,7 +340,7 @@ infer_exprs = fmap (second reverse) . foldM f (Sub.empty, [])
         pure (sub3, fmap (apply sub3) (expr : exprs))
 
 
-infer_lit :: (Monad m) => SourceInfo -> LitRn -> m (Substitution Tc, ExprTc)
+infer_lit :: (Monad m) => SourceInfo -> LitRn -> m (Substitution, ExprTc)
 infer_lit loc lit = do
     let (ty, lit') = infLit lit
     pure (Sub.empty, Lit (loc, ty) lit')
@@ -350,47 +348,46 @@ infer_lit loc lit = do
 
 infer_var ::
     (MonadReader Ctx m, MonadState Env m) =>
-    SourceInfo -> Namespace -> Boundedness -> Ident -> m (Substitution Tc, ExprTc)
-infer_var loc namespace boundedness name = do
-    case boundedness of
-        Free; Bound -> do
-            (ty, _) <- lookupVar name
-            pure (Sub.empty, Var (loc, namespace, ty, boundedness) name)
-        Function; Imported -> do
-            (polytype, _) <- lookupFun namespace name
-            let PolyType tyvars _ = polytype
-            tbl <- traverse (\ty -> (ty,) <$> fresh_mono) tyvars
-            let ty = instantiate_with (Map.fromList tbl) polytype
-            if not (null tbl)
-                then
-                    -- FIXME(sebsel): We don't need to monomorphize phantom parameters
-                    pure
-                        ( Sub.empty
-                        , Expr
-                            $ TypeApp
-                                (Var (loc, namespace, ty, boundedness) name)
-                                (fmap (Type . Mono . snd) tbl)
-                        )
-                else
-                    pure (Sub.empty, Var (loc, namespace, ty, boundedness) name)
-        Constructor -> do
-            (polytype, _) <- lookupCon namespace name
-            ty <- instantiateTc polytype
-            pure (Sub.empty, Var (loc, namespace, ty, boundedness) name)
-        Builtin -> do
-            builtins <- view (defTable . builtIns)
-            case Builtins.lookup namespace name builtins of
-                Just (ty, info) -> do
-                    ty <- instantiateTc ty
-                    pure (Sub.empty, Var (info, namespace, ty, boundedness) name)
-                _ -> __IMPOSSIBLE__
+    SourceInfo -> Boundedness -> ExplicitName -> m (Substitution, ExprTc)
+infer_var loc boundedness name = case boundedness of
+    Free; Bound -> do
+        (ty, _) <- lookupVar name
+        pure (Sub.empty, Var (loc, ty, boundedness) name)
+    Function; Imported -> do
+        (polytype, _) <- lookupFun name
+        let PolyType tyvars _ = polytype
+        tbl <- traverse (\ty -> (ty,) <$> fresh_mono) tyvars
+        let ty = instantiate_with (Map.fromList tbl) polytype
+        if not (null tbl)
+            then
+                -- FIXME(sebsel): We don't need to monomorphize phantom parameters
+                pure
+                    ( Sub.empty
+                    , Expr
+                        $ TypeApp
+                            (Var (loc, ty, boundedness) name)
+                            (fmap (Type . Mono . snd) tbl)
+                    )
+            else
+                pure (Sub.empty, Var (loc, ty, boundedness) name)
+    Constructor -> do
+        (polytype, _) <- lookupCon name
+        ty <- instantiateTc polytype
+        pure (Sub.empty, Var (loc, ty, boundedness) name)
+    Builtin -> do
+        builtins <- view (defTable . builtIns)
+        case Builtins.lookup name builtins of
+            Just (ty, info) -> do
+                ty <- instantiateTc ty
+                pure (Sub.empty, Var (info, ty, boundedness) name)
+            _ -> __IMPOSSIBLE__
 
 
 -- pure (Sub.empty, Var (info, ty, boundedness) name)
 
 infer_prefix ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> PrefixOp -> ExprRn -> m (Substitution Tc, ExprTc)
+    SourceInfo -> PrefixOp -> ExprRn -> m (Substitution, ExprTc)
 infer_prefix loc op expr =
     case op of
         Neg -> do
@@ -403,7 +400,7 @@ infer_prefix loc op expr =
 
 infer_binop ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> ExprRn -> BinOp -> ExprRn -> m (Substitution Tc, ExprTc)
+    SourceInfo -> ExprRn -> BinOp -> ExprRn -> m (Substitution, ExprTc)
 infer_binop loc left op right = do
     let expected_type = operatorType op
     (sub1, left) <- check_expr expected_type left
@@ -416,7 +413,7 @@ infer_binop loc left op right = do
 
 infer_app ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> ExprRn -> [ExprRn] -> m (Substitution Tc, ExprTc)
+    SourceInfo -> ExprRn -> [ExprRn] -> m (Substitution, ExprTc)
 infer_app loc func args = do
     (sub1, func) <- infer_expr func
     apply_env sub1
@@ -437,7 +434,7 @@ infer_app loc func args = do
 
 infer_let ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> Maybe TypeRn -> Ident -> ExprRn -> m (Substitution Tc, ExprTc)
+    SourceInfo -> Maybe TypeRn -> ExplicitName -> ExprRn -> m (Substitution, ExprTc)
 infer_let info mbty name expr = case mbty of
     Nothing -> do
         (sub, expr) <- infer_expr expr
@@ -454,16 +451,14 @@ infer_ass ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     SourceInfo ->
     Boundedness ->
-    Namespace ->
-    Ident ->
+    ExplicitName ->
     AssignOp ->
     ExprRn ->
-    m (Substitution Tc, ExprTc)
-infer_ass loc boundedness _namespace name op expr =
+    m (Substitution, ExprTc)
+infer_ass loc boundedness name op expr =
     case boundedness of
         Function; Imported; Builtin; Constructor -> do
-            names <- views Ctx.names (getOriginalName' name)
-            assignNonVariable' loc names
+            assignNonVariable' loc name
         Free; Bound -> do
             (ty, _) <- lookupVar name
             (sub, expr) <- check_expr ty expr
@@ -477,7 +472,7 @@ infer_ass loc boundedness _namespace name op expr =
 
 infer_ret ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> Maybe ExprRn -> m (Substitution Tc, ExprTc)
+    SourceInfo -> Maybe ExprRn -> m (Substitution, ExprTc)
 infer_ret loc maybe_expr = do
     return_type <- view Ctx.returnType
     case maybe_expr of
@@ -497,7 +492,7 @@ infer_ret loc maybe_expr = do
 
 infer_block ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    BlockRn -> m (Substitution Tc, BlockTc)
+    BlockRn -> m (Substitution, BlockTc)
 infer_block (Block info statements tail_expr) = do
     (sub1, stmts) <- infer_stmts statements
     maybe_res <- mapM infer_expr tail_expr
@@ -521,7 +516,7 @@ infer_block (Block info statements tail_expr) = do
 
 check_block ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    TypeTc -> BlockRn -> m (Substitution Tc, BlockTc)
+    TypeTc -> BlockRn -> m (Substitution, BlockTc)
 check_block expected_type (Block loc statements tail_expr) = do
     (sub1, statements) <- infer_stmts statements
     maybe_res <- mapM infer_expr tail_expr
@@ -540,7 +535,7 @@ check_block expected_type (Block loc statements tail_expr) = do
 
 infer_stmts ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    [Stmt Rn] -> m (Substitution Tc, [Stmt Tc])
+    [StmtRn] -> m (Substitution, [StmtTc])
 infer_stmts = fmap (second reverse) . foldM f (Sub.empty, [])
   where
     f (sub1, stmts) stmt = do
@@ -550,13 +545,13 @@ infer_stmts = fmap (second reverse) . foldM f (Sub.empty, [])
 
 infer_stmt ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    Stmt Rn -> m (Substitution Tc, Stmt Tc)
+    StmtRn -> m (Substitution, StmtTc)
 infer_stmt (SExpr NoExtField expr) = second (SExpr NoExtField) <$> infer_expr expr
 
 
 infer_break ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> Maybe (Expr Rn) -> m (Substitution Tc, ExprTc)
+    SourceInfo -> Maybe ExprRn -> m (Substitution, ExprTc)
 infer_break loc maybe_expr = case maybe_expr of
     Nothing -> pure (Sub.empty, Break (loc, unit_type) Nothing)
     Just expr -> do
@@ -566,7 +561,7 @@ infer_break loc maybe_expr = case maybe_expr of
 
 infer_if ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> Expr Rn -> Block Rn -> Maybe (Block Rn) -> m (Substitution Tc, ExprTc)
+    SourceInfo -> ExprRn -> BlockRn -> Maybe BlockRn -> m (Substitution, ExprTc)
 infer_if loc scrutinee true_block false_block = do
     (sub1, scrutinee) <- check_expr bool_type scrutinee
     (sub2, true_block) <- infer_block true_block
@@ -590,7 +585,7 @@ infer_if loc scrutinee true_block false_block = do
 
 infer_while ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> Expr Rn -> Block Rn -> m (Substitution Tc, ExprTc)
+    SourceInfo -> ExprRn -> BlockRn -> m (Substitution, ExprTc)
 infer_while loc expr block = do
     (sub1, expr) <- check_expr bool_type expr
     (sub2, block) <- infer_block block
@@ -603,7 +598,7 @@ infer_while loc expr block = do
 
 infer_loop ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> Block Rn -> m (Substitution Tc, ExprTc)
+    SourceInfo -> BlockRn -> m (Substitution, ExprTc)
 infer_loop loc block = do
     (sub, block) <- infer_block block
     let break_exprs = concatMap find_all_breaks (get_exprs block)
@@ -627,7 +622,7 @@ infer_loop loc block = do
 
 infer_lam ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> [LamArg Rn] -> Expr Rn -> m (Substitution Tc, ExprTc)
+    SourceInfo -> [LamArgRn] -> ExprRn -> m (Substitution, ExprTc)
 infer_lam loc args expr = do
     args <- mapM infer_lamarg args
     (sub, expr) <- infer_expr expr
@@ -638,7 +633,7 @@ infer_lam loc args expr = do
 infer_lamarg ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     LamArgRn -> m LamArgTc
-infer_lamarg (LamArg (info, maybe_type, _namespace) name) = do
+infer_lamarg (LamArg (info, maybe_type) name) = do
     ty <- maybe fresh_type (pure . typeOf) maybe_type
     insertVar name ty info
     pure (LamArg ty name)
@@ -646,7 +641,7 @@ infer_lamarg (LamArg (info, maybe_type, _namespace) name) = do
 
 infer_match ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    SourceInfo -> Expr Rn -> [MatchArm Rn] -> m (Substitution Tc, ExprTc)
+    SourceInfo -> ExprRn -> [MatchArmRn] -> m (Substitution, ExprTc)
 infer_match loc scrutinee arms = do
     (sub, scrutinee) <- infer_expr scrutinee
     let scrutinee_type = typeOf scrutinee
@@ -667,7 +662,7 @@ infer_match loc scrutinee arms = do
 
 check_arm ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    TypeTc -> TypeTc -> MatchArmRn -> m (Substitution Tc, MatchArmTc)
+    TypeTc -> TypeTc -> MatchArmRn -> m (Substitution, MatchArmTc)
 check_arm pattern_type arm_type (MatchArm loc pat expr) = do
     (sub1, pat) <- check_pattern pattern_type pat
     (sub2, body) <- check_expr arm_type expr
@@ -678,7 +673,7 @@ check_arm pattern_type arm_type (MatchArm loc pat expr) = do
 
 infer_arm ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    TypeTc -> MatchArmRn -> m (Substitution Tc, MatchArmTc)
+    TypeTc -> MatchArmRn -> m (Substitution, MatchArmTc)
 infer_arm pattern_type (MatchArm loc pat expr) = do
     (sub1, pat) <- check_pattern pattern_type pat
     (sub2, body) <- infer_expr expr
@@ -689,19 +684,19 @@ infer_arm pattern_type (MatchArm loc pat expr) = do
 
 check_pattern ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
-    TypeTc -> PatternRn -> m (Substitution Tc, PatternTc)
+    TypeTc -> PatternRn -> m (Substitution, PatternTc)
 check_pattern pattype currentPattern = case currentPattern of
     PVar loc varName -> do
         insertVar varName pattype loc
         pure (Sub.empty, PVar (loc, pattype) varName)
-    PEnumCon (_, namespace) conName -> do
-        (ty, loc) <- lookupCon namespace conName
+    PEnumCon _loc conName -> do
+        (ty, loc) <- lookupCon conName
         ty <- instantiateTc ty
         sub <- unify loc pattype ty
         modifying variables (Map.map (first (apply sub)))
         pure (sub, apply sub $ PEnumCon (loc, ty) conName)
-    PFunCon (_, namespace) conName pats -> do
-        (ty, loc) <- lookupCon namespace conName
+    PFunCon _ conName pats -> do
+        (ty, loc) <- lookupCon conName
         ty <- instantiateTc ty
         case ty of
             TyFun _ argtys rettype
@@ -721,7 +716,7 @@ check_pattern pattype currentPattern = case currentPattern of
 hasInfo :: ExprTc -> SourceInfo
 hasInfo = \case
     Lit info _ -> fst info
-    Var (info, _, _, _) _ -> info
+    Var (info, _, _) _ -> info
     Prefix info _ _ -> fst info
     BinOp info _ _ _ -> fst info
     App info _ _ -> fst info
@@ -798,11 +793,11 @@ bool_type :: TypeTc
 bool_type = TyLit NoExtField Bool
 
 
-insertVar :: (MonadState Env m) => Ident -> Type Tc -> SourceInfo -> m ()
+insertVar :: (MonadState Env m) => ExplicitName -> TypeTc -> SourceInfo -> m ()
 insertVar name ty info = modifying variables (Map.insert name (ty, info))
 
 
-lookupVar :: (MonadState Env m) => Ident -> m (Type Tc, SourceInfo)
+lookupVar :: (MonadState Env m) => ExplicitName -> m (TypeTc, SourceInfo)
 lookupVar name =
     uses
         variables
@@ -811,32 +806,32 @@ lookupVar name =
         )
 
 
-lookupCon :: (MonadReader Ctx m) => Namespace -> Ident -> m (PolyType Tc, SourceInfo)
-lookupCon namespace name =
+lookupCon :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
+lookupCon name =
     views
         Ctx.defTable
         ( fromJust
             . Map.lookup name
             . fromJust
-            . Map.lookup namespace
+            . Map.lookup name.namespace
             . view DefTable.constructors
         )
 
 
-lookupFun :: (MonadReader Ctx m) => Namespace -> Ident -> m (PolyType Tc, SourceInfo)
-lookupFun namespace name =
+lookupFun :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
+lookupFun name =
     views
         (Ctx.defTable . DefTable.functions)
         ( fromMaybe __IMPOSSIBLE__
-            . (Map.lookup name <=< Map.lookup namespace)
+            . (Map.lookup name <=< Map.lookup name.namespace)
         )
 
 
-apply_env :: (MonadState Env m) => Substitution Tc -> m ()
+apply_env :: (MonadState Env m) => Substitution -> m ()
 apply_env sub = modifying variables (Map.map (first (apply sub)))
 
 
-instantiateTc :: (MonadState Env m) => PolyType Tc -> m TypeTc
+instantiateTc :: (MonadState Env m) => PolyType -> m TypeTc
 instantiateTc ty = do
     fr <- use fresh
     let (ty', fr') = instantiate fr ty
@@ -855,7 +850,7 @@ fresh_mono = do
     pure (MonoType fr)
 
 
-get_exprs :: Block Tc -> [Expr Tc]
+get_exprs :: BlockTc -> [ExprTc]
 get_exprs (Block _ exprs tail) = fmap (\(SExpr NoExtField expr) -> expr) exprs <> maybeToList tail
 
 
@@ -886,5 +881,5 @@ find_all_breaks e = case e of
     Match _ scrutinee arms -> find_all_breaks scrutinee <> concatMap breakArm arms
     Expr (TypeApp expr _) -> find_all_breaks expr
   where
-    breakArm :: MatchArm Tc -> [ExprTc]
+    breakArm :: MatchArmTc -> [ExprTc]
     breakArm (MatchArm _ _ body) = find_all_breaks body

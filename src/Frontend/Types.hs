@@ -70,27 +70,27 @@ instance Show SourceInfo where
 
 
 -- Program
-data Program a = Program !(XProgram a) [Def a]
+data Program name a = Program !(XProgram a) [Def name a]
 
 
 type family XProgram a
 
 
-deriving instance (Forall Show a) => Show (Program a)
+deriving instance (Show name, Forall Show a) => Show (Program name a)
 
 
 -- Definition
-data Def a
-    = DefImport (Import a)
-    | DefAdt (Adt a)
-    | DefFn (Fn a)
+data Def name a
+    = DefImport (Import name a)
+    | DefAdt (Adt name a)
+    | DefFn (Fn name a)
     | DefX !(XDef a)
 
 
 type family XDef a
 
 
-deriving instance (Forall Show a) => Show (Def a)
+deriving instance (Show name, Forall Show a) => Show (Def name a)
 
 
 {-|
@@ -117,7 +117,7 @@ toList :: TyParamList -> [TyVar]
 toList (Params _ xs) = xs
 
 
-toMap :: TyParamList -> Map TyVar (Maybe (Type a))
+toMap :: TyParamList -> Map TyVar (Maybe (Type name a))
 toMap (Params _ xs) = Map.fromList (fmap (,Nothing) xs)
 
 
@@ -139,17 +139,17 @@ isTypeVar :: UnresolvedType -> TyParamList -> Bool
 isTypeVar (UnresolvedType _ unresolved) (Params _loc vars) = unresolved `elem` vars
 
 
-data Fn a = Fn !(XFn a) Ident TyParamList [Arg a] (Type a) (Block a)
+data Fn name a = Fn !(XFn a) name TyParamList [Arg name a] (Type name a) (Block name a)
 
 
 type family XFn a
 
 
-deriving instance (Forall Show a) => Show (Fn a)
+deriving instance (Show name, Forall Show a) => Show (Fn name a)
 
 
-data Import a
-    = ImportExplicit !(XImportExplicit a) Namespace [Ident] -- import foo (bar, baz)
+data Import name a
+    = ImportExplicit !(XImportExplicit a) Namespace [name] -- import foo (bar, baz)
     | XImport !(XImport a)
 
 
@@ -159,21 +159,21 @@ type family XImport a
 type family XImportExplicit a
 
 
-deriving instance (Forall Show a) => Show (Import a)
+deriving instance (Show name, Forall Show a) => Show (Import name a)
 
 
-data Adt a = Adt !(XAdt a) Ident [Constructor a]
+data Adt name a = Adt !(XAdt a) name [Constructor name a]
 
 
 type family XAdt a
 
 
-deriving instance (Forall Show a) => Show (Adt a)
+deriving instance (Show name, Forall Show a) => Show (Adt name a)
 
 
-data Constructor a
-    = EnumCons (XEnumCons a) Ident
-    | FunCons (XFunCons a) Ident [Type a]
+data Constructor name a
+    = EnumCons (XEnumCons a) name
+    | FunCons (XFunCons a) name [Type name a]
     | ConstructorX !(XConstructor a)
 
 
@@ -186,17 +186,17 @@ type family XEnumCons a
 type family XFunCons a
 
 
-deriving instance (Forall Show a) => Show (Constructor a)
+deriving instance (Show name, Forall Show a) => Show (Constructor name a)
 
 
 -- Argument
-data Arg a = Arg !(XArg a) Ident (Type a)
+data Arg name a = Arg !(XArg a) name (Type name a)
 
 
 type family XArg a
 
 
-deriving instance (Forall Show a) => Show (Arg a)
+deriving instance (Show name, Forall Show a) => Show (Arg name a)
 
 
 -- Type
@@ -209,15 +209,15 @@ instance Pretty TyVar where
     pretty (TyVar ident) = pretty ident
 
 
-data Type a
+data Type name a
     = TyLit !(XTyLit a) TyLit
-    | TyFun !(XTyFun a) [Type a] (Type a)
-    | TyCon !(XTyCon a) Ident
+    | TyFun !(XTyFun a) [Type name a] (Type name a)
+    | TyCon !(XTyCon a) name
     | TypeVar !(XTypeVar a) TyVar
     | Type !(XType a)
 
 
-(~~) :: (Eq (XType a)) => Type a -> Type a -> Bool
+(~~) :: (Eq name, Eq (XType a)) => Type name a -> Type name a -> Bool
 l ~~ r = case (l, r) of
     (TyLit _ left, TyLit _ right) -> left == right
     (TyFun _ largs lret, TyFun _ rargs rret) -> and (zipWith (~~) largs rargs) && lret ~~ rret
@@ -242,7 +242,7 @@ type family XTyCon a
 type family XTypeVar a
 
 
-deriving instance (Forall Show a) => Show (Type a)
+deriving instance (Forall Show a, Show name) => Show (Type name a)
 
 
 coerceType ::
@@ -252,8 +252,8 @@ coerceType ::
     , XTyCon t1 ~ XTyCon t2
     , XTypeVar t1 ~ XTypeVar t2
     ) =>
-    Type t1 ->
-    Type t2
+    Type name t1 ->
+    Type name t2
 coerceType ty = case ty of
     TyLit a b -> TyLit a b
     TyFun a b c -> TyFun a (fmap coerceType b) (coerceType c)
@@ -266,18 +266,18 @@ data TyLit = Unit | String | Int | Double | Char | Bool
     deriving (Data, Enum, Eq, Ord, Show)
 
 
-data Block a = Block !(XBlock a) [Stmt a] (Maybe (Expr a))
+data Block name a = Block !(XBlock a) [Stmt name a] (Maybe (Expr name a))
 
 
 type family XBlock a
 
 
-deriving instance (Forall Show a) => Show (Block a)
+deriving instance (Show name, Forall Show a) => Show (Block name a)
 
 
 -- Statement
-data Stmt a
-    = SExpr !(XSExp a) (Expr a)
+data Stmt name a
+    = SExpr !(XSExp a) (Expr name a)
     | Stmt !(XStmt a)
 
 
@@ -297,30 +297,30 @@ data AssignOp
     deriving (Data, Eq, Ord, Show)
 
 
-deriving instance (Forall Show a) => Show (Stmt a)
+deriving instance (Show name, Forall Show a) => Show (Stmt name a)
 
 
 -- Expression
-data Expr a
+data Expr name a
     = Lit !(XLit a) (Lit a)
-    | Var !(XVar a) Ident
-    | BinOp !(XBinOp a) (Expr a) BinOp (Expr a)
-    | Prefix !(XPrefix a) PrefixOp (Expr a)
-    | App !(XApp a) (Expr a) [Expr a]
-    | Let !(XLet a) Ident (Expr a)
-    | Ass !(XAss a) Ident AssignOp (Expr a)
-    | Ret !(XRet a) (Maybe (Expr a))
-    | EBlock !(XEBlock a) (Block a)
-    | Break !(XBreak a) (Maybe (Expr a))
-    | If !(XIf a) (Expr a) (Block a) (Maybe (Block a))
-    | While !(XWhile a) (Expr a) (Block a)
-    | Loop !(XLoop a) (Block a)
-    | Lam !(XLam a) [LamArg a] (Expr a)
-    | Match !(XMatch a) (Expr a) [MatchArm a]
+    | Var !(XVar a) name
+    | BinOp !(XBinOp a) (Expr name a) BinOp (Expr name a)
+    | Prefix !(XPrefix a) PrefixOp (Expr name a)
+    | App !(XApp a) (Expr name a) [Expr name a]
+    | Let !(XLet a) name (Expr name a)
+    | Ass !(XAss a) name AssignOp (Expr name a)
+    | Ret !(XRet a) (Maybe (Expr name a))
+    | EBlock !(XEBlock a) (Block name a)
+    | Break !(XBreak a) (Maybe (Expr name a))
+    | If !(XIf a) (Expr name a) (Block name a) (Maybe (Block name a))
+    | While !(XWhile a) (Expr name a) (Block name a)
+    | Loop !(XLoop a) (Block name a)
+    | Lam !(XLam a) [LamArg name a] (Expr name a)
+    | Match !(XMatch a) (Expr name a) [MatchArm name a]
     | Expr !(XExpr a)
 
 
-deriving instance (Forall Show a) => Show (Expr a)
+deriving instance (Show name, Forall Show a) => Show (Expr name a)
 
 
 type family XExprStmt a
@@ -374,22 +374,22 @@ type family XLam a
 type family XMatch a
 
 
-data MatchArm a = MatchArm !(XMatchArm a) (Pattern a) (Expr a)
+data MatchArm name a = MatchArm !(XMatchArm a) (Pattern name a) (Expr name a)
 
 
-deriving instance (Forall Show a) => Show (MatchArm a)
+deriving instance (Show name, Forall Show a) => Show (MatchArm name a)
 
 
 type family XMatchArm a
 
 
-data Pattern a
-    = PVar !(XPVar a) Ident
-    | PEnumCon !(XPEnumCon a) Ident
-    | PFunCon !(XPFunCon a) Ident [Pattern a]
+data Pattern name a
+    = PVar !(XPVar a) name
+    | PEnumCon !(XPEnumCon a) name
+    | PFunCon !(XPFunCon a) name [Pattern name a]
 
 
-deriving instance (Forall Show a) => Show (Pattern a)
+deriving instance (Show name, Forall Show a) => Show (Pattern name a)
 
 
 type family XPVar a
@@ -401,13 +401,13 @@ type family XPEnumCon a
 type family XPFunCon a
 
 
-data LamArg a = LamArg !(XLamArg a) Ident
+data LamArg name a = LamArg !(XLamArg a) name
 
 
 type family XLamArg a
 
 
-deriving instance (Forall Show a) => Show (LamArg a)
+deriving instance (Show name, Forall Show a) => Show (LamArg name a)
 
 
 data PrefixOp = Not | Neg

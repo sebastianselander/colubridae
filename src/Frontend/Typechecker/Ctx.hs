@@ -10,16 +10,14 @@ import Relude (Show)
 import Frontend.Renamer.Types (ExprRn, FnRn)
 import Frontend.Typechecker.Types (PolyType, Tc, TypeTc)
 import Frontend.Types (SourceInfo)
-import Names (Names)
 import Table (DefTable)
 
 
 data Ctx = Ctx
-    { _defTable :: DefTable Tc (PolyType Tc) SourceInfo
+    { _defTable :: DefTable Tc PolyType SourceInfo
     , _returnType :: TypeTc
     , _currentFun :: FnRn
     , _exprStack :: [ExprRn]
-    , _names :: Names
     }
     deriving (Show)
 

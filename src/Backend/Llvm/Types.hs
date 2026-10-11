@@ -6,7 +6,7 @@ import Data.Data (Data)
 import Relude hiding (Type)
 
 import Backend.Types (Type (..))
-import Names (Ident)
+import Names (ExplicitName, Ident)
 import Origin
 
 
@@ -23,22 +23,25 @@ data Ellipsis = Ellipsis | NoEllipsis
     deriving (Data, Eq, Ord, Show)
 
 
+type IsBuiltin = Bool
+
+
 -- These are declared in the order we want them defined in the ir file
 data Decl
     = LlvmMain [Named Instruction]
-    | Define !Origin !Ident [Operand] !Type [Named Instruction]
-    | TypeDefinition !Ident !Type
-    | GlobalString !Ident !Type !Text
+    | Define !Origin !ExplicitName [Operand] !Type [Named Instruction]
+    | TypeDefinition !ExplicitName !Type
+    | GlobalString !ExplicitName !Type !Text
     | Declare
         !Type -- return type
-        Ident -- name
+        ExplicitName -- name
         [Type] -- argument types
         !Ellipsis -- varargs?
     deriving (Eq, Ord, Show)
 
 
 data Operand
-    = LocalReference !Type !Ident
+    = LocalReference !Type !ExplicitName
     | ConstantOperand !Constant
     deriving (Eq, Ord, Show)
 
@@ -51,7 +54,7 @@ data CmpOp = LlvmEq | LlvmNeq | LlvmGt | LlvmLt | LlvmGe | LlvmLe
     deriving (Eq, Ord, Show)
 
 
-newtype Label = L Ident
+newtype Label = L Text
     deriving (Eq, Ord, Show)
 
 
@@ -88,11 +91,11 @@ data Constant
     | LNull !Type
     | LStruct [Constant]
     | Undef !Type
-    | GlobalReference !Type !Ident
+    | GlobalReference !Type !ExplicitName
     deriving (Eq, Ord, Show)
 
 
-data Named a = Named Ident a | Nameless a
+data Named a = Named ExplicitName a | Nameless a
     deriving (Data, Eq, Foldable, Functor, Generic, Ord, Show, Traversable)
 
 

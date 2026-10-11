@@ -5,16 +5,18 @@ import Control.Monad.Validate (MonadValidate)
 import Relude hiding (Type)
 
 import Frontend.Error (TcError, tyExpectedGot')
-import Frontend.Renamer.Types (ArgRn, Rn)
+import Frontend.Renamer.Types (ArgRn, TypeRn)
 import Frontend.Substitution (Substitute (apply), Substitution)
 import Frontend.Typechecker.Ctx (Ctx)
 import Frontend.Typechecker.Polytype (occurs)
 import Frontend.Typechecker.Types
     ( ArgTc,
+      BlockTc,
       ExprTc,
+      LamArgTc,
+      MatchArmTc,
       MetaTy (..),
       StmtTc,
-      Tc,
       TypeApp (TypeApp),
       TypeTc,
       stmtType,
@@ -40,7 +42,7 @@ unify ::
     SourceInfo ->
     TypeTc ->
     TypeTc ->
-    m (Substitution Tc)
+    m Substitution
 unify info ty1 ty2 = case (ty1, ty2) of
     (TyLit NoExtField lit1, TyLit NoExtField lit2)
         | lit1 == lit2 -> pure Sub.empty
@@ -67,7 +69,7 @@ unify info ty1 ty2 = case (ty1, ty2) of
 
 unifies ::
     (MonadValidate [TcError] m, MonadReader Ctx m) =>
-    SourceInfo -> [(TypeTc, TypeTc)] -> m (Substitution Tc)
+    SourceInfo -> [(TypeTc, TypeTc)] -> m Substitution
 unifies loc xs = go Sub.empty xs
   where
     go sub1 [] = pure sub1
@@ -92,7 +94,7 @@ instance TypeOf StmtTc where
 instance TypeOf ExprTc where
     typeOf = \case
         Lit ty _ -> snd ty
-        Var (_, _, ty, _) _ -> ty
+        Var (_, ty, _) _ -> ty
         Prefix ty _ _ -> snd ty
         BinOp ty _ _ _ -> snd ty
         App ty _ _ -> snd ty
@@ -109,11 +111,11 @@ instance TypeOf ExprTc where
         Expr (TypeApp expr _) -> typeOf expr
 
 
-instance TypeOf (Block Tc) where
+instance TypeOf BlockTc where
     typeOf (Block ty _ _) = snd ty
 
 
-instance TypeOf (Type Rn) where
+instance TypeOf TypeRn where
     typeOf = \case
         TyLit NoExtField b -> TyLit NoExtField b
         TyFun NoExtField b c -> TyFun NoExtField (fmap typeOf b) (typeOf c) -- NOTE: is `emptyTyParamList` correct?
@@ -121,11 +123,11 @@ instance TypeOf (Type Rn) where
         TypeVar NoExtField b -> TypeVar NoExtField b
 
 
-instance TypeOf (LamArg Tc) where
+instance TypeOf LamArgTc where
     typeOf (LamArg ty _) = ty
 
 
-instance TypeOf (MatchArm Tc) where
+instance TypeOf MatchArmTc where
     typeOf (MatchArm _ _ body) = typeOf body
 
 

@@ -7,10 +7,12 @@ import Data.String.Interpolate (i)
 import Data.Text (pack)
 import Relude hiding (exitFailure, exitSuccess)
 
+import Prettyprinter qualified as Pretty
+
 import Backend.Llvm.Lower (llvmOut)
 import Backend.Llvm.Types (Decl (..), Ellipsis (Ellipsis, NoEllipsis))
 import Backend.Types (Type (I, OpaquePointer, PointerType, Void))
-import Names (Ident (..))
+import Names (ExplicitName (..), Ident (Ident), Namespace (Namespace))
 
 
 prelude :: ([Decl], Text)
@@ -21,10 +23,7 @@ prelude =
             ([], "")
         $ fmap
             (\(_, b, c) -> (b, c))
-            [ exit
-            , printf
-            , malloc
-            , printString
+            [ printString
             , printChar
             , exitSuccess
             , exitFailure
@@ -41,112 +40,103 @@ prologue =
 target triple = "x86_64-pc-linux-gnu"
 
 @#{globalUnit} = internal constant i1 0
+
+declare void @exit(i64)
+declare i32 @printf(ptr, ...)
+declare ptr @malloc(i64)
 |]
 
 
-exit :: (Ident, Decl, Maybe Text)
-exit = (Ident name, Declare Void (Ident name) [I 64] NoEllipsis, Nothing)
-  where
-    name = "exit"
-
-
-printf :: (Ident, Decl, Maybe Text)
-printf = (Ident name, Declare (I 32) (Ident name) [OpaquePointer] Ellipsis, Nothing)
-  where
-    name = "printf"
-
-
-malloc :: (Ident, Decl, Maybe Text)
-malloc = (Ident name, Declare OpaquePointer (Ident name) [I 64] NoEllipsis, Nothing)
-  where
-    name = "malloc"
-
-
 globalUnit :: Text
-globalUnit = "internal_global_unit"
+globalUnit = "$internal_global_unit"
 
 
-printString :: (Ident, Decl, Maybe Text)
+printString :: (ExplicitName, Decl, Maybe Text)
 printString =
-    ( Ident name
-    , Declare (I 1) (Ident name) [OpaquePointer, PointerType (I 8)] NoEllipsis
-    , Just
-        [i|
+    let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
+     in ( ename
+        , Declare (I 1) ename [OpaquePointer, PointerType (I 8)] NoEllipsis
+        , Just
+            [i|
 @snl = internal constant [3 x i8] c"%s\\00"
-define i1 @#{name}(i8* %x) {
+define i1 @#{Pretty.pretty ename}(i8* %x) {
     %t0 = getelementptr [3 x i8], [3 x i8]* @snl, i32 0, i32 0
 	call i32 @printf(i8* %t0, i8* %x)
 	ret i1 1
 }
 |]
-    )
+        )
   where
     name = "printString"
 
 
-printChar :: (Ident, Decl, Maybe Text)
+printChar :: (ExplicitName, Decl, Maybe Text)
 printChar =
-    ( Ident name
-    , Declare (I 1) (Ident name) [OpaquePointer, PointerType (I 8)] NoEllipsis
-    , Just
-        [i|
+    let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
+     in ( ename
+        , Declare (I 1) ename [OpaquePointer, PointerType (I 8)] NoEllipsis
+        , Just
+            [i|
 @cnl = internal constant [3 x i8] c"%c\\00"
-define i1 @#{name}(i8 %x) {
+define i1 @#{Pretty.pretty ename}(i8 %x) {
     %t0 = getelementptr [3 x i8], [3 x i8]* @cnl, i32 0, i32 0
 	call i32 @printf(i8* %t0, i8 %x)
 	ret i1 1
 }
 |]
-    )
+        )
   where
     name = "printChar"
 
 
-exitSuccess :: (Ident, Decl, Maybe Text)
+exitSuccess :: (ExplicitName, Decl, Maybe Text)
 exitSuccess =
-    ( Ident name
-    , Declare (I 1) (Ident name) [] NoEllipsis
-    , Just
-        [i|
-define i1 @#{name}() {
+    let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
+     in ( ename
+        , Declare (I 1) ename [] NoEllipsis
+        , Just
+            [i|
+define i1 @#{Pretty.pretty ename}() {
     call void @exit(i64 0)
     ret i1 1
 }
 |]
-    )
+        )
   where
     name = "exit_success"
 
 
-exitFailure :: (Ident, Decl, Maybe Text)
+exitFailure :: (ExplicitName, Decl, Maybe Text)
 exitFailure =
-    ( Ident name
-    , Declare (I 1) (Ident name) [] NoEllipsis
-    , Just
-        [i|
-define i1 @#{name}() {
+    let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
+     in ( ename
+        , Declare (I 1) ename [] NoEllipsis
+        , Just
+            [i|
+define i1 @#{Pretty.pretty ename}() {
     call void @exit(i64 1)
     ret i1 1
 }
 |]
-    )
+        )
   where
     name = "exit_failure"
 
 
-printInt :: (Ident, Decl, Maybe Text)
+printInt :: (ExplicitName, Decl, Maybe Text)
 printInt =
-    ( Ident name
-    , Declare (I 1) (Ident name) [OpaquePointer, I 8] NoEllipsis
-    , Just
-        [i|
+    let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
+     in ( ename
+        , Declare (I 1) ename [OpaquePointer, I 8] NoEllipsis
+        , Just
+            [i|
 @dnl = internal constant [3 x i8] c"%d\\00"
-define i1 @#{name}(i64 %x) {
+define i1 @#{Pretty.pretty ename}(i64 %x) {
     %t0 = getelementptr [3 x i8], [3 x i8]* @dnl, i32 0, i32 0
 	call i32 @printf(i8* %t0, i64 %x)
 	ret i1 1
 }
 |]
-    )
+        )
   where
     name = pack "printInt"

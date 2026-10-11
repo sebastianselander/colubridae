@@ -6,7 +6,7 @@ module Backend.Types where
 import Data.Data (Data)
 import Relude hiding (Type)
 
-import Names (Ident)
+import Names (ExplicitName, Ident)
 
 
 data Type
@@ -19,7 +19,7 @@ data Type
     | StructType [Type]
     | ArrayType Int Type
     | TyFun [Type] Type
-    | TyCon Ident
+    | TyCon ExplicitName
     deriving (Data, Eq, Ord, Show)
 
 

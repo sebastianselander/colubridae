@@ -14,49 +14,49 @@ data Par
     deriving (Data)
 
 
-type ExprPar = Expr Par
+type ExprPar = Expr Ident Par
 
 
-type ProgramPar = Program Par
+type ProgramPar = Program Ident Par
 
 
-type ImportPar = Import Par
+type ImportPar = Import Ident Par
 
 
 type LitPar = Lit Par
 
 
-type ArgPar = Arg Par
+type ArgPar = Arg Ident Par
 
 
-type DefPar = Def Par
+type DefPar = Def Ident Par
 
 
-type FnPar = Fn Par
+type FnPar = Fn Ident Par
 
 
-type AdtPar = Adt Par
+type AdtPar = Adt Ident Par
 
 
-type ConstructorPar = Constructor Par
+type ConstructorPar = Constructor Ident Par
 
 
-type TypePar = Type Par
+type TypePar = Type Ident Par
 
 
-type BlockPar = Block Par
+type BlockPar = Block Ident Par
 
 
-type StmtPar = Stmt Par
+type StmtPar = Stmt Ident Par
 
 
-type LamArgPar = LamArg Par
+type LamArgPar = LamArg Ident Par
 
 
-type MatchArmPar = MatchArm Par
+type MatchArmPar = MatchArm Ident Par
 
 
-type PatternPar = Pattern Par
+type PatternPar = Pattern Ident Par
 
 
 deriving instance Data ExprPar
@@ -245,4 +245,4 @@ type instance XLam Par = SourceInfo
 type instance XLamArg Par = (SourceInfo, Maybe TypePar)
 
 
-deriving instance Data (LamArg Par)
+deriving instance Data LamArgPar

@@ -4,7 +4,7 @@
 
 module Backend.Llvm.Monad where
 
-import Control.Lens (makeLenses)
+import Control.Lens (makeLenses, view)
 import Control.Lens.Getter (use, uses)
 import Control.Lens.Setter (assign, modifying, (+=))
 import Data.DList (DList, snoc)
@@ -16,22 +16,23 @@ import Data.Text qualified as Text
 import Backend.Llvm.Types
 import Backend.Types
 import Impossible (__IMPOSSIBLE__)
-import Names (Ident (..))
+import Names (ExplicitName (EName), Ident (..), Namespace)
 
 
 data IRBuilderState = IRBuilderState
     { _instructions :: DList (Named Instruction)
     , _varCounter :: !Word16
     , _labelCounter :: !Word16
-    , _labelReserved :: Set Ident
-    , _constructors :: Map Ident Int
+    , _labelReserved :: Set Label
+    , _constructors :: Map ExplicitName Int
     , _predBlock :: Label
     }
     deriving (Show)
 
 
-newtype IRBuilderCtx = IRBuilderCtx
+data IRBuilderCtx = IRBuilderCtx
     { _breakLabel :: Label
+    , _namespace :: Namespace
     }
 
 
@@ -44,7 +45,7 @@ emptyInstructions = mempty
 
 
 entryBlock :: Label
-entryBlock = L (Ident "entry")
+entryBlock = L "entry"
 
 
 initialIRBuilderState :: IRBuilderState
@@ -59,8 +60,8 @@ initialIRBuilderState =
         }
 
 
-initialIRBuilderCtx :: IRBuilderCtx
-initialIRBuilderCtx = IRBuilderCtx {_breakLabel = entryBlock}
+initialIRBuilderCtx :: Namespace -> IRBuilderCtx
+initialIRBuilderCtx namespace = IRBuilderCtx {_breakLabel = entryBlock, _namespace = namespace}
 
 
 newtype IRBuilder a = IRBuilder {runBuilder :: StateT IRBuilderState (Reader IRBuilderCtx) a}
@@ -97,19 +98,21 @@ extractInstructions = do
     pure instrs
 
 
-runAssembler :: IRBuilder a -> a
-runAssembler = flip runReader initialIRBuilderCtx . flip evalStateT initialIRBuilderState . runBuilder
+runAssembler :: Namespace -> IRBuilder a -> a
+runAssembler namespace =
+    flip runReader (initialIRBuilderCtx namespace) . flip evalStateT initialIRBuilderState . runBuilder
 
 
 emit :: Named Instruction -> IRBuilder ()
 emit instr = modifying instructions (`snoc` instr)
 
 
-fresh :: (MonadState IRBuilderState m) => m Ident
+fresh :: (MonadReader IRBuilderCtx m, MonadState IRBuilderState m) => m ExplicitName
 fresh = do
     n <- use varCounter
     varCounter += 1
-    pure $ Ident ("_" <> show n)
+    namespace <- view namespace
+    pure $ EName namespace (Ident ("_" <> show n)) (Ident ("_" <> show n))
 
 
 call :: Type -> Operand -> [Operand] -> IRBuilder Operand
@@ -144,7 +147,7 @@ arith :: ArithOp -> Type -> Operand -> Operand -> IRBuilder Operand
 arith op ty l r = LocalReference ty <$> named (Arith op ty l r)
 
 
-named :: Instruction -> IRBuilder Ident
+named :: Instruction -> IRBuilder ExplicitName
 named instr = do
     name <- fresh
     emit $ Named name instr
@@ -191,7 +194,7 @@ or :: Type -> Operand -> Operand -> IRBuilder Operand
 or ty l r = LocalReference ty <$> named (Or ty l r)
 
 
-alloca :: Ident -> Type -> IRBuilder Operand
+alloca :: ExplicitName -> Type -> IRBuilder Operand
 alloca name ty = do
     emit $ Named name (Alloca ty)
     pure $ LocalReference (ptr ty) name
@@ -228,18 +231,18 @@ mkLabel desc =
     if ' ' `Text.elem` desc
         then
             go "" >>= \case
-                L (Ident name) -> pure $ L (Ident $ "\"" <> name <> "\"")
+                L name -> pure $ L ("\"" <> name <> "\"")
         else go ""
   where
     go suffix = do
-        let lbl = Ident $ desc <> suffix
+        let lbl = L $ desc <> suffix
         used <- use labelReserved
         if lbl `Set.member` used
             then do
                 n <- use labelCounter
                 labelCounter += 1
                 go ("." <> show n)
-            else modifying labelReserved (Set.insert lbl) >> pure (L lbl)
+            else modifying labelReserved (Set.insert lbl) >> pure lbl
 
 
 comment :: Text -> IRBuilder ()
@@ -295,7 +298,7 @@ extractValueType ty (x : xs) = case ty of
     ty -> __IMPOSSIBLE__
 
 
-global :: Type -> Ident -> Operand
+global :: Type -> ExplicitName -> Operand
 global ty = ConstantOperand . GlobalReference ty
 
 
@@ -311,7 +314,7 @@ null :: Type -> Operand
 null ty = ConstantOperand (LNull ty)
 
 
-localRef :: Type -> Ident -> Operand
+localRef :: Type -> ExplicitName -> Operand
 localRef = LocalReference
 
 

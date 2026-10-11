@@ -19,35 +19,35 @@ import Frontend.Parser.Utils (CustomParseError)
 import Frontend.Renamer.Pretty ()
 import Frontend.Renamer.Types (ExprRn, PatternRn)
 import Frontend.TH
-import Frontend.Typechecker.Ctx (Ctx, exprStack, names)
+import Frontend.Typechecker.Ctx (Ctx, exprStack)
 import Frontend.Typechecker.Pretty (pThing)
 import Frontend.Typechecker.Types
 import Frontend.Types (SourceInfo (..), Span (..), TyVar)
-import Names (Ident, Namespace, getOriginalName', renameBack)
+import Names (ExplicitName (oldname), Namespace)
 import Utils (indent, quote)
 
 
 data RnError
-    = UnboundVariable SourceInfo Ident
-    | UnboundType SourceInfo Ident
-    | ConflictingDefinitionArgument SourceInfo Ident
+    = UnboundVariable SourceInfo ExplicitName
+    | UnboundType SourceInfo ExplicitName
+    | ConflictingDefinitionArgument SourceInfo ExplicitName
     | ConflictingTypeParameter SourceInfo TyVar
-    | DuplicateToplevels SourceInfo Ident
+    | DuplicateToplevels SourceInfo ExplicitName
     | UnboundImport SourceInfo Namespace
-    | FreeVarsNotAllowed SourceInfo Ident
+    | FreeVarsNotAllowed SourceInfo ExplicitName
     deriving (Show)
 
 
 data TcError
     = TyExpectedGot SourceInfo [ExprRn] [TypeTc] TypeTc
-    | ImmutableVariable SourceInfo [ExprRn] Ident
+    | ImmutableVariable SourceInfo [ExprRn] ExplicitName
     | EmptyReturnNonUnit SourceInfo [ExprRn] TypeTc
     | ApplyNonFunction SourceInfo [ExprRn] TypeTc
     | PartiallyAppliedFunction SourceInfo [ExprRn] Int Int
     | TooManyArguments SourceInfo [ExprRn] Int Int
-    | AssignNonVariable SourceInfo [ExprRn] Ident
+    | AssignNonVariable SourceInfo [ExprRn] ExplicitName
     | ExpectingImmutable SourceInfo [ExprRn]
-    | TypeMustBeKnown SourceInfo [ExprRn] Ident
+    | TypeMustBeKnown SourceInfo [ExprRn] ExplicitName
     | ExpectedTyGotLambda SourceInfo [ExprRn] TypeTc
     | ExpectedLambdaNArgs SourceInfo [ExprRn] Int Int
     | ExpectedPatNArgs SourceInfo [ExprRn] PatternRn Int Int
@@ -56,7 +56,7 @@ data TcError
 
 data ChError
     = BreakOutsideLoop SourceInfo
-    | MissingReturn SourceInfo Ident
+    | MissingReturn SourceInfo ExplicitName
     | UnreachableStatement SourceInfo
     deriving (Show)
 
@@ -98,16 +98,16 @@ reportRnError err = case err of
     UnboundVariable info name ->
         combineRn
             info
-            (unwords ["Variable", quote $ pThing name, "not in scope"])
-    UnboundType loc name -> combineRn loc (unwords ["Type", quote $ pThing name, "not in scope"])
-    ConflictingDefinitionArgument info name -> combineRn info (unwords ["Conflicting definitions for", quote $ pThing name])
+            (unwords ["Variable", quote $ pThing name.oldname, "not in scope"])
+    UnboundType loc name -> combineRn loc (unwords ["Type", quote $ pThing name.oldname, "not in scope"])
+    ConflictingDefinitionArgument info name -> combineRn info (unwords ["Conflicting definitions for", quote $ pThing name.oldname])
     ConflictingTypeParameter info name -> combineRn info (unwords ["Conflicting definitions for", quote $ pThing name])
-    DuplicateToplevels info name -> combineRn info (unwords ["Definition", quote $ pThing name, "already declared earlier"])
+    DuplicateToplevels info name -> combineRn info (unwords ["Definition", quote $ pThing name.oldname, "already declared earlier"])
     UnboundImport loc namespace -> combineRn loc (unwords ["Import", quote $ pThing namespace, "does not exist"])
     FreeVarsNotAllowed loc name ->
         combineRn
             loc
-            (unwords ["Capturing variable: `", quote $ pThing name, "` not allowed in this context"])
+            (unwords ["Capturing variable: `", quote $ pThing name.oldname, "` not allowed in this context"])
 
 
 reportTcError :: TcError -> Text
@@ -127,7 +127,7 @@ reportTcError err = case err of
         combineTc
             info
             currExpr
-            (unwords ["Can not mutate immutable variable", quote (pThing name)])
+            (unwords ["Can not mutate immutable variable", quote (pThing name.oldname)])
     EmptyReturnNonUnit info currExpr ty ->
         combineTc
             info
@@ -156,7 +156,7 @@ reportTcError err = case err of
         combineTc
             info
             currExpr
-            (unwords ["Can not assign an expression to the non-variable", quote (pThing name)])
+            (unwords ["Can not assign an expression to the non-variable", quote (pThing name.oldname)])
     ExpectingImmutable info currExpr ->
         combineTc
             info
@@ -166,7 +166,7 @@ reportTcError err = case err of
         combineTc
             info
             currExpr
-            (unwords ["Type for", quote (pThing name), "must be known at this point"])
+            (unwords ["Type for", quote (pThing name.oldname), "must be known at this point"])
     ExpectedTyGotLambda info currExpr ty ->
         combineTc
             info
@@ -263,190 +263,161 @@ tyExpectedGot ::
     TypeTc ->
     m ()
 tyExpectedGot a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ TyExpectedGot a exprStack c d)
 
 
 immutableVariable' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m a
-immutableVariable' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m a
+immutableVariable' a name = do
+    exprStack <- view exprStack
     refute (return $ ImmutableVariable a exprStack name)
 
 
 immutableVariable ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m ()
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m ()
 immutableVariable a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    dispute (return $ ImmutableVariable a exprStack name)
+    exprStack <- view exprStack
+    dispute (return $ ImmutableVariable a exprStack c)
 
 
 emptyReturnNonUnit' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
 emptyReturnNonUnit' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ EmptyReturnNonUnit a exprStack c)
 
 
 emptyReturnNonUnit ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
 emptyReturnNonUnit a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ EmptyReturnNonUnit a exprStack c)
 
 
 applyNonFunction' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
 applyNonFunction' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ ApplyNonFunction a exprStack c)
 
 
 applyNonFunction ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
 applyNonFunction a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ ApplyNonFunction a exprStack c)
 
 
 partiallyAppliedFunction' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
 partiallyAppliedFunction' a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ PartiallyAppliedFunction a exprStack c d)
 
 
 partiallyAppliedFunction ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
 partiallyAppliedFunction a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ PartiallyAppliedFunction a exprStack c d)
 
 
 tooManyArguments' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
 tooManyArguments' a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ TooManyArguments a exprStack c d)
 
 
 tooManyArguments ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
 tooManyArguments a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ TooManyArguments a exprStack c d)
 
 
 assignNonVariable' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m a
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m a
 assignNonVariable' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    refute (return $ AssignNonVariable a exprStack name)
+    exprStack <- view exprStack
+    refute (return $ AssignNonVariable a exprStack c)
 
 
 assignNonVariable ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m ()
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m ()
 assignNonVariable a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    dispute (return $ AssignNonVariable a exprStack name)
+    exprStack <- view exprStack
+    dispute (return $ AssignNonVariable a exprStack c)
 
 
 expectingImmutable' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> m a
 expectingImmutable' a = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ ExpectingImmutable a exprStack)
 
 
 expectingImmutable ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> m ()
 expectingImmutable a = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ ExpectingImmutable a exprStack)
 
 
 typeMustBeKnown' ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m a
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m a
 typeMustBeKnown' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    refute (return $ TypeMustBeKnown a exprStack name)
+    exprStack <- view exprStack
+    refute (return $ TypeMustBeKnown a exprStack c)
 
 
 typeMustBeKnown ::
-    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Ident -> m ()
+    (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m ()
 typeMustBeKnown a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
-    let name = getOriginalName' c names
-    dispute (return $ TypeMustBeKnown a exprStack name)
+    exprStack <- view exprStack
+    dispute (return $ TypeMustBeKnown a exprStack c)
 
 
 expectedTyGotLambda' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
 expectedTyGotLambda' a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ ExpectedTyGotLambda a exprStack c)
 
 
 expectedTyGotLambda ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
 expectedTyGotLambda a c = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ ExpectedTyGotLambda a exprStack c)
 
 
 expectedLambdaNArgs' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
 expectedLambdaNArgs' a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ ExpectedLambdaNArgs a exprStack c d)
 
 
 expectedLambdaNArgs ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
 expectedLambdaNArgs a c d = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ ExpectedLambdaNArgs a exprStack c d)
 
 
 expectedPatNArgs ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m ()
 expectedPatNArgs loc pat expected got = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     dispute (return $ ExpectedPatNArgs loc exprStack pat expected got)
 
 
 expectedPatNArgs' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m a
 expectedPatNArgs' loc pat expected got = do
-    names <- view names
-    exprStack <- fmap (renameBack names) <$> view exprStack
+    exprStack <- view exprStack
     refute (return $ ExpectedPatNArgs loc exprStack pat expected got)
 
 

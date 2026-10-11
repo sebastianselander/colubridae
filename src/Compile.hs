@@ -9,7 +9,6 @@ module Compile where
 import Control.Arrow (left)
 import Control.Monad.Except (liftEither)
 import Control.Monad.Writer (MonadWriter, WriterT, runWriterT, tell)
-import Data.Foldable1 (foldr1)
 import Data.Text (concat, pack)
 import Data.Text.IO (hPutStrLn)
 import Relude hiding (concat, concatMap, intercalate)
@@ -46,13 +45,9 @@ import Backend.Llvm.Types (Ir, updateDecls)
 import Frontend.Builtin (builtins)
 import Frontend.Error (Report (..))
 import Frontend.Monomorphizer (apply_rename, monomorphize)
-import Frontend.MonomorphizerCollector
-    ( Collection (..),
-      Item (..),
-      collect,
-    )
+import Frontend.MonomorphizerCollector (Collection (..), Item (..), collect)
 import Frontend.Parser.Parse (parse)
-import Frontend.Parser.Types (Par)
+import Frontend.Parser.Types (DefPar, ProgramPar)
 import Frontend.Renamer.Pretty (prettyRenamer)
 import Frontend.Renamer.Rn (rename)
 import Frontend.StatementCheck (check)
@@ -60,7 +55,7 @@ import Frontend.Tc2 (TypeCons (..), getFuns, getTypesAndCons, typecheck)
 import Frontend.Typechecker.Pretty (pThing)
 import Frontend.Types (Adt (Adt), Def (..), Fn (Fn), Program (Program))
 import Impossible (__IMPOSSIBLE__)
-import Names (Ident (..), Namespace (Namespace), combine)
+import Names (ExplicitName (EName, namespace), Ident (..), Namespace (Namespace))
 import Options (Pass (..))
 import Table (DefTable (..))
 import Utils (File (name), zipNE)
@@ -69,9 +64,11 @@ import Backend.Core.Types qualified as Core
 
 
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
+    deriving (Show)
 
 
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
+    deriving (Show)
 
 
 instance Semigroup DebugOutputs where
@@ -89,19 +86,21 @@ log passes_to_log debug@(Debug phase _ _) warnings = do
     tell (Debugs [debug] warnings)
 
 
--- TODO(sebsel): Figure out better name
-gatherSymbols :: NonEmpty (File, Program Par) -> Map Ident Namespace
+gatherSymbols :: NonEmpty (File, ProgramPar) -> Set ExplicitName
 gatherSymbols =
     foldl'
         ( \acc (file, Program _ defs) ->
             foldr
-                (\def -> Map.insert def (Namespace $ fromList (pack <$> splitDirectories (dropExtension file.name))))
+                ( \def ->
+                    Set.insert
+                        (EName (Namespace $ fromList (pack <$> splitDirectories (dropExtension file.name))) def def)
+                )
                 acc
                 (mapMaybe nameOf defs)
         )
         mempty
   where
-    nameOf :: Def Par -> Maybe Ident
+    nameOf :: DefPar -> Maybe Ident
     nameOf = \case
         DefFn (Fn _ name _ _ _ _) -> Just name
         DefAdt (Adt _ name _) -> Just name
@@ -117,9 +116,8 @@ compile passes files = do
     let symbolsMap = gatherSymbols modules
     let namespaces = Set.fromList $ toList $ fmap (\(Program namespace _) -> namespace) programs
 
-    res <- liftEither $ left report $ mapM (rename namespaces symbolsMap) programs
-    let (programs, names) = second (foldr1 combine) (Functor.unzip res)
-    log passes (Debug Rename (Just $ prettyRenamer programs) (toStrict $ pShow res)) []
+    programs <- liftEither $ left report $ mapM (rename namespaces symbolsMap) programs
+    log passes (Debug Rename (Just $ prettyRenamer programs) (toStrict $ pShow programs)) []
 
     res <- liftEither $ left report $ mapM check programs
     log passes (Debug StCheck Nothing (toStrict $ pShow res)) []
@@ -134,7 +132,7 @@ compile passes files = do
                 ( Map.unions
                     $ fmap (\(Program ns defs) -> Map.singleton ns (Map.fromList (cons (getTypesAndCons defs)))) res
                 )
-    programs <- case fmap (typecheck defTable names) res of
+    programs <- case fmap (typecheck defTable) res of
         xs -> forM xs $ \x -> do
             case x of
                 (res, warnings) -> do
@@ -149,7 +147,7 @@ compile passes files = do
     let should_monomorphize_map =
             Map.fromListWith
                 (<>)
-                [ (item.namespace, [item])
+                [ (item.name.namespace, [item])
                 | collection <- toList collections
                 , item <- toList collection.items
                 ]
@@ -170,7 +168,7 @@ compile passes files = do
     forM_ programs'' $ \prg -> do
         log passes (Debug Monomorphize (Just $ pThing prg) "") []
 
-    res <- case fmap (lowerToCore names) programs'' of
+    res <- case fmap lowerToCore programs'' of
         res -> forM res $ \res@(Core.Program namespace _) -> do
             log
                 passes
