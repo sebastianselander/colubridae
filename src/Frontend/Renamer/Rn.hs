@@ -51,14 +51,16 @@ rnProgram :: ProgramPar -> Gen (ProgramRn, Names)
 rnProgram program@(Program a defs) = do
     let functions = getFunctionNames program
     let adts = getAdtNames program
+    let imported = getImportedNames program
     uniqueDefs adts
-    uniqueDefs functions
+    uniqueDefs (functions <> imported)
     let toplevelSet = Set.fromList $ fmap snd functions
     defs <- locally localDefinitions (Set.union toplevelSet) (mapM rnDef (sortDefs defs))
     names <- names
     pure (Program a defs, mkNames names)
 
 
+-- Make sure imports are placed first.
 sortDefs :: [Def a] -> [Def a]
 sortDefs = sortBy f
   where
@@ -140,6 +142,7 @@ rnImport (XImport extraimport) = rnExtraImport extraimport
                         )
                         []
                         defs
+        modifying importedDefinitions (\acc -> foldr (`Map.insert` namespace) acc symbols)
         pure (ImportExplicit loc namespace symbols)
     rnExtraImport (ImportQualified namespace loc) = do
         exist <- doesNamespaceExist namespace
@@ -155,6 +158,7 @@ rnImport (XImport extraimport) = rnExtraImport extraimport
                         )
                         []
                         defs
+        modifying importedDefinitions (\acc -> foldr (`Map.insert` namespace) acc symbols)
         pure (ImportExplicit loc namespace symbols)
 
 
@@ -195,6 +199,7 @@ rnExpr tyParams = goRnExpr
             namespace <- view namespace
             let isOk Nothing = True
                 isOk (Just x) = x
+            -- FIXME(sebsel): This is in dire need of rewrite
             (bind, (namespace, name)) <-
                 maybe
                     ((Free, (Namespace ("$unbound$" :| []), Ident "$unbound$")) <$ unboundVariable info variable)
@@ -349,6 +354,15 @@ getFunctionNames = listify' fnName
   where
     fnName :: FnPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _ _) = Just (info, name)
+
+
+getImportedNames :: ProgramPar -> [(SourceInfo, Ident)]
+getImportedNames = concat . listify' importName
+  where
+    importName :: ImportPar -> Maybe [(SourceInfo, Ident)]
+    importName (ImportExplicit loc _namespace names) = Just (fmap (loc,) names)
+    importName (XImport ImportAs {}) = Nothing
+    importName (XImport (ImportQualified {})) = Nothing
 
 
 rnArgs ::
