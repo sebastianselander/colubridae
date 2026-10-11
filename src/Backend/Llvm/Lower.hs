@@ -44,7 +44,7 @@ instance Pretty Decl where
             <+> pretty ty
     pretty (GlobalString name ty string) = "@" <> pretty name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
     pretty (LlvmMain instr) =
-        "define i1 @main()"
+        "define dso_local i1 @main()"
             <+> lbrace
             <> hardline
             <> "entry:" -- TODO: does not belong here
@@ -56,6 +56,7 @@ instance Pretty Decl where
             <> rbrace
     pretty (Define _ name args ty instr) =
         "define"
+            <+> "dso_local"
             <+> pretty ty
             <+> "@"
             <> pretty name
