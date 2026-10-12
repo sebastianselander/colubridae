@@ -21,10 +21,21 @@ prettyRenamer = show . Pretty.pretty
 
 
 instance Pretty ProgramRn where
-    pretty (Program _ defs) =
+    pretty (Program NoExtField mods) =
         Pretty.concatWith
             (Pretty.surround (Pretty.hardline <> Pretty.hardline))
-            (fmap Pretty.pretty defs)
+            (fmap Pretty.pretty mods)
+
+
+instance Pretty ModuleRn where
+    pretty (Module namespace defs) =
+        "===== "
+            <> Pretty.pretty namespace
+            <> "====="
+            <> Pretty.hardline
+            <> Pretty.concatWith
+                (Pretty.surround (Pretty.hardline <> Pretty.hardline))
+                (fmap Pretty.pretty defs)
 
 
 instance Pretty DefRn where

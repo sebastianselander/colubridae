@@ -1,18 +1,22 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# HLINT ignore "Use lambda-case" #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Use lambda-case" #-}
+{-# HLINT ignore "Use camelCase" #-}
 
 module Frontend.Renamer.Rn (rename) where
 
-import Control.Lens (locally, modifying, view)
+import Control.Lens (locally, modifying, view, views)
 import Control.Lens.Getter (use)
 import Control.Lens.Setter (assign)
 import Control.Monad.Validate (MonadValidate (dispute, refute))
 import Data.List.NonEmpty ((<|))
+import Data.Text.Lazy (unpack)
 import Relude hiding (intercalate)
+import Text.Pretty.Simple (pShow)
 
 import Data.Map qualified as Map
 import Data.Set qualified as Set
@@ -24,7 +28,7 @@ import Frontend.Renamer.Monad
 import Frontend.Renamer.Types
 import Frontend.Types
 import Frontend.Utils (isUnique)
-import Names (ExplicitName (EName), Ident (..), Namespace)
+import Names (ExplicitName (EName), Ident (..), Namespace (Namespace))
 import Utils (listify')
 
 import Frontend.Builtin qualified as Builtins
@@ -46,28 +50,50 @@ Rewrite:
     - Program (Namespace, Ident) Rn
 -}
 
-rename :: Set Namespace -> Set ExplicitName -> ProgramPar -> Either [RnError] ProgramRn
-rename namespaces symbols prg@(Program namespace defs) =
-    runGen
-        (emptyEnv symbols)
-        (createCtx namespace builtins namespaces types)
-        $ rnProgram prg
+buildSymbolTable :: NonEmpty ModulePar -> SymbolTable
+buildSymbolTable = foldr fetch mempty
   where
-    types =
-        Set.fromList
-            (mapMaybe (\case DefAdt (Adt _loc name _cons) -> Just (EName namespace name name); _ -> Nothing) defs)
+    fetch :: ModulePar -> SymbolTable -> SymbolTable
+    fetch (Module namespace mod) table =
+        let functions =
+                (\name -> (name, EName namespace name name))
+                    . snd
+                    <$> (getFunctionNames mod <> getImportedNames mod)
+            datatypes = (\name -> (name, EName namespace name name)) . snd <$> getTypeNames mod
+            constructors = getConstructorNames mod
+         in table
+                { functions = Map.insert namespace (Map.fromList functions) table.functions
+                , datatypes = Map.insert namespace (Map.fromList datatypes) table.datatypes
+                , constructors =
+                    foldr
+                        ( \(typeNamespace, cons) acc ->
+                            Map.insert
+                                (namespace <> typeNamespace)
+                                ( Map.fromList
+                                    $ fmap
+                                        (\(_, name) -> (name, EName namespace name name))
+                                        cons
+                                )
+                                acc
+                        )
+                        table.constructors
+                        constructors
+                }
 
 
-rnProgram :: ProgramPar -> Gen ProgramRn
-rnProgram program@(Program namespace defs) = do
-    let functions = getFunctionNames program
-    let adts = getAdtNames program
-    let imported = getImportedNames program
-    uniqueDefs namespace adts
-    uniqueDefs namespace (functions <> imported)
-    let toplevelSet = Map.fromList $ fmap (\(_, name) -> (name, EName namespace name name)) functions
-    defs <- locally localDefinitions (Map.union toplevelSet) (mapM rnDef (sortDefs defs))
-    pure (Program namespace defs)
+rename :: ProgramPar -> Either [RnError] ProgramRn
+rename (Program NoExtField mods) =
+    let tbl = buildSymbolTable mods
+        results = fmap (rnModule tbl) mods
+     in case partitionEithers (Relude.toList results) of
+            (concat -> [], mod : mods) -> pure (Program NoExtField (mod :| mods))
+            (concat -> errors, _) -> Left errors
+
+
+-- runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
+rnModule :: SymbolTable -> ModulePar -> Either [RnError] ModuleRn
+rnModule tbl (Module namespace defs) =
+    runGen emptyEnv (createCtx tbl namespace builtins) (Module namespace <$> mapM rnDef defs)
 
 
 -- Make sure imports are placed first.
@@ -112,7 +138,10 @@ rnFunction (Fn pos name tyParams arguments returnType block) = do
 
 
 rnDef :: DefPar -> Gen DefRn
-rnDef (DefFn fn) = DefFn <$> rnFunction fn
+rnDef (DefFn fn) = do
+    defs <- use importedDefinitions
+    traceM $ unpack $ pShow defs
+    DefFn <$> rnFunction fn
 rnDef (DefAdt adt) = DefAdt <$> rnAdt adt
 rnDef (DefImport imp) = DefImport <$> rnImport imp
 
@@ -206,14 +235,15 @@ rnExpr tyParams = goRnExpr
             namespace <- view namespace
             mby <- case ns of
                 Just namespace -> do
-                    imported <- boundImported namespace name
+                    function <- fmap (Function,) <$> lookupFunction namespace name
+                    constructor <- fmap (Constructor,) <$> lookupConstructor namespace name
                     builtin <- lookupBuiltin namespace name
-                    pure (imported <|> builtin)
+                    pure (function <|> constructor <|> builtin)
                 Nothing -> do
                     var <- boundVar name
                     arg <- boundArg name
-                    fun <- boundFun name
-                    con <- boundCons name
+                    fun <- fmap (Function,) <$> lookupFunction namespace name
+                    con <- fmap (Constructor,) <$> lookupConstructor namespace name
                     pure $ var <|> arg <|> fun <|> con
             (bind, name) <- maybe (unboundVariable' info (EName namespace name name)) pure mby
             case bind of
@@ -341,21 +371,31 @@ rnLit = \case
     UnitLit info -> pure $ UnitLit info
 
 
-getAdtNames :: ProgramPar -> [(SourceInfo, Ident)]
-getAdtNames = listify' adtName
+getTypeNames :: [DefPar] -> [(SourceInfo, Ident)]
+getTypeNames = listify' adtName
   where
     adtName :: AdtPar -> Maybe (SourceInfo, Ident)
     adtName (Adt info name _) = Just (info, name)
 
 
-getFunctionNames :: ProgramPar -> [(SourceInfo, Ident)]
+getConstructorNames :: [DefPar] -> [(Namespace, [(SourceInfo, Ident)])]
+getConstructorNames = listify' adtName
+  where
+    adtName :: AdtPar -> Maybe (Namespace, [(SourceInfo, Ident)])
+    adtName (Adt _ (Ident name) cons) = Just (Namespace (name :| []), fmap conName cons)
+    conName :: ConstructorPar -> (SourceInfo, Ident)
+    conName (EnumCons loc name) = (loc, name)
+    conName (FunCons loc name _) = (loc, name)
+
+
+getFunctionNames :: [DefPar] -> [(SourceInfo, Ident)]
 getFunctionNames = listify' fnName
   where
     fnName :: FnPar -> Maybe (SourceInfo, Ident)
     fnName (Fn info name _ _ _ _) = Just (info, name)
 
 
-getImportedNames :: ProgramPar -> [(SourceInfo, Ident)]
+getImportedNames :: [DefPar] -> [(SourceInfo, Ident)]
 getImportedNames = concat . listify' importName
   where
     importName :: ImportPar -> Maybe [(SourceInfo, Ident)]
@@ -385,8 +425,8 @@ rnArgs tyParams = fmap (reverse . snd) . foldlM f mempty
 
 renameType :: (MonadReader Ctx m, MonadValidate [RnError] m) => TyParamList -> TypePar -> m TypeRn
 renameType typeParams ty = do
-    userDefinedTypes <- view userDefinedTypes
     namespace <- view namespace
+    userDefinedTypes <- views symbols (Map.lookup namespace . datatypes)
     case ty of
         TyCon _ name -> pure (TyCon NoExtField (EName namespace name name))
         TypeVar _ tyvar -> pure (TypeVar NoExtField tyvar)
@@ -394,8 +434,8 @@ renameType typeParams ty = do
         TyFun _ args ret -> TyFun NoExtField <$> mapM (renameType typeParams) args <*> renameType typeParams ret
         Type unresolved@(UnresolvedType loc _)
             | isTypeVar unresolved typeParams -> pure (TypeVar NoExtField (tyVarOf unresolved))
-            | let name = EName namespace (nameOf unresolved) (nameOf unresolved)
-            , Set.member name userDefinedTypes ->
+            | Just types <- userDefinedTypes
+            , Just name <- Map.lookup (nameOf unresolved) types ->
                 pure (TyCon NoExtField name)
             | let name = EName namespace (nameOf unresolved) (nameOf unresolved)
             , otherwise ->

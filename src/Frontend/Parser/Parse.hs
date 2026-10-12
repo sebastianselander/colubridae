@@ -12,9 +12,11 @@ import System.FilePath (dropExtension)
 import Text.Megaparsec (ParseErrorBundle, (<?>))
 
 import Data.Map qualified as Map
+import Data.Text qualified as Text
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
 
+import Frontend.Error (Report (report))
 import Frontend.Parser.Types
 import Frontend.Parser.Utils
 import Frontend.Types
@@ -22,22 +24,30 @@ import Names (Ident (Ident), Namespace (Namespace), mkNamespace)
 import Utils (File (..))
 
 
+parse :: NonEmpty File -> Either Text ProgramPar
+parse files =
+    let modules = fmap parseModule files
+     in case partitionEithers (Relude.toList modules) of
+            ([], mod : mods) -> pure (Program NoExtField (mod :| mods))
+            (xs, _) -> Left $ Text.intercalate "\n" (fmap report xs)
+
+
 parse' ::
     BindingPowerTable PrefixOp BinOp Void ->
     File ->
-    Either (ParseErrorBundle Text CustomParseError) ProgramPar
+    Either (ParseErrorBundle Text CustomParseError) ModulePar
 parse' table file =
     flip runReader table
         $ P.runParserT
-            ( Program (mkNamespace (dropExtension file.name))
+            ( Module (mkNamespace (dropExtension file.name))
                 <$> (lexeme (return ()) *> P.many definition <* P.eof)
             )
             file.name
             file.content
 
 
-parse :: File -> Either (ParseErrorBundle Text CustomParseError) ProgramPar
-parse = parse' defaultBindingPowerTable
+parseModule :: File -> Either (ParseErrorBundle Text CustomParseError) ModulePar
+parseModule = parse' defaultBindingPowerTable
 
 
 import_ :: Parser ImportPar

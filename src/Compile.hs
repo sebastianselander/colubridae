@@ -109,14 +109,10 @@ gatherSymbols =
 
 compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Ir)
 compile passes files = do
-    programs <- liftEither $ left report $ mapM parse files
-    log passes (Debug Parse Nothing (toStrict $ pShow programs)) []
+    program <- liftEither $ parse files
+    log passes (Debug Parse Nothing (toStrict $ pShow program)) []
 
-    let modules = NE.zip files programs
-    let symbolsMap = gatherSymbols modules
-    let namespaces = Set.fromList $ toList $ fmap (\(Program namespace _) -> namespace) programs
-
-    programs <- liftEither $ left report $ mapM (rename namespaces symbolsMap) programs
+    programs <- liftEither $ left report $ mapM (rename _ _) program
     log passes (Debug Rename (Just $ prettyRenamer programs) (toStrict $ pShow programs)) []
 
     res <- liftEither $ left report $ mapM check programs

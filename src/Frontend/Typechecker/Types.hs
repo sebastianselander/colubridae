@@ -25,6 +25,9 @@ data FnType = FnType {tyvars :: [TyVar], retType :: TypeTc, argTypes :: [TypeTc]
 type ProgramTc = Program ExplicitName Tc
 
 
+type ModuleTc = Module ExplicitName Tc
+
+
 type DefTc = Def ExplicitName Tc
 
 
@@ -73,6 +76,9 @@ type TcInfo = (SourceInfo, TypeTc)
 deriving instance Data ProgramTc
 
 
+deriving instance Data ModuleTc
+
+
 deriving instance Data DefTc
 
 
@@ -115,7 +121,10 @@ deriving instance Data MatchArmTc
 deriving instance Data PatternTc
 
 
-type instance XProgram Tc = Namespace
+type instance XProgram Tc = NoExtField
+
+
+type instance XModule Tc = Namespace
 
 
 type instance XArg Tc = NoExtField

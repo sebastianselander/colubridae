@@ -7,31 +7,27 @@ module Frontend.Renamer.Monad
     ( Env,
       Ctx,
       Gen,
+      SymbolTable (..),
+      lookupFunction,
+      lookupType,
+      lookupConstructor,
       newContext,
       boundVar,
       insertVar,
       boundArg,
-      boundCons,
       lookupBuiltin,
       createCtx,
       emptyEnv,
-      localDefinitions,
-      importedDefinitions,
       freeVarsAllowed,
       importName,
+      symbols,
       namespace,
       numbering,
       runGen,
-      boundFun,
-      boundImported,
       insertArg,
-      checkAndinsertConstrutor,
       arguments,
       resetArgs,
       insertImportName,
-      namespaces,
-      doesNamespaceExist,
-      userDefinedTypes,
     )
 where
 
@@ -42,12 +38,11 @@ import Data.Map.Strict (Map)
 import Relude hiding (Map, head)
 
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
 
 import Frontend.Builtin (Builtins, isBuiltin)
 import Frontend.Error
 import Frontend.Typechecker.Types (Tc)
-import Frontend.Types (Boundedness (..), SourceInfo)
+import Frontend.Types (Boundedness (..))
 import Names (ExplicitName (EName), Ident (..), Namespace)
 
 
@@ -55,20 +50,30 @@ data Env = Env
     { _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident ExplicitName)
     , _arguments :: NonEmpty (Map Ident ExplicitName)
-    , _constructors :: Map Ident ExplicitName
-    , _importedDefinitions :: Set ExplicitName -- Top level symbols available
     , _importName :: Map Ident Namespace -- as-name to import name (path)
+    }
+    deriving (Show)
+
+
+data SymbolTable = SymbolTable
+    { functions :: Map Namespace (Map Ident ExplicitName)
+    -- ^ namespace -> function -> name
+    , datatypes :: Map Namespace (Map Ident ExplicitName)
+    -- ^ namespace -> data type -> name
+    , constructors :: Map Namespace (Map Ident ExplicitName)
+    {- ^ namespace -> constructor -> name
+    note: Here namespace will be the concatenation of the file namespace and the type namespace
+    example: in foo.ck we have type List { Nil}: perform the lookup on foo::List
+    -}
     }
     deriving (Show)
 
 
 data Ctx = Ctx
     { _freeVarsAllowed :: Bool
-    , _localDefinitions :: Map Ident ExplicitName
+    , _symbols :: SymbolTable
     , _namespace :: Namespace
     , _builtins :: Builtins Tc
-    , _namespaces :: Set Namespace
-    , _userDefinedTypes :: Set ExplicitName
     }
     deriving (Show)
 
@@ -88,25 +93,18 @@ newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
         )
 
 
-emptyEnv :: Set ExplicitName -> Env
-emptyEnv imported =
+emptyEnv :: Env
+emptyEnv =
     Env
         { _numbering = mempty
         , _scope = return mempty
         , _arguments = mempty :| []
-        , _constructors = mempty
-        , _importedDefinitions = imported
         , _importName = mempty
         }
 
 
-createCtx ::
-    Namespace ->
-    Builtins Tc ->
-    Set Namespace ->
-    Set ExplicitName ->
-    Ctx
-createCtx = Ctx True mempty
+createCtx :: SymbolTable -> Namespace -> Builtins Tc -> Ctx
+createCtx = Ctx True
 
 
 runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
@@ -117,22 +115,23 @@ runGen env ctx =
         . runGen'
 
 
--- TODO: Does not check for imported symbols
-boundFun :: (MonadReader Ctx m) => Ident -> m (Maybe (Boundedness, ExplicitName))
-boundFun name = views localDefinitions (fmap (Function,) <$> Map.lookup name)
+lookupFunction ::
+    (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
+lookupFunction namespace name =
+    views symbols (Map.lookup name <=< Map.lookup namespace . functions)
 
 
--- | Returns the expanded namespace of the symbol
-boundImported ::
-    (MonadState Env m) => Namespace -> Ident -> m (Maybe (Boundedness, ExplicitName))
-boundImported namespace name = do
-    let name' = EName namespace name name
-    exists <- uses importedDefinitions (Set.member name')
-    if exists then pure $ Just (Imported, name') else pure Nothing
+lookupType ::
+    (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
+lookupType namespace name = views symbols (Map.lookup name <=< Map.lookup namespace . datatypes)
 
 
-boundCons :: (MonadState Env m) => Ident -> m (Maybe (Boundedness, ExplicitName))
-boundCons name = uses constructors (fmap (Constructor,) <$> Map.lookup name)
+lookupConstructor ::
+    (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
+lookupConstructor namespace name =
+    views
+        symbols
+        (Map.lookup name <=< Map.lookup namespace . constructors)
 
 
 boundArg ::
@@ -157,10 +156,6 @@ lookupBuiltin namespace name = do
     if isBuiltin name' map
         then pure (Just (Builtin, name'))
         else pure Nothing
-
-
-doesNamespaceExist :: (MonadReader Ctx m) => Namespace -> m Bool
-doesNamespaceExist namespace = views namespaces (Set.member namespace)
 
 
 {-| Checks if a variable is bound in the closest scope
@@ -213,17 +208,6 @@ insertImportName name path = modifying importName (Map.insert name path)
 
 resetArgs :: (MonadState Env m) => m ()
 resetArgs = assign arguments (mempty :| [])
-
-
-checkAndinsertConstrutor ::
-    (MonadValidate [RnError] m, MonadState Env m, MonadReader Ctx m) => SourceInfo -> Ident -> m ()
-checkAndinsertConstrutor loc name = do
-    uses constructors (Map.lookup name) >>= \case
-        Just name -> conflictingDefinitionArgument loc name
-        Nothing -> do
-            namespace <- view namespace
-            -- FIXME: This might be incorrect
-            modifying constructors (Map.insert name (EName namespace name name))
 
 
 newContext :: Gen a -> Gen a

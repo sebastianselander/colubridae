@@ -18,6 +18,9 @@ data Rn
 type ProgramRn = Program ExplicitName Rn
 
 
+type ModuleRn = Module ExplicitName Rn
+
+
 type DefRn = Def ExplicitName Rn
 
 
@@ -66,6 +69,9 @@ deriving instance Data ExprRn
 deriving instance Data ProgramRn
 
 
+deriving instance Data ModuleRn
+
+
 deriving instance Data LitRn
 
 
@@ -106,6 +112,9 @@ deriving instance Data PatternRn
 
 
 type instance XProgram Rn = XProgram Par
+
+
+type instance XModule Rn = XModule Par
 
 
 type instance XArg Rn = SourceInfo

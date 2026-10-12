@@ -19,10 +19,21 @@ prettyRenamer = show . Pretty.pretty
 
 
 instance Pretty ProgramPar where
-    pretty (Program _ defs) =
+    pretty (Program NoExtField mods) =
         Pretty.concatWith
             (Pretty.surround (Pretty.hardline <> Pretty.hardline))
-            (fmap Pretty.pretty defs)
+            (fmap Pretty.pretty mods)
+
+
+instance Pretty ModulePar where
+    pretty (Module namespace defs) =
+        "===== "
+            <> Pretty.pretty namespace
+            <> "====="
+            <> Pretty.hardline
+            <> Pretty.concatWith
+                (Pretty.surround (Pretty.hardline <> Pretty.hardline))
+                (fmap Pretty.pretty defs)
 
 
 instance Pretty DefPar where
@@ -146,6 +157,7 @@ prettyType2 = \case
         Bool -> "bool"
     ty@TyFun {} -> Pretty.parens (Pretty.pretty ty)
     TypeVar _ tyvar -> Pretty.pretty tyvar
+    Type (UnresolvedType _ var) -> Pretty.pretty var
 
 
 instance Pretty ExprPar where

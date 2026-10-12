@@ -20,6 +20,9 @@ type ExprPar = Expr Ident Par
 type ProgramPar = Program Ident Par
 
 
+type ModulePar = Module Ident Par
+
+
 type ImportPar = Import Ident Par
 
 
@@ -65,6 +68,9 @@ deriving instance Data ExprPar
 deriving instance Data ProgramPar
 
 
+deriving instance Data ModulePar
+
+
 deriving instance Data LitPar
 
 
@@ -101,7 +107,10 @@ deriving instance Data MatchArmPar
 deriving instance Data PatternPar
 
 
-type instance XProgram Par = Namespace
+type instance XProgram Par = NoExtField
+
+
+type instance XModule Par = Namespace
 
 
 data ExtraImports a

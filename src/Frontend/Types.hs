@@ -70,13 +70,22 @@ instance Show SourceInfo where
 
 
 -- Program
-data Program name a = Program !(XProgram a) [Def name a]
+data Program name a = Program !(XProgram a) (NonEmpty (Module name a))
 
 
 type family XProgram a
 
 
+data Module name a = Module !(XModule a) [Def name a]
+
+
+type family XModule a
+
+
 deriving instance (Show name, Forall Show a) => Show (Program name a)
+
+
+deriving instance (Show name, Forall Show a) => Show (Module name a)
 
 
 -- Definition
@@ -509,6 +518,7 @@ type Forall (c :: Data.Kind.Type -> Constraint) a =
     , c (XPEnumCon a)
     , c (XPFunCon a)
     , c (XTypeVar a)
+    , c (XModule a)
     )
 
 
