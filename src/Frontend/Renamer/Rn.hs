@@ -68,20 +68,7 @@ buildSymbolTable = foldrM fetch mempty
                         ( Symbols
                             { functions = Map.fromList [(func.name, func) | (_, func) <- functions]
                             , datatypes = Map.fromList [(ty.name, ty) | (_, ty) <- datatypes]
-                            , constructors =
-                                foldr
-                                    ( \(typeNamespace, cons) acc ->
-                                        Map.insert
-                                            (namespace <> typeNamespace)
-                                            ( Map.fromList
-                                                $ fmap
-                                                    (\(_, name) -> (name.name, name))
-                                                    cons
-                                            )
-                                            acc
-                                    )
-                                    mempty
-                                    constructors
+                            , constructors = Map.fromList [(con.name, con) | (_, con) <- concat constructors]
                             }
                         )
                         table.symbols
@@ -182,8 +169,8 @@ rnImport (ImportExplicit loc namespace imports) = do
     findName symbols name = do
         let funName = Map.lookup name symbols.functions
         let tyName = Map.lookup name symbols.datatypes
-        -- let conName = (Constructor,) <$> Map.lookup name symbols.constructors
-        maybe (unboundVariable' loc (EName namespace name name)) pure (funName <|> tyName)
+        let conName = Map.lookup name symbols.constructors
+        maybe (unboundVariable' loc (EName namespace name name)) pure (funName <|> tyName <|> conName)
 rnImport (XImport extraimport) = rnExtraImport extraimport
   where
     rnExtraImport :: ExtraImports SourceInfo -> Gen ImportRn
@@ -224,7 +211,6 @@ rnConstructor typeNamespace con = do
                 views
                     symbolTable
                     ( Map.lookup name
-                        <=< Map.lookup typeNamespace
                         . constructors
                         <=< Map.lookup namespace
                         . symbols
@@ -242,7 +228,6 @@ rnConstructor typeNamespace con = do
                 views
                     symbolTable
                     ( Map.lookup name
-                        <=< Map.lookup typeNamespace
                         . constructors
                         <=< Map.lookup namespace
                         . symbols
@@ -284,15 +269,15 @@ rnExpr tyParams = goRnExpr
             mby <- case ns of
                 Just namespace -> do
                     function <- fmap (Function,) <$> lookupFunction namespace name
-                    -- constructor <- fmap (Constructor,) <$> lookupConstructor namespace name
+                    constructor <- fmap (Constructor,) <$> lookupConstructor namespace name
                     builtin <- lookupBuiltin namespace name
-                    pure (function <|> {- constructor <|> -} builtin)
+                    pure (function <|> constructor <|> builtin)
                 Nothing -> do
                     var <- boundVar name
                     arg <- boundArg name
                     fun <- fmap (Function,) <$> lookupFunction namespace name
-                    -- con <- fmap (Constructor,) <$> lookupConstructor namespace name
-                    pure $ var <|> arg <|> fun -- <|> con
+                    con <- fmap (Constructor,) <$> lookupConstructor namespace name
+                    pure $ var <|> arg <|> fun <|> con
             (bind, name) <- maybe (unboundVariable' info (EName namespace name name)) pure mby
             case bind of
                 Free | not freeVarsAllowed -> freeVarsNotAllowed info name
@@ -426,16 +411,15 @@ getTypeNames namespace = listify' adtName
     adtName (Adt info name _) = Just (info, EName namespace name name)
 
 
-getConstructorNames :: Namespace -> [DefPar] -> [(Namespace, [(SourceInfo, ExplicitName)])]
+getConstructorNames :: Namespace -> [DefPar] -> [[(SourceInfo, ExplicitName)]]
 getConstructorNames namespace = listify' adtName
   where
-    adtName :: AdtPar -> Maybe (Namespace, [(SourceInfo, ExplicitName)])
-    adtName (Adt _ (Ident name) cons) = Just (typeNamespace, fmap conName cons)
+    adtName :: AdtPar -> Maybe [(SourceInfo, ExplicitName)]
+    adtName (Adt _ _ cons) = Just (fmap conName cons)
       where
-        typeNamespace = Namespace (name :| [])
         conName :: ConstructorPar -> (SourceInfo, ExplicitName)
-        conName (EnumCons loc name) = (loc, EName (namespace <> typeNamespace) name name)
-        conName (FunCons loc name _) = (loc, EName (namespace <> typeNamespace) name name)
+        conName (EnumCons loc name) = (loc, EName namespace name name)
+        conName (FunCons loc name _) = (loc, EName namespace name name)
 
 
 getFunctionNames :: Namespace -> [DefPar] -> [(SourceInfo, ExplicitName)]

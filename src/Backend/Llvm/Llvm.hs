@@ -16,15 +16,19 @@ import Backend.Llvm.Prelude (exitFailure, printString)
 import Backend.Llvm.Types
 import Backend.Types
 import Impossible (__IMPOSSIBLE__)
-import Names (ExplicitName (EName, name), Ident (..), Namespace)
+import Names (ExplicitName (EName, name), Ident (..))
 import Origin (Origin (..))
 import Utils (catMaybesSnd, mapWithIndexM)
 
 import Backend.Core.Types qualified as Core
 
 
-assemble :: Core.Program -> Ir
-assemble (Core.Program namespace defs) =
+assemble :: Core.Program -> NonEmpty Ir
+assemble (Core.Program mods) = fmap assembleModule mods
+
+
+assembleModule :: Core.Module -> Ir
+assembleModule (Core.Module namespace defs) =
     IrMain
         . sortBy (comparing Down)
         <$> runAssembler namespace

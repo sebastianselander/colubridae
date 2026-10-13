@@ -105,7 +105,7 @@ gatherSymbols =
         DefImport _ -> Nothing
 
 
-compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) Ir
+compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Ir)
 compile passes files = do
     program <- liftEither $ parse files
     log passes (Debug Parse Nothing (toStrict $ pShow program)) []
@@ -141,12 +141,12 @@ compile passes files = do
     program <- pure $ lowerToCore program''
     log passes (Debug Core (Just $ prettyCore program) "") []
 
-    program <- pure $ assemble program
+    let programs = assemble program
     log passes (Debug Llvm (Just $ llvmOut res) (toStrict $ pShow program)) []
-    pure program
+    pure programs
 
 
-runCompile :: Set Pass -> NonEmpty File -> IO (Either Text Ir, DebugOutputs)
+runCompile :: Set Pass -> NonEmpty File -> IO (Either Text (NonEmpty Ir), DebugOutputs)
 runCompile passes = runWriterT . runExceptT . compile passes
 
 
@@ -207,7 +207,7 @@ produceExecutable passes files out = do
         Left err -> do
             hPutStrLn stderr err
             exitFailure
-        Right prg -> do
+        Right irs -> do
             let buildDir = "build"
             exists <- doesDirectoryExist buildDir
             when exists $ removeDirectoryRecursive buildDir
@@ -216,7 +216,7 @@ produceExecutable passes files out = do
             asmFiles <-
                 mapM
                     (\(file, prg) -> produceAsmFile (replaceExtension file.name "asm") (Right prg))
-                    (zipNE files undefined {- prg -})
+                    (zipNE files irs)
             objFiles <-
                 mapM (\file -> produceObjectFile file (replaceExtension file "o")) (preludeFile :| toList asmFiles)
             linkObjectFiles objFiles (buildDir </> out)

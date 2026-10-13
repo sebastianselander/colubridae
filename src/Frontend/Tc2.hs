@@ -842,9 +842,6 @@ lookupCon name =
 
 lookupFun :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
 lookupFun name = do
-    traceM (unpack $ pShow name)
-    tbl <- view (Ctx.defTable . DefTable.functions)
-    traceM (unpack $ pShow tbl)
     views
         (Ctx.defTable . DefTable.functions)
         ( fromMaybe __IMPOSSIBLE__

@@ -8,7 +8,11 @@ import Names (ExplicitName, Namespace)
 import Origin (Origin (..))
 
 
-data Program = Program Namespace [Def]
+newtype Program = Program (NonEmpty Module)
+    deriving (Data, Eq, Ord, Show)
+
+
+data Module = Module Namespace [Def]
     deriving (Data, Eq, Ord, Show)
 
 

@@ -79,7 +79,11 @@ pPrefixOp = \case
 
 
 pProgram :: Program -> Doc ann
-pProgram (Program _ defs) = hcat (punctuate (hardline <> hardline) (fmap pDef defs))
+pProgram (Program mods) = concatWith (surround (hardline <> hardline)) (fmap pModule mods)
+
+
+pModule :: Module -> Doc ann
+pModule (Module _ defs) = hcat (punctuate (hardline <> hardline) (fmap pDef defs))
 
 
 pDef :: Def -> Doc ann

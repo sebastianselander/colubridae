@@ -65,10 +65,10 @@ data Symbols = Symbols
     -- ^ function -> name
     , datatypes :: Map Ident ExplicitName
     -- ^ data type -> name
-    , constructors :: Map Namespace (Map Ident ExplicitName)
-    {- ^ namespace -> constructor -> name
-    note: Here namespace will be the concatenation of the file namespace and the type namespace
-    example: in foo.ck we have type List { Nil}: perform the lookup on foo::List
+    , constructors :: Map Ident ExplicitName
+    {- ^ constructor -> name
+
+    For the FUTURE: Constructors should be namespaced by the type they belong to
     -}
     }
     deriving (Show)
@@ -132,14 +132,13 @@ lookupType namespace name = views symbolTable (Map.lookup name . datatypes <=< M
 
 
 lookupConstructor ::
-    (MonadReader Ctx m) => Namespace -> Namespace -> Ident -> m (Maybe ExplicitName)
-lookupConstructor fileNamespace typeNamespace name =
+    (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
+lookupConstructor namespace name =
     views
         symbolTable
         ( Map.lookup name
-            <=< Map.lookup typeNamespace
             . constructors
-            <=< Map.lookup fileNamespace
+            <=< Map.lookup namespace
             . symbols
         )
 
