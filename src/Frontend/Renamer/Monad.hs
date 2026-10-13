@@ -8,6 +8,7 @@ module Frontend.Renamer.Monad
       Ctx,
       Gen,
       SymbolTable (..),
+      Symbols (..),
       lookupFunction,
       lookupType,
       lookupConstructor,
@@ -20,7 +21,7 @@ module Frontend.Renamer.Monad
       emptyEnv,
       freeVarsAllowed,
       importName,
-      symbols,
+      symbolTable,
       namespace,
       numbering,
       runGen,
@@ -55,11 +56,15 @@ data Env = Env
     deriving (Show)
 
 
-data SymbolTable = SymbolTable
-    { functions :: Map Namespace (Map Ident ExplicitName)
-    -- ^ namespace -> function -> name
-    , datatypes :: Map Namespace (Map Ident ExplicitName)
-    -- ^ namespace -> data type -> name
+newtype SymbolTable = SymbolTable {symbols :: Map Namespace Symbols}
+    deriving (Monoid, Semigroup, Show)
+
+
+data Symbols = Symbols
+    { functions :: Map Ident ExplicitName
+    -- ^ function -> name
+    , datatypes :: Map Ident ExplicitName
+    -- ^ data type -> name
     , constructors :: Map Namespace (Map Ident ExplicitName)
     {- ^ namespace -> constructor -> name
     note: Here namespace will be the concatenation of the file namespace and the type namespace
@@ -71,7 +76,7 @@ data SymbolTable = SymbolTable
 
 data Ctx = Ctx
     { _freeVarsAllowed :: Bool
-    , _symbols :: SymbolTable
+    , _symbolTable :: SymbolTable
     , _namespace :: Namespace
     , _builtins :: Builtins Tc
     }
@@ -118,20 +123,25 @@ runGen env ctx =
 lookupFunction ::
     (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
 lookupFunction namespace name =
-    views symbols (Map.lookup name <=< Map.lookup namespace . functions)
+    views symbolTable (Map.lookup name . functions <=< Map.lookup namespace . symbols)
 
 
 lookupType ::
     (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
-lookupType namespace name = views symbols (Map.lookup name <=< Map.lookup namespace . datatypes)
+lookupType namespace name = views symbolTable (Map.lookup name . datatypes <=< Map.lookup namespace . symbols)
 
 
 lookupConstructor ::
-    (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
-lookupConstructor namespace name =
+    (MonadReader Ctx m) => Namespace -> Namespace -> Ident -> m (Maybe ExplicitName)
+lookupConstructor fileNamespace typeNamespace name =
     views
-        symbols
-        (Map.lookup name <=< Map.lookup namespace . constructors)
+        symbolTable
+        ( Map.lookup name
+            <=< Map.lookup typeNamespace
+            . constructors
+            <=< Map.lookup fileNamespace
+            . symbols
+        )
 
 
 boundArg ::

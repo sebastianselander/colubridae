@@ -10,6 +10,7 @@ import Data.Either.Extra (fromEither)
 import Data.Generics (everywhereM, mkM)
 import Relude hiding (Type)
 
+import Data.Functor qualified as Functor
 import Data.Map qualified as Map
 import Prettyprinter qualified as Pretty
 
@@ -21,6 +22,7 @@ import Frontend.Typechecker.Types
       FnTc,
       FnType (..),
       ImportTc,
+      ModuleTc,
       ProgramTc,
       TypeApp (TypeApp),
       TypeTc,
@@ -32,6 +34,7 @@ import Frontend.Types
       Expr (Expr, Var),
       Fn (Fn),
       Import (ImportExplicit),
+      Module (Module),
       NoExtField (NoExtField),
       Program (Program),
       Type (TyFun, TypeVar),
@@ -39,7 +42,7 @@ import Frontend.Types
       toList,
     )
 import Impossible (__IMPOSSIBLE__)
-import Names (ExplicitName)
+import Names (ExplicitName, Namespace)
 
 import Names qualified
 import Names qualified as ExplicitName
@@ -48,15 +51,24 @@ import Names qualified as ExplicitName
 type RenameTable = Map (ExplicitName, [TypeTc]) ExplicitName
 
 
-monomorphize :: ProgramTc -> [Item] -> (ProgramTc, RenameTable)
-monomorphize prg items = runState (foldM insert_mono_fn prg (deduplicate items)) Map.empty
+monomorphize :: Map Namespace [Item] -> ProgramTc -> (ProgramTc, RenameTable)
+monomorphize items (Program NoExtField mods) =
+    let (mods', renameTables) = Functor.unzip (fmap (`monomorphizeModule` items) mods)
+     in (Program NoExtField mods', Map.unionsWith __IMPOSSIBLE__ renameTables)
+
+
+monomorphizeModule :: ModuleTc -> Map Namespace [Item] -> (ModuleTc, RenameTable)
+monomorphizeModule mod@(Module namespace _) items =
+    runState
+        (foldM insert_mono_fn mod (deduplicate (fromMaybe [] $ Map.lookup namespace items)))
+        Map.empty
 
 
 -- FIXME(sebsel): Apply rename to imports too
-apply_rename :: RenameTable -> ProgramTc -> ProgramTc
+apply_rename :: RenameTable -> ModuleTc -> ModuleTc
 apply_rename tbl prg =
-    let (Program namespace defs, extra_imports) = runState (everywhereM (mkM (rename tbl)) prg) []
-     in Program namespace (fmap (DefImport . uncurry make_import) extra_imports <> defs)
+    let (Module namespace defs, extra_imports) = runState (everywhereM (mkM (rename tbl)) prg) []
+     in Module namespace (fmap (DefImport . uncurry make_import) extra_imports <> defs)
 
 
 make_import :: ExplicitName -> FnType -> ImportTc
@@ -101,10 +113,10 @@ make_mono_name type_args name =
 
 -- We can optimize this by grouping items by the function they are monomorphizing.
 insert_mono_fn ::
-    (MonadState RenameTable m) => ProgramTc -> Item -> m ProgramTc
-insert_mono_fn (Program namespace defs) item = do
+    (MonadState RenameTable m) => ModuleTc -> Item -> m ModuleTc
+insert_mono_fn (Module namespace defs) item = do
     fn <- mono_fn
-    pure (Program namespace (DefFn fn : defs))
+    pure (Module namespace (DefFn fn : defs))
   where
     Fn NoExtField original_name typaramlist args original_type body =
         fromMaybe __IMPOSSIBLE__ (find_fn item.name defs)

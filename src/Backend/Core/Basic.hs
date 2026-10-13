@@ -62,7 +62,7 @@ $(makeLenses ''Env)
 
 
 basicCore :: Tc.ProgramTc -> Program
-basicCore program@(Tc.Program namespace _) = fst $ run mempty (Ctx (const $ pure ()) namespace) 0 mempty $ dsProgram program
+basicCore program@(Tc.Program namespace _) = undefined -- fst $ run mempty (Ctx (const $ pure ()) namespace) 0 mempty $ dsProgram program
 
 
 run :: Map ExplicitName Int -> Ctx -> Int -> Set Ident -> DsM a -> (a, Env)
@@ -132,13 +132,13 @@ fresh prefix = go 0
                 pure (EName namespace freshName freshName)
 
 
-dsProgram :: Tc.ProgramTc -> DsM Program
-dsProgram (Tc.Program namespace defs) = do
-    defs <- concatMapM dsDef defs
-    lifteds <- use lifted
-    strings <- use staticStrings
-    pure $ Program namespace $ fmap (uncurry3 StaticString) strings <> toList lifteds <> defs
-
+--
+-- dsProgram :: Tc.ProgramTc -> DsM Program
+-- dsProgram (Tc.Program namespace defs) = do
+--     defs <- concatMapM dsDef defs
+--     lifteds <- use lifted
+--     strings <- use staticStrings
+--     pure $ Program namespace $ fmap (uncurry3 StaticString) strings <> toList lifteds <> defs
 
 isMain :: Tc.FnTc -> Bool
 isMain (Tc.Fn NoExtField name _tyParams _ _ _) | name.name == "main" = True

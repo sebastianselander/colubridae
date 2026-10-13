@@ -12,7 +12,13 @@ import Prettyprinter qualified as Pretty
 
 import Frontend.Typechecker.Pretty ()
 import Frontend.Typechecker.Types (ExprTc, ProgramTc, TypeApp (TypeApp), TypeTc)
-import Frontend.Types (Expr (..), Program (..), SourceInfo)
+import Frontend.Types
+    ( Expr (..),
+      Module (Module),
+      NoExtField (NoExtField),
+      Program (..),
+      SourceInfo,
+    )
 import Names (ExplicitName (..), Namespace)
 import Utils (listify')
 
@@ -42,8 +48,11 @@ prettyItem item =
         <+> show item.loc
 
 
-collect :: ProgramTc -> Collection
-collect prg@(Program namespace _) = Collection namespace $ Set.fromList $ listify' find_type_app prg
+collect :: ProgramTc -> NonEmpty Collection
+collect (Program NoExtField mods) =
+    fmap
+        (\(Module namespace defs) -> Collection namespace $ Set.fromList $ listify' find_type_app defs)
+        mods
 
 
 find_type_app :: ExprTc -> Maybe Item

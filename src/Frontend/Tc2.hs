@@ -16,11 +16,14 @@ import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Data (Data)
 import Data.Foldable (foldrM)
+import Data.Text.Lazy (unpack)
 import Relude hiding (Any, Type, intercalate)
 import Relude.Unsafe (fromJust)
+import Text.Pretty.Simple (pShow)
 
 import Data.Map.Strict qualified as Map
 
+import Frontend.Builtin (builtins)
 import Frontend.Error
 import Frontend.Renamer.Types
 import Frontend.Substitution (Substitute (apply), Substitution)
@@ -31,7 +34,7 @@ import Frontend.Typechecker.Unify (typeOf, unify)
 import Frontend.Types
 import Impossible (__IMPOSSIBLE__)
 import Names (ExplicitName (..))
-import Table (DefTable, builtIns, functions)
+import Table (DefTable (Table), builtIns, functions)
 import Utils (listify')
 
 import Frontend.Builtin qualified as Builtins
@@ -69,12 +72,31 @@ run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT e
 
 
 typecheck ::
-    DefTable Tc PolyType SourceInfo ->
     ProgramRn ->
     (Either [TcError] ProgramTc, [TcWarning])
-typecheck defTable (Program namespace defs) =
+typecheck (Program NoExtField mods) =
+    let defTable =
+            Table
+                builtins
+                (Map.unions $ fmap (\(Module ns defs) -> Map.singleton ns (Map.fromList (getFuns defs))) mods)
+                ( Map.unions
+                    $ fmap (\(Module ns defs) -> Map.singleton ns (Map.fromList (types (getTypesAndCons defs)))) mods
+                )
+                ( Map.unions
+                    $ fmap (\(Module ns defs) -> Map.singleton ns (Map.fromList (cons (getTypesAndCons defs)))) mods
+                )
+     in case first partitionEithers $ unzip $ fmap (tcModule defTable) (Relude.toList mods) of
+            (([], mod : mods), warnings) -> (Right $ Program NoExtField (mod :| mods), mconcat warnings)
+            ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
+
+
+tcModule ::
+    DefTable Tc PolyType SourceInfo ->
+    ModuleRn ->
+    (Either [TcError] ModuleTc, [TcWarning])
+tcModule defTable (Module namespace defs) =
     case first partitionEithers $ unzip $ fmap (tcDefs defTable) defs of
-        (([], defs), warnings) -> (Right $ Program namespace defs, mconcat warnings)
+        (([], defs), warnings) -> (Right $ Module namespace defs, mconcat warnings)
         ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
 
 
@@ -819,7 +841,10 @@ lookupCon name =
 
 
 lookupFun :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
-lookupFun name =
+lookupFun name = do
+    traceM (unpack $ pShow name)
+    tbl <- view (Ctx.defTable . DefTable.functions)
+    traceM (unpack $ pShow tbl)
     views
         (Ctx.defTable . DefTable.functions)
         ( fromMaybe __IMPOSSIBLE__

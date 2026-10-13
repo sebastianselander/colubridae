@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# HLINT ignore "Use concatMap" #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Compile where
@@ -29,12 +28,9 @@ import System.FilePath
 import System.Process.Extra (proc, readCreateProcessWithExitCode)
 import Text.Pretty.Simple (pShow)
 
-import Data.Functor qualified as Functor
-import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Text.IO qualified as Text
-import Prettyprinter qualified as Pretty
 
 import Backend.Core.Core (lowerToCore)
 import Backend.Core.Pretty (prettyCore)
@@ -42,25 +38,27 @@ import Backend.Llvm.Llvm (assemble)
 import Backend.Llvm.Lower (llvmOut)
 import Backend.Llvm.Prelude (prelude)
 import Backend.Llvm.Types (Ir, updateDecls)
-import Frontend.Builtin (builtins)
 import Frontend.Error (Report (..))
 import Frontend.Monomorphizer (apply_rename, monomorphize)
 import Frontend.MonomorphizerCollector (Collection (..), Item (..), collect)
 import Frontend.Parser.Parse (parse)
-import Frontend.Parser.Types (DefPar, ProgramPar)
+import Frontend.Parser.Types (DefPar, ModulePar)
 import Frontend.Renamer.Pretty (prettyRenamer)
 import Frontend.Renamer.Rn (rename)
 import Frontend.StatementCheck (check)
-import Frontend.Tc2 (TypeCons (..), getFuns, getTypesAndCons, typecheck)
+import Frontend.Tc2 (typecheck)
 import Frontend.Typechecker.Pretty (pThing)
-import Frontend.Types (Adt (Adt), Def (..), Fn (Fn), Program (Program))
-import Impossible (__IMPOSSIBLE__)
+import Frontend.Types
+    ( Adt (Adt),
+      Def (..),
+      Fn (Fn),
+      Module (Module),
+      NoExtField (NoExtField),
+      Program (Program),
+    )
 import Names (ExplicitName (EName, namespace), Ident (..), Namespace (Namespace))
 import Options (Pass (..))
-import Table (DefTable (..))
 import Utils (File (name), zipNE)
-
-import Backend.Core.Types qualified as Core
 
 
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
@@ -86,10 +84,10 @@ log passes_to_log debug@(Debug phase _ _) warnings = do
     tell (Debugs [debug] warnings)
 
 
-gatherSymbols :: NonEmpty (File, ProgramPar) -> Set ExplicitName
+gatherSymbols :: NonEmpty (File, ModulePar) -> Set ExplicitName
 gatherSymbols =
     foldl'
-        ( \acc (file, Program _ defs) ->
+        ( \acc (file, Module _ defs) ->
             foldr
                 ( \def ->
                     Set.insert
@@ -107,39 +105,23 @@ gatherSymbols =
         DefImport _ -> Nothing
 
 
-compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Ir)
+compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) Ir
 compile passes files = do
     program <- liftEither $ parse files
     log passes (Debug Parse Nothing (toStrict $ pShow program)) []
 
-    programs <- liftEither $ left report $ mapM (rename _ _) program
-    log passes (Debug Rename (Just $ prettyRenamer programs) (toStrict $ pShow programs)) []
+    program <- liftEither $ left report $ rename program
+    log passes (Debug Rename (Just $ prettyRenamer program) (toStrict $ pShow program)) []
 
-    res <- liftEither $ left report $ mapM check programs
+    res <- liftEither $ left report $ check program
     log passes (Debug StCheck Nothing (toStrict $ pShow res)) []
 
-    let defTable =
-            Table
-                builtins
-                (Map.unions $ fmap (\(Program ns defs) -> Map.singleton ns (Map.fromList (getFuns defs))) res)
-                ( Map.unions
-                    $ fmap (\(Program ns defs) -> Map.singleton ns (Map.fromList (types (getTypesAndCons defs)))) res
-                )
-                ( Map.unions
-                    $ fmap (\(Program ns defs) -> Map.singleton ns (Map.fromList (cons (getTypesAndCons defs)))) res
-                )
-    programs <- case fmap (typecheck defTable) res of
-        xs -> forM xs $ \x -> do
-            case x of
-                (res, warnings) -> do
-                    res <- liftEither $ left report res
-                    log
-                        passes
-                        (Debug TypeCheck (Just $ pThing res) "" {- (toStrict $ pShow res) -})
-                        (fmap report warnings)
-                    pure res
+    (program, warnings) <- pure $ typecheck res
+    program <- case program of
+        Left errs -> undefined
+        Right program -> pure program
 
-    let collections = fmap collect programs
+    let collections = collect program
     let should_monomorphize_map =
             Map.fromListWith
                 (<>)
@@ -148,41 +130,23 @@ compile passes files = do
                 , item <- toList collection.items
                 ]
 
-    (programs', Map.unionsWith __IMPOSSIBLE__ -> rename_table) <-
-        Functor.unzip
-            <$> mapM
-                ( \prg@(Program namespace _) -> do
-                    pure
-                        $ monomorphize
-                            prg
-                            (fromMaybe [] (Map.lookup namespace should_monomorphize_map))
-                )
-                programs
+    let (programs', rename_table) = monomorphize should_monomorphize_map program
 
-    let programs'' = fmap (apply_rename rename_table) programs'
+    let program'' =
+            (\(Program NoExtField mods) -> Program NoExtField (fmap (apply_rename rename_table) mods))
+                programs'
 
-    forM_ programs'' $ \prg -> do
-        log passes (Debug Monomorphize (Just $ pThing prg) "") []
+    log passes (Debug Monomorphize (Just $ pThing program'') "") []
 
-    res <- case fmap lowerToCore programs'' of
-        res -> forM res $ \res@(Core.Program namespace _) -> do
-            log
-                passes
-                ( Debug
-                    Core
-                    (Just $ prettyCore res)
-                    ("Namespace: " <> show (Pretty.pretty namespace {- (toStrict $ pShow res) -}))
-                )
-                []
-            pure res
+    program <- pure $ lowerToCore program''
+    log passes (Debug Core (Just $ prettyCore program) "") []
 
-    case fmap assemble res of
-        res -> forM res $ \res -> do
-            log passes (Debug Llvm (Just $ llvmOut res) (toStrict $ pShow res)) []
-            pure res
+    program <- pure $ assemble program
+    log passes (Debug Llvm (Just $ llvmOut res) (toStrict $ pShow program)) []
+    pure program
 
 
-runCompile :: Set Pass -> NonEmpty File -> IO (Either Text (NonEmpty Ir), DebugOutputs)
+runCompile :: Set Pass -> NonEmpty File -> IO (Either Text Ir, DebugOutputs)
 runCompile passes = runWriterT . runExceptT . compile passes
 
 
@@ -252,7 +216,7 @@ produceExecutable passes files out = do
             asmFiles <-
                 mapM
                     (\(file, prg) -> produceAsmFile (replaceExtension file.name "asm") (Right prg))
-                    (zipNE files prg)
+                    (zipNE files undefined {- prg -})
             objFiles <-
                 mapM (\file -> produceObjectFile file (replaceExtension file "o")) (preludeFile :| toList asmFiles)
             linkObjectFiles objFiles (buildDir </> out)

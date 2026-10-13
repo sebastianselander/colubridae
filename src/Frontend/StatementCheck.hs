@@ -29,7 +29,7 @@ runCheck ctx = runValidate . flip runReaderT ctx . runCh
 
 
 check :: ProgramRn -> Either [ChError] ProgramRn
-check prg@(Program _ defs) = case lefts $ map checkDef defs of
+check prg@(Program _ mods) = case lefts $ map checkMod (Relude.toList mods) of
     [] -> pure prg
     xs -> Left $ concat xs
 
@@ -44,6 +44,10 @@ checkFunction (Fn info name _ _ returnType block) = runCheck (Ctx False) $ case 
             returnBlock block >>= \case
                 True -> pure ()
                 False -> missingReturn info name
+
+
+checkMod :: ModuleRn -> Either [ChError] ()
+checkMod (Module namespace defs) = mapM_ checkDef defs
 
 
 checkDef :: DefRn -> Either [ChError] ()

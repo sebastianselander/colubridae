@@ -12,11 +12,10 @@ module Frontend.Renamer.Rn (rename) where
 import Control.Lens (locally, modifying, view, views)
 import Control.Lens.Getter (use)
 import Control.Lens.Setter (assign)
-import Control.Monad.Validate (MonadValidate (dispute, refute))
+import Control.Monad.Validate (MonadValidate (dispute, refute), runValidate)
+import Data.Foldable (foldrM)
 import Data.List.NonEmpty ((<|))
-import Data.Text.Lazy (unpack)
 import Relude hiding (intercalate)
-import Text.Pretty.Simple (pShow)
 
 import Data.Map qualified as Map
 import Data.Set qualified as Set
@@ -50,50 +49,58 @@ Rewrite:
     - Program (Namespace, Ident) Rn
 -}
 
-buildSymbolTable :: NonEmpty ModulePar -> SymbolTable
-buildSymbolTable = foldr fetch mempty
+-- TODO: Refactor this to be readable...
+-- Formatting??
+buildSymbolTable :: (MonadValidate [RnError] m) => NonEmpty ModulePar -> m SymbolTable
+buildSymbolTable = foldrM fetch mempty
   where
-    fetch :: ModulePar -> SymbolTable -> SymbolTable
-    fetch (Module namespace mod) table =
-        let functions =
-                (\name -> (name, EName namespace name name))
-                    . snd
-                    <$> (getFunctionNames mod <> getImportedNames mod)
-            datatypes = (\name -> (name, EName namespace name name)) . snd <$> getTypeNames mod
-            constructors = getConstructorNames mod
-         in table
-                { functions = Map.insert namespace (Map.fromList functions) table.functions
-                , datatypes = Map.insert namespace (Map.fromList datatypes) table.datatypes
-                , constructors =
-                    foldr
-                        ( \(typeNamespace, cons) acc ->
-                            Map.insert
-                                (namespace <> typeNamespace)
-                                ( Map.fromList
-                                    $ fmap
-                                        (\(_, name) -> (name, EName namespace name name))
-                                        cons
-                                )
-                                acc
+    fetch :: (MonadValidate [RnError] m) => ModulePar -> SymbolTable -> m SymbolTable
+    fetch (Module namespace mod) table = do
+        let functions = getFunctionNames namespace mod <> getImportedNames mod
+            datatypes = getTypeNames namespace mod
+            constructors = getConstructorNames namespace mod
+        uniqueDefs functions
+        pure
+            $ table
+                { symbols =
+                    Map.insert
+                        namespace
+                        ( Symbols
+                            { functions = Map.fromList [(func.name, func) | (_, func) <- functions]
+                            , datatypes = Map.fromList [(ty.name, ty) | (_, ty) <- datatypes]
+                            , constructors =
+                                foldr
+                                    ( \(typeNamespace, cons) acc ->
+                                        Map.insert
+                                            (namespace <> typeNamespace)
+                                            ( Map.fromList
+                                                $ fmap
+                                                    (\(_, name) -> (name.name, name))
+                                                    cons
+                                            )
+                                            acc
+                                    )
+                                    mempty
+                                    constructors
+                            }
                         )
-                        table.constructors
-                        constructors
+                        table.symbols
                 }
 
 
 rename :: ProgramPar -> Either [RnError] ProgramRn
-rename (Program NoExtField mods) =
-    let tbl = buildSymbolTable mods
-        results = fmap (rnModule tbl) mods
-     in case partitionEithers (Relude.toList results) of
-            (concat -> [], mod : mods) -> pure (Program NoExtField (mod :| mods))
-            (concat -> errors, _) -> Left errors
+rename (Program NoExtField mods) = do
+    tbl <- runValidate $ buildSymbolTable mods
+    let results = fmap (rnModule tbl) mods
+    case partitionEithers (Relude.toList results) of
+        (concat -> [], mod : mods) -> pure (Program NoExtField (mod :| mods))
+        (concat -> errors, _) -> Left errors
 
 
 -- runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
 rnModule :: SymbolTable -> ModulePar -> Either [RnError] ModuleRn
 rnModule tbl (Module namespace defs) =
-    runGen emptyEnv (createCtx tbl namespace builtins) (Module namespace <$> mapM rnDef defs)
+    runGen emptyEnv (createCtx tbl namespace builtins) (Module namespace <$> mapM rnDef (sortDefs defs))
 
 
 -- Make sure imports are placed first.
@@ -113,15 +120,16 @@ sortDefs = sortBy f
     f (DefFn _) _ = GT
 
 
-uniqueDefs :: (MonadValidate [RnError] m) => Namespace -> [(SourceInfo, Ident)] -> m ()
-uniqueDefs namespace = go (Set.map (.name) $ Builtins.names builtins)
+uniqueDefs ::
+    (MonadValidate [RnError] m) => [(SourceInfo, ExplicitName)] -> m ()
+uniqueDefs = go (Set.map (.name) $ Builtins.names builtins)
   where
-    go :: (MonadValidate [RnError] m) => Set Ident -> [(SourceInfo, Ident)] -> m ()
+    go :: (MonadValidate [RnError] m) => Set Ident -> [(SourceInfo, ExplicitName)] -> m ()
     go _ [] = pure ()
     go seen ((info, name) : xs) =
-        if Set.member name seen
-            then duplicateToplevels info (EName namespace name name)
-            else go (Set.insert name seen) xs
+        if Set.member name.name seen
+            then duplicateToplevels info name
+            else go (Set.insert name.name seen) xs
 
 
 rnFunction :: FnPar -> Gen FnRn
@@ -138,10 +146,7 @@ rnFunction (Fn pos name tyParams arguments returnType block) = do
 
 
 rnDef :: DefPar -> Gen DefRn
-rnDef (DefFn fn) = do
-    defs <- use importedDefinitions
-    traceM $ unpack $ pShow defs
-    DefFn <$> rnFunction fn
+rnDef (DefFn fn) = DefFn <$> rnFunction fn
 rnDef (DefAdt adt) = DefAdt <$> rnAdt adt
 rnDef (DefImport imp) = DefImport <$> rnImport imp
 
@@ -163,52 +168,95 @@ Transforms `import foo.bar` to `import foo.bar (f)`
 -- We should use `symbols` from Env here to sanity check then add them to importedDefinitions.
 -- Perhaps imports should be resolved before renaming even beings
 rnImport :: ImportPar -> Gen ImportRn
-rnImport (ImportExplicit loc namespace symbols) = do
-    exist <- doesNamespaceExist namespace
-    unless exist $ unboundImport loc namespace
-    modifying
-        importedDefinitions
-        (\acc -> foldr (\name -> Set.insert (EName namespace name name)) acc symbols)
-    pure (ImportExplicit loc namespace (fmap (\name -> EName namespace name name) symbols))
+rnImport (ImportExplicit loc namespace imports) = do
+    symbols <- views symbolTable (Map.lookup namespace . symbols)
+    case symbols of
+        Nothing -> do
+            unboundImport loc namespace
+            pure (ImportExplicit loc namespace [])
+        Just symbols -> do
+            names <- mapM (findName symbols) imports
+            pure (ImportExplicit loc namespace names)
+  where
+    findName :: (MonadValidate [RnError] m) => Symbols -> Ident -> m ExplicitName
+    findName symbols name = do
+        let funName = Map.lookup name symbols.functions
+        let tyName = Map.lookup name symbols.datatypes
+        -- let conName = (Constructor,) <$> Map.lookup name symbols.constructors
+        maybe (unboundVariable' loc (EName namespace name name)) pure (funName <|> tyName)
 rnImport (XImport extraimport) = rnExtraImport extraimport
   where
     rnExtraImport :: ExtraImports SourceInfo -> Gen ImportRn
     rnExtraImport (ImportAs namespace name loc) = do
-        exist <- doesNamespaceExist namespace
-        unless exist $ unboundImport loc namespace
-        insertImportName name namespace
-        defs <- use importedDefinitions
-        let symbols = sort $ foldr (\name acc -> if namespace == name.namespace then name : acc else acc) [] defs
-        modifying
-            importedDefinitions
-            (\acc -> foldr Set.insert acc symbols)
-        pure (ImportExplicit loc namespace symbols)
+        symbols <- views symbolTable (Map.lookup namespace . symbols)
+        modifying importName (Map.insert name namespace)
+        case symbols of
+            Nothing -> unboundImport' loc namespace
+            Just symbols -> do
+                let functions = Map.elems symbols.functions
+                -- let datatypes = Map.elems symbols.datatypes
+                -- let constructors = Map.elems symbols.constructors
+                pure (ImportExplicit loc namespace functions)
     rnExtraImport (ImportQualified namespace loc) = do
-        exist <- doesNamespaceExist namespace
-        unless exist $ unboundImport loc namespace
-        defs <- use importedDefinitions
-        let symbols = sort $ foldr (\name acc -> if namespace == name.namespace then name : acc else acc) [] defs
-        modifying
-            importedDefinitions
-            (\acc -> foldr Set.insert acc symbols)
-        pure (ImportExplicit loc namespace symbols)
+        symbols <- views symbolTable (Map.lookup namespace . symbols)
+        case symbols of
+            Nothing -> unboundImport' loc namespace
+            Just symbols -> do
+                let functions = Map.elems symbols.functions
+                -- let datatypes = Map.elems symbols.datatypes
+                -- let constructors = Map.elems symbols.constructors
+                pure (ImportExplicit loc namespace functions)
 
 
 rnAdt :: AdtPar -> Gen AdtRn
-rnAdt (Adt loc name constructors) = do
+rnAdt (Adt loc name@(Ident nm) constructors) = do
     namespace <- view namespace
-    Adt loc (EName namespace name name) <$> mapM rnConstructor constructors
+    let typeNamespace = Namespace (nm :| [])
+    Adt loc (EName namespace name name) <$> mapM (rnConstructor typeNamespace) constructors
 
 
-rnConstructor :: ConstructorPar -> Gen ConstructorRn
-rnConstructor con = do
+rnConstructor :: Namespace -> ConstructorPar -> Gen ConstructorRn
+rnConstructor typeNamespace con = do
     namespace <- view namespace
     case con of
-        EnumCons loc name -> checkAndinsertConstrutor loc name >> pure (EnumCons loc (EName namespace name name))
+        EnumCons loc name -> do
+            name' <-
+                views
+                    symbolTable
+                    ( Map.lookup name
+                        <=< Map.lookup typeNamespace
+                        . constructors
+                        <=< Map.lookup namespace
+                        . symbols
+                    )
+            EnumCons loc
+                <$> maybe
+                    ( unboundVariable'
+                        loc
+                        (EName (namespace <> typeNamespace) name name)
+                    )
+                    pure
+                    name'
         FunCons loc name types -> do
-            checkAndinsertConstrutor loc name
-                >> FunCons loc (EName namespace name name)
-                <$> mapM (renameType emptyTyParamList) types
+            name' <-
+                views
+                    symbolTable
+                    ( Map.lookup name
+                        <=< Map.lookup typeNamespace
+                        . constructors
+                        <=< Map.lookup namespace
+                        . symbols
+                    )
+            types <- mapM (renameType emptyTyParamList) types
+            name <-
+                maybe
+                    ( unboundVariable'
+                        loc
+                        (EName (namespace <> typeNamespace) name name)
+                    )
+                    pure
+                    name'
+            pure (FunCons loc name types)
 
 
 rnBlock :: TyParamList -> BlockPar -> Gen BlockRn
@@ -236,15 +284,15 @@ rnExpr tyParams = goRnExpr
             mby <- case ns of
                 Just namespace -> do
                     function <- fmap (Function,) <$> lookupFunction namespace name
-                    constructor <- fmap (Constructor,) <$> lookupConstructor namespace name
+                    -- constructor <- fmap (Constructor,) <$> lookupConstructor namespace name
                     builtin <- lookupBuiltin namespace name
-                    pure (function <|> constructor <|> builtin)
+                    pure (function <|> {- constructor <|> -} builtin)
                 Nothing -> do
                     var <- boundVar name
                     arg <- boundArg name
                     fun <- fmap (Function,) <$> lookupFunction namespace name
-                    con <- fmap (Constructor,) <$> lookupConstructor namespace name
-                    pure $ var <|> arg <|> fun <|> con
+                    -- con <- fmap (Constructor,) <$> lookupConstructor namespace name
+                    pure $ var <|> arg <|> fun -- <|> con
             (bind, name) <- maybe (unboundVariable' info (EName namespace name name)) pure mby
             case bind of
                 Free | not freeVarsAllowed -> freeVarsNotAllowed info name
@@ -371,35 +419,37 @@ rnLit = \case
     UnitLit info -> pure $ UnitLit info
 
 
-getTypeNames :: [DefPar] -> [(SourceInfo, Ident)]
-getTypeNames = listify' adtName
+getTypeNames :: Namespace -> [DefPar] -> [(SourceInfo, ExplicitName)]
+getTypeNames namespace = listify' adtName
   where
-    adtName :: AdtPar -> Maybe (SourceInfo, Ident)
-    adtName (Adt info name _) = Just (info, name)
+    adtName :: AdtPar -> Maybe (SourceInfo, ExplicitName)
+    adtName (Adt info name _) = Just (info, EName namespace name name)
 
 
-getConstructorNames :: [DefPar] -> [(Namespace, [(SourceInfo, Ident)])]
-getConstructorNames = listify' adtName
+getConstructorNames :: Namespace -> [DefPar] -> [(Namespace, [(SourceInfo, ExplicitName)])]
+getConstructorNames namespace = listify' adtName
   where
-    adtName :: AdtPar -> Maybe (Namespace, [(SourceInfo, Ident)])
-    adtName (Adt _ (Ident name) cons) = Just (Namespace (name :| []), fmap conName cons)
-    conName :: ConstructorPar -> (SourceInfo, Ident)
-    conName (EnumCons loc name) = (loc, name)
-    conName (FunCons loc name _) = (loc, name)
+    adtName :: AdtPar -> Maybe (Namespace, [(SourceInfo, ExplicitName)])
+    adtName (Adt _ (Ident name) cons) = Just (typeNamespace, fmap conName cons)
+      where
+        typeNamespace = Namespace (name :| [])
+        conName :: ConstructorPar -> (SourceInfo, ExplicitName)
+        conName (EnumCons loc name) = (loc, EName (namespace <> typeNamespace) name name)
+        conName (FunCons loc name _) = (loc, EName (namespace <> typeNamespace) name name)
 
 
-getFunctionNames :: [DefPar] -> [(SourceInfo, Ident)]
-getFunctionNames = listify' fnName
+getFunctionNames :: Namespace -> [DefPar] -> [(SourceInfo, ExplicitName)]
+getFunctionNames namespace = listify' fnName
   where
-    fnName :: FnPar -> Maybe (SourceInfo, Ident)
-    fnName (Fn info name _ _ _ _) = Just (info, name)
+    fnName :: FnPar -> Maybe (SourceInfo, ExplicitName)
+    fnName (Fn info name _ _ _ _) = Just (info, EName namespace name name)
 
 
-getImportedNames :: [DefPar] -> [(SourceInfo, Ident)]
+getImportedNames :: [DefPar] -> [(SourceInfo, ExplicitName)]
 getImportedNames = concat . listify' importName
   where
-    importName :: ImportPar -> Maybe [(SourceInfo, Ident)]
-    importName (ImportExplicit loc _namespace names) = Just (fmap (loc,) names)
+    importName :: ImportPar -> Maybe [(SourceInfo, ExplicitName)]
+    importName (ImportExplicit loc namespace names) = Just [(loc, EName namespace name name) | name <- names]
     importName (XImport ImportAs {}) = Nothing
     importName (XImport (ImportQualified {})) = Nothing
 
@@ -426,7 +476,7 @@ rnArgs tyParams = fmap (reverse . snd) . foldlM f mempty
 renameType :: (MonadReader Ctx m, MonadValidate [RnError] m) => TyParamList -> TypePar -> m TypeRn
 renameType typeParams ty = do
     namespace <- view namespace
-    userDefinedTypes <- views symbols (Map.lookup namespace . datatypes)
+    userDefinedTypes <- views symbolTable (fmap datatypes . Map.lookup namespace . symbols)
     case ty of
         TyCon _ name -> pure (TyCon NoExtField (EName namespace name name))
         TypeVar _ tyvar -> pure (TypeVar NoExtField tyvar)
