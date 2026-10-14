@@ -86,7 +86,6 @@ keywords =
     , "int"
     , "let"
     , "loop"
-    , "mut"
     , "return"
     , "string"
     , "true"
