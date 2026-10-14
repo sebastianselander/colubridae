@@ -9,13 +9,15 @@
 
 module Frontend.Renamer.Rn (rename) where
 
-import Control.Lens (locally, modifying, view, views)
+import Control.Lens (locally, modifying, uses, view, views)
 import Control.Lens.Getter (use)
 import Control.Lens.Setter (assign)
 import Control.Monad.Validate (MonadValidate (dispute, refute), runValidate)
 import Data.Foldable (foldrM)
 import Data.List.NonEmpty ((<|))
+import Data.Text.Lazy (unpack)
 import Relude hiding (intercalate)
+import Text.Pretty.Simple (pShow)
 
 import Data.Map qualified as Map
 import Data.Set qualified as Set
@@ -58,8 +60,10 @@ buildSymbolTable = foldrM fetch mempty
     fetch (Module namespace mod) table = do
         let functions = getFunctionNames namespace mod <> getImportedNames mod
             datatypes = getTypeNames namespace mod
-            constructors = getConstructorNames namespace mod
-        uniqueDefs functions
+            constructors = concat $ getConstructorNames namespace mod
+        uniqueNames functions
+        uniqueNames constructors
+        uniqueNames datatypes
         pure
             $ table
                 { symbols =
@@ -68,7 +72,7 @@ buildSymbolTable = foldrM fetch mempty
                         ( Symbols
                             { functions = Map.fromList [(func.name, func) | (_, func) <- functions]
                             , datatypes = Map.fromList [(ty.name, ty) | (_, ty) <- datatypes]
-                            , constructors = Map.fromList [(con.name, con) | (_, con) <- concat constructors]
+                            , constructors = Map.fromList [(con.name, con) | (_, con) <- constructors]
                             }
                         )
                         table.symbols
@@ -107,9 +111,9 @@ sortDefs = sortBy f
     f (DefFn _) _ = GT
 
 
-uniqueDefs ::
+uniqueNames ::
     (MonadValidate [RnError] m) => [(SourceInfo, ExplicitName)] -> m ()
-uniqueDefs = go (Set.map (.name) $ Builtins.names builtins)
+uniqueNames = go (Set.map (.name) $ Builtins.names builtins)
   where
     go :: (MonadValidate [RnError] m) => Set Ident -> [(SourceInfo, ExplicitName)] -> m ()
     go _ [] = pure ()
@@ -150,10 +154,6 @@ Transforms `import foo.bar as baz` to `import foo.bar (f)`
 Transforms `import foo.bar` to `import foo.bar (f)`
     if `foo.bar.f` is used somewhere in the program.
 -}
-
--- FIXME: Something is not right here..
--- We should use `symbols` from Env here to sanity check then add them to importedDefinitions.
--- Perhaps imports should be resolved before renaming even beings
 rnImport :: ImportPar -> Gen ImportRn
 rnImport (ImportExplicit loc namespace imports) = do
     symbols <- views symbolTable (Map.lookup namespace . symbols)
@@ -176,7 +176,7 @@ rnImport (XImport extraimport) = rnExtraImport extraimport
     rnExtraImport :: ExtraImports SourceInfo -> Gen ImportRn
     rnExtraImport (ImportAs namespace name loc) = do
         symbols <- views symbolTable (Map.lookup namespace . symbols)
-        modifying importName (Map.insert name namespace)
+        insertImportName name namespace
         case symbols of
             Nothing -> unboundImport' loc namespace
             Just symbols -> do
@@ -189,7 +189,7 @@ rnImport (XImport extraimport) = rnExtraImport extraimport
         case symbols of
             Nothing -> unboundImport' loc namespace
             Just symbols -> do
-                let functions = Map.elems symbols.functions
+                let functions = filter (\name -> name.namespace == namespace) $ Map.elems symbols.functions
                 -- let datatypes = Map.elems symbols.datatypes
                 -- let constructors = Map.elems symbols.constructors
                 pure (ImportExplicit loc namespace functions)
@@ -271,7 +271,15 @@ rnExpr tyParams = goRnExpr
                     function <- fmap (Function,) <$> lookupFunction namespace name
                     constructor <- fmap (Constructor,) <$> lookupConstructor namespace name
                     builtin <- lookupBuiltin namespace name
-                    pure (function <|> constructor <|> builtin)
+                    asNamespace <- uses importName (Map.lookup namespace)
+                    ases <- case asNamespace of
+                        Just namespace -> do
+                            asFunction <- fmap (Function,) <$> lookupFunction namespace name
+                            asConstructor <- fmap (Constructor,) <$> lookupConstructor namespace name
+                            asBuiltin <- lookupBuiltin namespace name
+                            pure [asFunction, asConstructor, asBuiltin]
+                        Nothing -> pure []
+                    pure (function <|> constructor <|> builtin <|> foldl' (<|>) empty ases)
                 Nothing -> do
                     var <- boundVar name
                     arg <- boundArg name

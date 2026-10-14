@@ -51,7 +51,7 @@ data Env = Env
     { _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident ExplicitName)
     , _arguments :: NonEmpty (Map Ident ExplicitName)
-    , _importName :: Map Ident Namespace -- as-name to import name (path)
+    , _importName :: Map Namespace Namespace -- as-name to import name (path)
     }
     deriving (Show)
 
@@ -211,7 +211,7 @@ insertArg namespace name@(Ident nm) = do
     pure name'
 
 
-insertImportName :: (MonadState Env m) => Ident -> Namespace -> m ()
+insertImportName :: (MonadState Env m) => Namespace -> Namespace -> m ()
 insertImportName name path = modifying importName (Map.insert name path)
 
 

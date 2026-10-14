@@ -56,7 +56,7 @@ import_ = do
     keyword "import"
     ns <- namespace
     P.choice
-        [ (\asName loc -> XImport $ ImportAs ns asName loc) <$> (keyword "as" *> identifier) <*> spanEnd gs
+        [ (\asName loc -> XImport $ ImportAs ns asName loc) <$> (keyword "as" *> namespace) <*> spanEnd gs
         , ((\symbols loc -> ImportExplicit loc ns symbols) <$> parens (commaSepEnd identifier)) <*> spanEnd gs
         , XImport . ImportQualified ns <$> spanEnd gs
         ]

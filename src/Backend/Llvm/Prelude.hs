@@ -42,7 +42,9 @@ target triple = "x86_64-pc-linux-gnu"
 @#{globalUnit} = internal constant i1 0
 
 declare void @exit(i64)
+
 declare i32 @printf(ptr, ...)
+
 declare ptr @malloc(i64)
 |]
 

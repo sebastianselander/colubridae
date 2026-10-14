@@ -114,7 +114,7 @@ type instance XModule Par = Namespace
 
 
 data ExtraImports a
-    = ImportAs Namespace Ident a
+    = ImportAs Namespace Namespace a
     | ImportQualified Namespace a
     deriving (Data, Eq, Ord, Show)
 

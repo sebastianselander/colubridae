@@ -108,17 +108,17 @@ gatherSymbols =
 compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Ir)
 compile passes files = do
     program <- liftEither $ parse files
-    log passes (Debug Parse Nothing (toStrict $ pShow program)) []
+    log passes (Debug Parse Nothing "") []
 
     program <- liftEither $ left report $ rename program
-    log passes (Debug Rename (Just $ prettyRenamer program) (toStrict $ pShow program)) []
+    log passes (Debug Rename (Just $ prettyRenamer program) "") []
 
     res <- liftEither $ left report $ check program
-    log passes (Debug StCheck Nothing (toStrict $ pShow res)) []
+    log passes (Debug StCheck (Just $ prettyRenamer program) "") []
 
     (program, warnings) <- pure $ typecheck res
     program <- case program of
-        Left errs -> undefined
+        Left errs -> liftEither $ Left $ report errs
         Right program -> pure program
 
     let collections = collect program

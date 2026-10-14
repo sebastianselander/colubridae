@@ -16,10 +16,8 @@ import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Data (Data)
 import Data.Foldable (foldrM)
-import Data.Text.Lazy (unpack)
 import Relude hiding (Any, Type, intercalate)
 import Relude.Unsafe (fromJust)
-import Text.Pretty.Simple (pShow)
 
 import Data.Map.Strict qualified as Map
 
@@ -78,13 +76,9 @@ typecheck (Program NoExtField mods) =
     let defTable =
             Table
                 builtins
-                (Map.unions $ fmap (\(Module ns defs) -> Map.singleton ns (Map.fromList (getFuns defs))) mods)
-                ( Map.unions
-                    $ fmap (\(Module ns defs) -> Map.singleton ns (Map.fromList (types (getTypesAndCons defs)))) mods
-                )
-                ( Map.unions
-                    $ fmap (\(Module ns defs) -> Map.singleton ns (Map.fromList (cons (getTypesAndCons defs)))) mods
-                )
+                (Map.fromList (getFuns mods))
+                (Map.fromList (types (getTypesAndCons mods)))
+                (Map.fromList (cons (getTypesAndCons mods)))
      in case first partitionEithers $ unzip $ fmap (tcModule defTable) (Relude.toList mods) of
             (([], mod : mods), warnings) -> (Right $ Program NoExtField (mod :| mods), mconcat warnings)
             ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
@@ -113,10 +107,7 @@ tcDefs table (DefImport imp) = (Right (DefImport (tcImport table imp)), [])
 tcImport :: DefTable Tc PolyType SourceInfo -> ImportRn -> ImportTc
 tcImport table (ImportExplicit _ namespace names) =
     let funs :: Map ExplicitName (PolyType, SourceInfo)
-        funs =
-            fromMaybe
-                __IMPOSSIBLE__
-                $ Map.lookup namespace (view functions table)
+        funs = view functions table
         tys :: [(PolyType, SourceInfo)]
         tys =
             fmap
@@ -830,23 +821,12 @@ lookupVar name =
 
 lookupCon :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
 lookupCon name =
-    views
-        Ctx.defTable
-        ( fromJust
-            . Map.lookup name
-            . fromJust
-            . Map.lookup name.namespace
-            . view DefTable.constructors
-        )
+    views Ctx.defTable (fromJust . Map.lookup name . view DefTable.constructors)
 
 
 lookupFun :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
-lookupFun name = do
-    views
-        (Ctx.defTable . DefTable.functions)
-        ( fromMaybe __IMPOSSIBLE__
-            . (Map.lookup name <=< Map.lookup name.namespace)
-        )
+lookupFun name =
+    views (Ctx.defTable . DefTable.functions) (fromMaybe __IMPOSSIBLE__ . Map.lookup name)
 
 
 apply_env :: (MonadState Env m) => Substitution -> m ()

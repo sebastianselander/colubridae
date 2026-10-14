@@ -8,14 +8,14 @@ import Relude hiding (Type)
 
 import Frontend.Builtin (Builtins)
 import Frontend.Types (Forall)
-import Names (ExplicitName, Namespace)
+import Names (ExplicitName)
 
 
 data DefTable phase a info = Table
     { _builtIns :: Builtins phase
-    , _functions :: Map Namespace (Map ExplicitName (a, info))
-    , _types :: Map Namespace (Map ExplicitName (a, info))
-    , _constructors :: Map Namespace (Map ExplicitName (a, info))
+    , _functions :: Map ExplicitName (a, info)
+    , _types :: Map ExplicitName (a, info)
+    , _constructors :: Map ExplicitName (a, info)
     }
 
 

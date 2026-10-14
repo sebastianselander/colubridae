@@ -75,7 +75,7 @@ instance Pretty ExplicitName where
     pretty name =
         Pretty.dquotes
             $ Pretty.pretty name.namespace
-            <> Pretty.dot
+            <> "::"
             <> Pretty.pretty name.name
 
 

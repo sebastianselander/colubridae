@@ -8,6 +8,7 @@ module Frontend.Monomorphizer where
 import Control.Monad (foldM)
 import Data.Either.Extra (fromEither)
 import Data.Generics (everywhereM, mkM)
+import Data.Traversable (for)
 import Relude hiding (Type)
 
 import Data.Functor qualified as Functor
@@ -64,11 +65,17 @@ monomorphizeModule mod@(Module namespace _) items =
         Map.empty
 
 
--- FIXME(sebsel): Apply rename to imports too
+-- FIXME: Ugly. Need to figure out a more sensible algorithm
 apply_rename :: RenameTable -> ModuleTc -> ModuleTc
 apply_rename tbl prg =
     let (Module namespace defs, extra_imports) = runState (everywhereM (mkM (rename tbl)) prg) []
-     in Module namespace (fmap (DefImport . uncurry make_import) extra_imports <> defs)
+     in Module namespace (fmap (renameImport extra_imports) defs)
+  where
+    renameImport :: [(ExplicitName, FnType)] -> DefTc -> DefTc
+    renameImport names (DefImport (ImportExplicit existingFnTypes namespace existingNames)) =
+        let (names', fntypes') = unzip $ filter (\(name, _) -> name.namespace == namespace) names
+         in DefImport $ ImportExplicit (existingFnTypes <> fntypes') namespace (existingNames <> names')
+    renameImport _ def = def
 
 
 make_import :: ExplicitName -> FnType -> ImportTc
@@ -80,9 +87,10 @@ rename tbl expr = case expr of
     Expr (TypeApp (Var (loc, ty, bind) name) type_args) ->
         case Map.lookup (name, type_args) tbl of
             Just name -> do
-                let TyFun NoExtField args ret = ty
-                when (bind == Imported)
-                    $ modify ((name, FnType {tyvars = [], retType = ret, argTypes = args}) :)
+                let (args, ret)
+                        | TyFun NoExtField args ret <- ty = (args, ret)
+                        | otherwise = __IMPOSSIBLE__
+                modify ((name, FnType {tyvars = [], retType = ret, argTypes = args}) :)
                 pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
             Nothing -> pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
     _ -> pure expr
@@ -156,6 +164,7 @@ find_fn name = foldr f Nothing
         _ -> Nothing
 
 
+-- I don't get how this works. Why do we early exit using Either?
 deduplicate :: [Item] -> [Item]
 deduplicate = Map.elems . fromEither . foldM f Map.empty
   where
