@@ -35,7 +35,6 @@ import Frontend.Types
 
 import Frontend.Substitution qualified as Sub
 
-
 -- | Unify two types. The first argument type *must* be the expected one!
 unify ::
     (MonadValidate [TcError] m, MonadReader Ctx m) =>
@@ -66,7 +65,6 @@ unify info ty1 ty2 = case (ty1, ty2) of
         | otherwise -> tyExpectedGot' info [ty1] ty2
     (ty1, ty2) -> tyExpectedGot' info [ty1] ty2
 
-
 unifies ::
     (MonadValidate [TcError] m, MonadReader Ctx m) =>
     SourceInfo -> [(TypeTc, TypeTc)] -> m Substitution
@@ -77,19 +75,15 @@ unifies loc xs = go Sub.empty xs
         sub2 <- unify loc (apply sub1 ty1) (apply sub1 ty2)
         go (Sub.compose sub2 sub1) xs
 
-
 class TypeOf a where
     typeOf :: a -> TypeTc
-
 
 instance TypeOf TypeTc where
     typeOf ty = ty
 
-
 instance TypeOf StmtTc where
     typeOf = \case
         SExpr _ expr -> typeOf expr
-
 
 instance TypeOf ExprTc where
     typeOf = \case
@@ -110,10 +104,8 @@ instance TypeOf ExprTc where
         Match ty _ _ -> snd ty
         Expr (TypeApp expr _) -> typeOf expr
 
-
 instance TypeOf BlockTc where
     typeOf (Block ty _ _) = snd ty
-
 
 instance TypeOf TypeRn where
     typeOf = \case
@@ -122,18 +114,14 @@ instance TypeOf TypeRn where
         TyCon NoExtField b -> TyCon NoExtField b
         TypeVar NoExtField b -> TypeVar NoExtField b
 
-
 instance TypeOf LamArgTc where
     typeOf (LamArg ty _) = ty
-
 
 instance TypeOf MatchArmTc where
     typeOf (MatchArm _ _ body) = typeOf body
 
-
 instance TypeOf ArgTc where
     typeOf (Arg _ _ ty) = ty
-
 
 instance TypeOf ArgRn where
     typeOf (Arg _ _ ty) = typeOf ty

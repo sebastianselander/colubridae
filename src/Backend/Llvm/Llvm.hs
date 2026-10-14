@@ -22,10 +22,8 @@ import Utils (catMaybesSnd, mapWithIndexM)
 
 import Backend.Core.Types qualified as Core
 
-
 assemble :: Core.Program -> NonEmpty Ir
 assemble (Core.Program mods) = fmap assembleModule mods
-
 
 assembleModule :: Core.Module -> Ir
 assembleModule (Core.Module namespace defs) =
@@ -33,7 +31,6 @@ assembleModule (Core.Module namespace defs) =
         . sortBy (comparing Down)
         <$> runAssembler namespace
         $ concatMapM assembleDecl defs
-
 
 assembleDecl :: Core.Def -> IRBuilder [Decl]
 assembleDecl (Core.Decl _namespace ty name args) = pure [Declare ty name args NoEllipsis]
@@ -51,7 +48,6 @@ assembleDecl (Core.TypeSyn name ty) = pure [TypeDefinition name ty]
 assembleDecl (Core.Con index name ty tyArgs) = do
     clearInstructions
     assembleCon index name ty tyArgs
-
 
 assembleCon :: Int -> ExplicitName -> Type -> Maybe [Type] -> IRBuilder [Decl]
 assembleCon index name ty = \case
@@ -93,7 +89,6 @@ assembleCon index name ty = \case
             , Define Function name [] ty [Nameless $ Ret $ global ty constructorFun]
             ]
 
-
 assembleArg :: Core.Arg -> IRBuilder Operand
 assembleArg (Core.EnvArg ty) = do
     namespace <- view namespace
@@ -104,10 +99,8 @@ assembleArg (Core.Arg name ty) = do
     store arg fakeArg
     pure arg
 
-
 mkArgName :: Ident -> Ident
 mkArgName (Ident name) = Ident $ name <> ".arg"
-
 
 assembleExpr :: Core.TyExpr -> IRBuilder Operand
 assembleExpr (Core.Typed taggedType expr) =
@@ -306,11 +299,9 @@ assembleExpr (Core.Typed taggedType expr) =
                     []
             pure (undef taggedType)
 
-
 indexOf :: Core.Pattern -> Integer
 indexOf = \case
     Core.PCon n _ -> fromIntegral n
-
 
 assembleLit :: (Monad m) => Core.Constant -> m Operand
 assembleLit = \case
@@ -321,10 +312,8 @@ assembleLit = \case
     Core.UnitLit -> pure $ ConstantOperand LUnit
     Core.NullLit -> pure $ ConstantOperand (LNull (PointerType Void))
 
-
 unit :: (Monad m) => m Operand
 unit = pure $ ConstantOperand LUnit
-
 
 llvmBinOp :: Core.BinOp -> (Type -> Operand -> Operand -> IRBuilder Operand)
 llvmBinOp op = case op of
@@ -342,7 +331,6 @@ llvmBinOp op = case op of
     Core.Eq -> eq
     Core.Neq -> neq
 
-
 llvmLit :: Type -> Core.Constant -> Constant
 llvmLit ty = \case
     Core.IntLit int -> LInt ty int
@@ -352,19 +340,15 @@ llvmLit ty = \case
     Core.UnitLit -> LUnit
     Core.NullLit -> LNull ty
 
-
 i32 :: (Integral a) => a -> Operand
 i32 = ConstantOperand . LInt Int32 . fromIntegral
-
 
 i64 :: (Integral a) => a -> Operand
 i64 = ConstantOperand . LInt Int64 . fromIntegral
 
-
 derefType :: Type -> Type
 derefType (PointerType ty) = ty
 derefType _ = __IMPOSSIBLE__
-
 
 getReturnType :: Type -> Type
 getReturnType = \case

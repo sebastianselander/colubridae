@@ -12,7 +12,6 @@ import Frontend.Typechecker.Types (PolyType, Tc, TypeTc)
 import Frontend.Types (SourceInfo)
 import Table (DefTable)
 
-
 data Ctx = Ctx
     { _defTable :: DefTable Tc PolyType SourceInfo
     , _returnType :: TypeTc
@@ -21,9 +20,7 @@ data Ctx = Ctx
     }
     deriving (Show)
 
-
 $(makeLenses ''Ctx)
-
 
 push :: (MonadReader Ctx m) => ExprRn -> m a -> m a
 push expr = locally exprStack (expr :)

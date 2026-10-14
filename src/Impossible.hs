@@ -5,9 +5,7 @@ import GHC.Show (Show (show))
 import GHC.Stack (popCallStack)
 import Relude
 
-
 newtype Impossible = Impossible CallStack
-
 
 instance Show Impossible where
     show (Impossible loc) =
@@ -15,13 +13,10 @@ instance Show Impossible where
         \ Location of the error: "
             <> prettyCallStack loc
 
-
 instance Exception Impossible
-
 
 __IMPOSSIBLE__ :: (HasCallStack) => a
 __IMPOSSIBLE__ = withNBackCallStack 0 $ throw . Impossible
-
 
 withNBackCallStack :: (HasCallStack) => Word -> (CallStack -> b) -> b
 withNBackCallStack n f = f (popnCallStack n from)
@@ -30,7 +25,6 @@ withNBackCallStack n f = f (popnCallStack n from)
     here = callStack
     -- The invoker (n = 0):
     from = popCallStack here
-
 
 {-| Pops n entries off a @CallStack@ using @popCallStack@.
 Note that frozen callstacks are unaffected.

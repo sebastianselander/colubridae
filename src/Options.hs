@@ -8,10 +8,8 @@ import Relude
 
 import Data.Set qualified as Set
 
-
 data Pass = Parse | Rename | StCheck | TypeCheck | Monomorphize | Core | Llvm
     deriving (Eq, Ord, Show)
-
 
 data Options = Options
     { dumps :: Set Pass
@@ -19,14 +17,11 @@ data Options = Options
     , source_dir :: Maybe FilePath
     }
 
-
 cmdlineParser :: IO Options
 cmdlineParser = execParser (info (options <**> helper) fullDesc)
 
-
 pSourceDir :: Parser (Maybe FilePath)
 pSourceDir = optional $ strOption (long "source-dir" <> metavar "PATH")
-
 
 options :: Parser Options
 options = do
@@ -34,7 +29,6 @@ options = do
     filepaths <- pInput
     source_dir <- pSourceDir
     pure $ Options {dumps, filepaths, source_dir}
-
 
 pDumps :: Parser (Set Pass)
 pDumps =
@@ -52,7 +46,6 @@ pDumps =
             , flag Nothing (Just Core) (long "dump-core" <> help "Show the output of the core phase")
             , flag Nothing (Just Llvm) (long "dump-llvm" <> help "Dump the generated llvm-ir code")
             ]
-
 
 pInput :: Parser (NonEmpty FilePath)
 pInput = some1 (argument str (metavar "FILE [FILE...]"))

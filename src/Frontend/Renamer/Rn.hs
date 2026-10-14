@@ -35,7 +35,6 @@ import Utils (listify')
 import Frontend.Builtin qualified as Builtins
 import Names qualified
 
-
 {-
 
 Rewrite:
@@ -78,7 +77,6 @@ buildSymbolTable = foldrM fetch mempty
                         table.symbols
                 }
 
-
 rename :: ProgramPar -> Either [RnError] ProgramRn
 rename (Program NoExtField mods) = do
     tbl <- runValidate $ buildSymbolTable mods
@@ -87,12 +85,10 @@ rename (Program NoExtField mods) = do
         (concat -> [], mod : mods) -> pure (Program NoExtField (mod :| mods))
         (concat -> errors, _) -> Left errors
 
-
 -- runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
 rnModule :: SymbolTable -> ModulePar -> Either [RnError] ModuleRn
 rnModule tbl (Module namespace defs) =
     runGen emptyEnv (createCtx tbl namespace builtins) (Module namespace <$> mapM rnDef (sortDefs defs))
-
 
 -- Make sure imports are placed first.
 sortDefs :: [Def name a] -> [Def name a]
@@ -110,7 +106,6 @@ sortDefs = sortBy f
     f (DefFn _) (DefFn _) = EQ
     f (DefFn _) _ = GT
 
-
 uniqueNames ::
     (MonadValidate [RnError] m) => [(SourceInfo, ExplicitName)] -> m ()
 uniqueNames = go (Set.map (.name) $ Builtins.names builtins)
@@ -121,7 +116,6 @@ uniqueNames = go (Set.map (.name) $ Builtins.names builtins)
         if Set.member name.name seen
             then duplicateToplevels info name
             else go (Set.insert name.name seen) xs
-
 
 rnFunction :: FnPar -> Gen FnRn
 rnFunction (Fn pos name tyParams arguments returnType block) = do
@@ -135,12 +129,10 @@ rnFunction (Fn pos name tyParams arguments returnType block) = do
     namespace <- view namespace
     return $ Fn pos (EName namespace name name) tyParams arguments returnType statements
 
-
 rnDef :: DefPar -> Gen DefRn
 rnDef (DefFn fn) = DefFn <$> rnFunction fn
 rnDef (DefAdt adt) = DefAdt <$> rnAdt adt
 rnDef (DefImport imp) = DefImport <$> rnImport imp
-
 
 {-|
 Transforms all non-explicit imports to explicit imports.
@@ -194,13 +186,11 @@ rnImport (XImport extraimport) = rnExtraImport extraimport
                 -- let constructors = Map.elems symbols.constructors
                 pure (ImportExplicit loc namespace functions)
 
-
 rnAdt :: AdtPar -> Gen AdtRn
 rnAdt (Adt loc name@(Ident nm) constructors) = do
     namespace <- view namespace
     let typeNamespace = Namespace (nm :| [])
     Adt loc (EName namespace name name) <$> mapM (rnConstructor typeNamespace) constructors
-
 
 rnConstructor :: Namespace -> ConstructorPar -> Gen ConstructorRn
 rnConstructor typeNamespace con = do
@@ -243,19 +233,16 @@ rnConstructor typeNamespace con = do
                     name'
             pure (FunCons loc name types)
 
-
 rnBlock :: TyParamList -> BlockPar -> Gen BlockRn
 rnBlock tyParams (Block a stmts expr) =
     uncurry (Block a)
         <$> newContext ((,) <$> mapM (rnStatement tyParams) stmts <*> mapM (rnExpr tyParams) expr)
-
 
 rnStatement :: TyParamList -> StmtPar -> Gen StmtRn
 rnStatement tyParams = \case
     SExpr a b -> do
         b <- rnExpr tyParams b
         pure $ SExpr a b
-
 
 rnExpr :: TyParamList -> ExprPar -> Gen ExprRn
 rnExpr tyParams = goRnExpr
@@ -348,13 +335,11 @@ rnExpr tyParams = goRnExpr
             arms <- mapM (rnMatchArm tyParams) arms
             pure $ Match info scrutinee arms
 
-
 rnMatchArm :: TyParamList -> MatchArmPar -> Gen MatchArmRn
 rnMatchArm tyParams (MatchArm loc pat body) = newContext $ do
     pat <- rnPattern pat
     body <- rnExpr tyParams body
     pure $ MatchArm loc pat body
-
 
 rnPattern :: PatternPar -> Gen PatternRn
 rnPattern = fmap snd . go mempty
@@ -382,7 +367,6 @@ rnPattern = fmap snd . go mempty
                     (seen'', pats) <- go' (seen <> seen') xs
                     pure (seen <> seen' <> seen'', pat : pats)
 
-
 rnLamArgs ::
     (MonadState Env m, MonadValidate [RnError] m, MonadReader Ctx m) =>
     TyParamList -> [LamArgPar] -> m [LamArgRn]
@@ -401,7 +385,6 @@ rnLamArgs tyParams = fmap (reverse . snd) . foldlM f mempty
         ty <- mapM (renameType tyParams) ty
         pure (seen', LamArg (info, ty) name : acc)
 
-
 rnLit :: LitPar -> Gen LitRn
 rnLit = \case
     IntLit info lit -> pure $ IntLit info lit
@@ -411,13 +394,11 @@ rnLit = \case
     BoolLit info lit -> pure $ BoolLit info lit
     UnitLit info -> pure $ UnitLit info
 
-
 getTypeNames :: Namespace -> [DefPar] -> [(SourceInfo, ExplicitName)]
 getTypeNames namespace = listify' adtName
   where
     adtName :: AdtPar -> Maybe (SourceInfo, ExplicitName)
     adtName (Adt info name _) = Just (info, EName namespace name name)
-
 
 getConstructorNames :: Namespace -> [DefPar] -> [[(SourceInfo, ExplicitName)]]
 getConstructorNames namespace = listify' adtName
@@ -429,13 +410,11 @@ getConstructorNames namespace = listify' adtName
         conName (EnumCons loc name) = (loc, EName namespace name name)
         conName (FunCons loc name _) = (loc, EName namespace name name)
 
-
 getFunctionNames :: Namespace -> [DefPar] -> [(SourceInfo, ExplicitName)]
 getFunctionNames namespace = listify' fnName
   where
     fnName :: FnPar -> Maybe (SourceInfo, ExplicitName)
     fnName (Fn info name _ _ _ _) = Just (info, EName namespace name name)
-
 
 getImportedNames :: [DefPar] -> [(SourceInfo, ExplicitName)]
 getImportedNames = concat . listify' importName
@@ -444,7 +423,6 @@ getImportedNames = concat . listify' importName
     importName (ImportExplicit loc namespace names) = Just [(loc, EName namespace name name) | name <- names]
     importName (XImport ImportAs {}) = Nothing
     importName (XImport (ImportQualified {})) = Nothing
-
 
 rnArgs ::
     (MonadState Env m, MonadValidate [RnError] m, MonadReader Ctx m) =>
@@ -463,7 +441,6 @@ rnArgs tyParams = fmap (reverse . snd) . foldlM f mempty
         name <- insertArg namespace name
         ty <- renameType tyParams ty
         pure (seen', Arg info name ty : acc)
-
 
 renameType :: (MonadReader Ctx m, MonadValidate [RnError] m) => TyParamList -> TypePar -> m TypeRn
 renameType typeParams ty = do

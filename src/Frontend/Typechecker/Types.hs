@@ -14,291 +14,199 @@ import Relude hiding (Any, Type)
 import Frontend.Types hiding (Bool, Char, Double, Int, String, Unit)
 import Names (ExplicitName, Namespace)
 
-
 data Tc deriving (Data)
-
 
 data FnType = FnType {tyvars :: [TyVar], retType :: TypeTc, argTypes :: [TypeTc]}
     deriving (Data, Eq, Ord, Show)
 
-
 type ProgramTc = Program ExplicitName Tc
-
 
 type ModuleTc = Module ExplicitName Tc
 
-
 type DefTc = Def ExplicitName Tc
-
 
 type ImportTc = Import ExplicitName Tc
 
-
 type FnTc = Fn ExplicitName Tc
-
 
 type AdtTc = Adt ExplicitName Tc
 
-
 type ConstructorTc = Constructor ExplicitName Tc
-
 
 type ArgTc = Arg ExplicitName Tc
 
-
 type ExprTc = Expr ExplicitName Tc
-
 
 type TypeTc = Type ExplicitName Tc
 
-
 type LitTc = Lit Tc
-
 
 type StmtTc = Stmt ExplicitName Tc
 
-
 type BlockTc = Block ExplicitName Tc
-
 
 type LamArgTc = LamArg ExplicitName Tc
 
-
 type MatchArmTc = MatchArm ExplicitName Tc
-
 
 type PatternTc = Pattern ExplicitName Tc
 
-
 type TcInfo = (SourceInfo, TypeTc)
-
 
 deriving instance Data ProgramTc
 
-
 deriving instance Data ModuleTc
-
 
 deriving instance Data DefTc
 
-
 deriving instance Data FnTc
-
 
 deriving instance Data ArgTc
 
-
 deriving instance Data AdtTc
-
 
 deriving instance Data ConstructorTc
 
-
 deriving instance Data ImportTc
-
 
 deriving instance Data StmtTc
 
-
 deriving instance Data BlockTc
-
 
 deriving instance Data ExprTc
 
-
 deriving instance Data LitTc
-
 
 deriving instance Data TypeTc
 
-
 deriving instance Data LamArgTc
-
 
 deriving instance Data MatchArmTc
 
-
 deriving instance Data PatternTc
-
 
 type instance XProgram Tc = NoExtField
 
-
 type instance XModule Tc = Namespace
-
 
 type instance XArg Tc = NoExtField
 
-
 type instance XDef Tc = DataConCantHappen
-
 
 type instance XImport Tc = DataConCantHappen
 
-
 type instance XImportExplicit Tc = [FnType]
-
 
 type instance XFn Tc = NoExtField
 
-
 type instance XAdt Tc = SourceInfo
-
 
 type instance XConstructor Tc = DataConCantHappen
 
-
 type instance XEnumCons Tc = TcInfo
-
 
 type instance XFunCons Tc = TcInfo
 
-
 type instance XBlock Tc = TcInfo
-
 
 type instance XStmt Tc = DataConCantHappen
 
-
 type instance XRet Tc = TcInfo
-
 
 type instance XEBlock Tc = NoExtField
 
-
 type instance XBreak Tc = TcInfo
-
 
 type instance XIf Tc = TcInfo
 
-
 type instance XWhile Tc = TcInfo
-
 
 type instance XLet Tc = StmtType
 
-
 type instance XAss Tc = (StmtType, Boundedness)
-
 
 type instance XSExp Tc = NoExtField
 
-
 type instance XMatchArm Tc = SourceInfo
-
 
 type instance XMatch Tc = TcInfo
 
-
 type instance XPVar Tc = TcInfo
-
 
 type instance XPEnumCon Tc = TcInfo
 
-
 type instance XPFunCon Tc = TcInfo
-
 
 type instance XLit Tc = TcInfo
 
-
 type instance XVar Tc = (SourceInfo, TypeTc, Boundedness)
-
 
 type instance XPrefix Tc = TcInfo
 
-
 type instance XBinOp Tc = TcInfo
-
 
 type instance XExprStmt Tc = NoExtField
 
-
 type instance XApp Tc = TcInfo
-
 
 -- FIXME: Make this unique to function calls (and perhaps constructors, or make a separate one) and remove Toplevel from boundedness
 data TypeApp = TypeApp {expr :: ExprTc, type_args :: [TypeTc]}
     deriving (Data, Show)
 
-
 type instance XExpr Tc = TypeApp
-
 
 type instance XIntLit Tc = NoExtField
 
-
 type instance XDoubleLit Tc = NoExtField
-
 
 type instance XStringLit Tc = NoExtField
 
-
 type instance XCharLit Tc = NoExtField
-
 
 type instance XBoolLit Tc = NoExtField
 
-
 type instance XUnitLit Tc = NoExtField
-
 
 type instance XTyLit Tc = NoExtField
 
-
 type instance XTyFun Tc = NoExtField
-
 
 type instance XTyCon Tc = NoExtField
 
-
 type instance XTypeVar Tc = NoExtField
-
 
 type instance XType Tc = MetaTy
 
-
 type instance XLoop Tc = TcInfo
-
 
 type instance XLam Tc = TcInfo
 
-
 type instance XLamArg Tc = TypeTc
-
 
 deriving instance Eq TypeTc
 
-
 deriving instance Ord TypeTc
-
 
 pattern Any :: (XType a ~ MetaTy) => Type name a
 pattern Any <- Type AnyX
     where
         Any = Type AnyX
 
-
 pattern Monotype :: (XType a ~ MetaTy) => Int -> Type name a
 pattern Monotype n <- Type (Mono (MonoType n))
     where
         Monotype n = Type (Mono $ MonoType n)
 
-
 data MetaTy = AnyX | Mono MonoType
     deriving (Data, Eq, Ord, Show)
-
 
 newtype MonoType = MonoType Int
     deriving (Data, Eq, Ord, Show)
 
-
 data StmtType = StmtType {_stmtType :: TypeTc, _varType :: TypeTc, _stmtInfo :: SourceInfo}
     deriving (Data, Eq, Ord, Show)
 
-
 data PolyType = PolyType {tvars :: [TyVar], ty :: TypeTc}
     deriving (Data, Eq, Ord, Show)
-
 
 $(makeLenses ''StmtType)

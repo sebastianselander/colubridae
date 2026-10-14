@@ -9,22 +9,17 @@ import Backend.Types (Type (..))
 import Names (ExplicitName, Ident)
 import Origin
 
-
 data Ir = IrMain {_decls :: [Decl]} | IrLib {_decls :: [Decl]}
     deriving (Show)
-
 
 updateDecls :: ([Decl] -> [Decl]) -> Ir -> Ir
 updateDecls f (IrMain decls) = IrMain (f decls)
 updateDecls f (IrLib decls) = IrLib (f decls)
 
-
 data Ellipsis = Ellipsis | NoEllipsis
     deriving (Data, Eq, Ord, Show)
 
-
 type IsBuiltin = Bool
-
 
 -- These are declared in the order we want them defined in the ir file
 data Decl
@@ -39,24 +34,19 @@ data Decl
         !Ellipsis -- varargs?
     deriving (Eq, Ord, Show)
 
-
 data Operand
     = LocalReference !Type !ExplicitName
     | ConstantOperand !Constant
     deriving (Eq, Ord, Show)
 
-
 data ArithOp = LlvmAdd | LlvmSub | LlvmMul | LlvmDiv | LlvmRem
     deriving (Eq, Ord, Show)
-
 
 data CmpOp = LlvmEq | LlvmNeq | LlvmGt | LlvmLt | LlvmGe | LlvmLe
     deriving (Eq, Ord, Show)
 
-
 newtype Label = L Text
     deriving (Eq, Ord, Show)
-
 
 data Instruction
     = Call !Type !Operand [Operand]
@@ -81,7 +71,6 @@ data Instruction
     | Unreachable
     deriving (Eq, Ord, Show)
 
-
 data Constant
     = LInt !Type !Integer
     | LDouble !Type !Double
@@ -94,20 +83,16 @@ data Constant
     | GlobalReference !Type !ExplicitName
     deriving (Eq, Ord, Show)
 
-
 data Named a = Named ExplicitName a | Nameless a
     deriving (Data, Eq, Foldable, Functor, Generic, Ord, Show, Traversable)
 
-
 class Typed a where
     typeOf :: a -> Type
-
 
 instance Typed Operand where
     typeOf = \case
         LocalReference ty _ -> ty
         ConstantOperand constant -> typeOf constant
-
 
 instance Typed Constant where
     typeOf = \case

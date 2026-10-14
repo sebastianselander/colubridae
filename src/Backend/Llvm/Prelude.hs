@@ -14,7 +14,6 @@ import Backend.Llvm.Types (Decl (..), Ellipsis (Ellipsis, NoEllipsis))
 import Backend.Types (Type (I, OpaquePointer, PointerType, Void))
 import Names (ExplicitName (..), Ident (Ident), Namespace (Namespace))
 
-
 prelude :: ([Decl], Text)
 prelude =
     second (prologue <>)
@@ -33,7 +32,6 @@ prelude =
     addTxt decl Nothing = llvmOut decl
     addTxt _ (Just body) = body
 
-
 prologue :: Text
 prologue =
     [i|
@@ -48,10 +46,8 @@ declare i32 @printf(ptr, ...)
 declare ptr @malloc(i64)
 |]
 
-
 globalUnit :: Text
 globalUnit = "$internal_global_unit"
-
 
 printString :: (ExplicitName, Decl, Maybe Text)
 printString =
@@ -71,7 +67,6 @@ define i1 @#{Pretty.pretty ename}(i8* %x) {
   where
     name = "printString"
 
-
 printChar :: (ExplicitName, Decl, Maybe Text)
 printChar =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
@@ -90,7 +85,6 @@ define i1 @#{Pretty.pretty ename}(i8 %x) {
   where
     name = "printChar"
 
-
 exitSuccess :: (ExplicitName, Decl, Maybe Text)
 exitSuccess =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
@@ -107,7 +101,6 @@ define i1 @#{Pretty.pretty ename}() {
   where
     name = "exit_success"
 
-
 exitFailure :: (ExplicitName, Decl, Maybe Text)
 exitFailure =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
@@ -123,7 +116,6 @@ define i1 @#{Pretty.pretty ename}() {
         )
   where
     name = "exit_failure"
-
 
 printInt :: (ExplicitName, Decl, Maybe Text)
 printInt =

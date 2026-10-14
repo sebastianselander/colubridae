@@ -48,22 +48,18 @@ import Names (ExplicitName, Namespace)
 import Names qualified
 import Names qualified as ExplicitName
 
-
 type RenameTable = Map (ExplicitName, [TypeTc]) ExplicitName
-
 
 monomorphize :: Map Namespace [Item] -> ProgramTc -> (ProgramTc, RenameTable)
 monomorphize items (Program NoExtField mods) =
     let (mods', renameTables) = Functor.unzip (fmap (`monomorphizeModule` items) mods)
      in (Program NoExtField mods', Map.unionsWith __IMPOSSIBLE__ renameTables)
 
-
 monomorphizeModule :: ModuleTc -> Map Namespace [Item] -> (ModuleTc, RenameTable)
 monomorphizeModule mod@(Module namespace _) items =
     runState
         (foldM insert_mono_fn mod (deduplicate (fromMaybe [] $ Map.lookup namespace items)))
         Map.empty
-
 
 -- FIXME: Ugly. Need to figure out a more sensible algorithm
 apply_rename :: RenameTable -> ModuleTc -> ModuleTc
@@ -77,10 +73,8 @@ apply_rename tbl prg =
          in DefImport $ ImportExplicit (existingFnTypes <> fntypes') namespace (existingNames <> names')
     renameImport _ def = def
 
-
 make_import :: ExplicitName -> FnType -> ImportTc
 make_import name fnType = ImportExplicit [fnType] name.namespace [name]
-
 
 rename :: (MonadState ([(ExplicitName, FnType)]) m) => RenameTable -> ExprTc -> m ExprTc
 rename tbl expr = case expr of
@@ -94,7 +88,6 @@ rename tbl expr = case expr of
                 pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
             Nothing -> pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
     _ -> pure expr
-
 
 make_mono_name ::
     -- | Type arguments
@@ -117,7 +110,6 @@ make_mono_name type_args name =
                 )
                 name.name
         }
-
 
 -- We can optimize this by grouping items by the function they are monomorphizing.
 insert_mono_fn ::
@@ -147,7 +139,6 @@ insert_mono_fn (Module namespace defs) item = do
                 (apply sub original_type)
                 (apply sub body)
 
-
 find_fn ::
     -- | Function we're looking for
     ExplicitName ->
@@ -162,7 +153,6 @@ find_fn name = foldr f Nothing
     f def Nothing = case def of
         DefFn fn@(Fn _ fnname _ _ _ _) | name == fnname -> Just fn
         _ -> Nothing
-
 
 -- I don't get how this works. Why do we early exit using Either?
 deduplicate :: [Item] -> [Item]

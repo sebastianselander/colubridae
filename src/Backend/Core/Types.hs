@@ -7,14 +7,11 @@ import Backend.Types (Type (..))
 import Names (ExplicitName, Namespace)
 import Origin (Origin (..))
 
-
 newtype Program = Program (NonEmpty Module)
     deriving (Data, Eq, Ord, Show)
 
-
 data Module = Module Namespace [Def]
     deriving (Data, Eq, Ord, Show)
-
 
 data Def
     = Decl Namespace Type ExplicitName [Type]
@@ -25,17 +22,13 @@ data Def
     | Con Int ExplicitName Type (Maybe [Type])
     deriving (Data, Eq, Ord, Show)
 
-
 data Arg = Arg ExplicitName Type | EnvArg Type
     deriving (Data, Eq, Ord, Show)
 
-
 data Operand = ConstantOperand !Constant | LocalReference !Type !ExplicitName
-
 
 data TyExpr = Typed {typeOf :: Type, expr :: Expr}
     deriving (Data, Eq, Ord, Show)
-
 
 data Expr
     = Constant Constant
@@ -57,18 +50,14 @@ data Expr
     | ToStderrExit ExplicitName
     deriving (Data, Eq, Ord, Show)
 
-
 data Catch = Catch ExplicitName (NonEmpty TyExpr)
     deriving (Data, Eq, Ord, Show)
-
 
 data MatchArm = MatchArm Pattern (NonEmpty TyExpr)
     deriving (Data, Eq, Ord, Show)
 
-
 data Pattern = PCon Int [(ExplicitName, Type)]
     deriving (Data, Eq, Ord, Show)
-
 
 data Binding
     = Free
@@ -79,7 +68,6 @@ data Binding
     | GlobalConstant
     | Lambda
     deriving (Data, Eq, Ord, Show)
-
 
 data BinOp
     = Mul
@@ -97,10 +85,8 @@ data BinOp
     | Neq
     deriving (Data, Eq, Ord, Show)
 
-
 data PrefixOp = Not | Neg
     deriving (Data, Eq, Ord, Show)
-
 
 data Constant
     = IntLit !Integer

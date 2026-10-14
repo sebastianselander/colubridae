@@ -36,10 +36,8 @@ import Frontend.Types qualified as Bound (Boundedness (..))
 import Frontend.Types qualified as Tc
 import Origin qualified
 
-
 newtype DsM a = DsM {runDsm :: StateT Env (Reader Ctx) a}
     deriving (Applicative, Functor, Monad, MonadReader Ctx, MonadState Env)
-
 
 data Env = Env
     { _expressions :: DList TyExpr
@@ -50,16 +48,13 @@ data Env = Env
     , _names :: Set Ident
     }
 
-
 data Ctx = Ctx
     { _func :: TyExpr -> DsM ()
     , _namespace :: Namespace
     }
 
-
 $(makeLenses ''Ctx)
 $(makeLenses ''Env)
-
 
 basicCore :: Tc.ProgramTc -> Program
 basicCore (Tc.Program NoExtField mods) = Program $ fmap coreModule mods
@@ -67,18 +62,14 @@ basicCore (Tc.Program NoExtField mods) = Program $ fmap coreModule mods
     coreModule :: Tc.ModuleTc -> Module
     coreModule mod@(Tc.Module namespace _) = fst . run mempty (Ctx (const $ pure ()) namespace) 0 mempty $ dsModule mod
 
-
 run :: Map ExplicitName Int -> Ctx -> Int -> Set Ident -> DsM a -> (a, Env)
 run cons f n names = flip runReader f . flip runStateT (Env mempty n mempty mempty cons names) . runDsm
-
 
 emit :: TyExpr -> DsM ()
 emit expr = modifying expressions (`snoc` expr)
 
-
 emits :: [TyExpr] -> DsM ()
 emits = mapM_ emit
-
 
 named :: DsM TyExpr -> DsM TyExpr
 named tyExpr = do
@@ -87,25 +78,20 @@ named tyExpr = do
     emit $ Typed Unit $ Let name ty (Just (Typed ty e))
     pure (Typed ty (Var Bound name))
 
-
 unitVarible :: DsM TyExpr
 unitVarible = named (pure unit)
-
 
 unitGlobalName :: Namespace -> ExplicitName
 unitGlobalName namespace = EName namespace (Ident globalUnit) (Ident globalUnit)
 
-
 unitGlobalVariable :: Namespace -> DsM TyExpr
 unitGlobalVariable namespace = pure $ Typed Unit (Var GlobalConstant (unitGlobalName namespace))
-
 
 unnamed :: DsM TyExpr -> DsM ()
 unnamed thing = do
     expr <- thing
     emit expr
     pure ()
-
 
 declare :: Type -> DsM ExplicitName
 declare (I 1) = do
@@ -116,7 +102,6 @@ declare ty = do
     name <- fresh "declare"
     emit $ Typed Unit $ Let name ty Nothing
     pure name
-
 
 fresh :: Text -> DsM ExplicitName
 fresh prefix = go 0
@@ -134,7 +119,6 @@ fresh prefix = go 0
                     (Set.insert freshName)
                 pure (EName namespace freshName freshName)
 
-
 dsModule :: Tc.ModuleTc -> DsM Module
 dsModule (Tc.Module namespace defs) = do
     defs <- concatMapM dsDef defs
@@ -142,11 +126,9 @@ dsModule (Tc.Module namespace defs) = do
     strings <- use staticStrings
     pure $ Module namespace $ fmap (uncurry3 StaticString) strings <> toList lifteds <> defs
 
-
 isMain :: Tc.FnTc -> Bool
 isMain (Tc.Fn NoExtField name _tyParams _ _ _) | name.name == "main" = True
 isMain _ = False
-
 
 dsFunction :: Tc.FnTc -> DsM Def
 dsFunction def@(Tc.Fn NoExtField name _tyParams args returnType (Tc.Block (_info, _) stmts tail)) = do
@@ -170,7 +152,6 @@ dsFunction def@(Tc.Fn NoExtField name _tyParams args returnType (Tc.Block (_info
             (I 1) -> pure $ Fn Origin.Function name args returnType (toList $ emits `snoc` Typed (I 1) (Return unit))
             _ -> pure $ Fn Origin.Function name args returnType (toList emits)
 
-
 dsDef :: Tc.DefTc -> DsM [Def]
 dsDef (Tc.DefFn fn) = pure <$> dsFunction fn
 dsDef (Tc.DefAdt adt) = dsAdt adt
@@ -180,7 +161,6 @@ dsDef (Tc.DefImport (ImportExplicit tys namespace names)) = zipWithM (declare na
     declare namespace fnType name =
         Decl namespace <$> dsType fnType.retType <*> pure name <*> mapM dsType fnType.argTypes
 
-
 dsAdt :: Tc.AdtTc -> DsM [Def]
 dsAdt (Tc.Adt _loc name constructors) = do
     alloc <- constructorAllocSize constructors
@@ -188,7 +168,6 @@ dsAdt (Tc.Adt _loc name constructors) = do
     case alloc of
         0 -> pure $ TypeSyn name (StructType [Int64]) : funs
         n -> pure $ TypeSyn name (StructType [Int64, ArrayType (n `div` 8) opaquePtr]) : funs
-
 
 mkConstructorFunction :: Int -> Tc.ConstructorTc -> DsM Def
 mkConstructorFunction n = \case
@@ -199,7 +178,6 @@ mkConstructorFunction n = \case
         modifying constructorIndex (Map.insert name n)
         Con n name <$> dsType ty <*> Just <$> mapM dsType tys
 
-
 constructorAllocSize :: (Monad m) => [Tc.ConstructorTc] -> m Int
 constructorAllocSize [] = pure 0
 constructorAllocSize (Tc.EnumCons (_loc, _) _ : cons) = fmap (max 0) (constructorAllocSize cons)
@@ -208,15 +186,12 @@ constructorAllocSize (Tc.FunCons (_loc, _) _ tys : cons) = do
     rest <- constructorAllocSize cons
     pure (max (fromIntegral size) rest)
 
-
 dsArg :: Tc.ArgTc -> DsM Arg
 dsArg (Tc.Arg NoExtField name ty) = Arg name <$> dsType ty
-
 
 dsStmt :: Tc.StmtTc -> DsM TyExpr
 dsStmt = \case
     Tc.SExpr NoExtField expr -> dsExpr expr
-
 
 dsExpr :: Tc.ExprTc -> DsM TyExpr
 dsExpr = \case
@@ -323,7 +298,6 @@ dsExpr = \case
         named $ pure $ Typed ty $ uncurry (Match scrutinee) matchArms
     Tc.Expr (Tc.TypeApp expr _) -> dsExpr expr
 
-
 -- TODO: Really reconsider if this is the logic we want
 extractCatch :: SourceInfo -> [Either MatchArm Catch] -> DsM ([MatchArm], Catch)
 extractCatch loc arms = (go mempty (lefts arms),) <$> maybe nonexhaustive pure (listToMaybe $ rights arms)
@@ -349,7 +323,6 @@ extractCatch loc arms = (go mempty (lefts arms),) <$> maybe nonexhaustive pure (
     go seen (arm@(MatchArm (PCon n _) _) : arms) =
         if Set.member n seen then go seen arms else arm : go (Set.insert n seen) arms
 
-
 dsMatchArms :: [Tc.MatchArmTc] -> DsM [Either MatchArm Catch]
 dsMatchArms [] = pure []
 dsMatchArms (Tc.MatchArm _loc pat body : rest) = do
@@ -360,7 +333,6 @@ dsMatchArms (Tc.MatchArm _loc pat body : rest) = do
     case pat of
         Left catchAll -> pure [Right (Catch catchAll body)]
         Right pat -> (Left (MatchArm pat body) :) <$> dsMatchArms rest
-
 
 dsPat :: Tc.PatternTc -> DsM (Either ExplicitName Pattern)
 dsPat = \case
@@ -375,7 +347,6 @@ dsPat = \case
                 pure (name, ty)
             toVar _ = __IMPOSSIBLE__
         Right . PCon index <$> mapM toVar nestedPats
-
 
 dsType :: (Monad m) => Tc.TypeTc -> m Type
 dsType = \case
@@ -395,12 +366,10 @@ dsType = \case
     Tc.Type Tc.AnyX -> pure Unit -- NOTE: `Any` is only the type
     -- of `return` and `break` so that they can be placed anywhere.
 
-
 mkArg :: (Monad m) => Tc.LamArgTc -> m Arg
 mkArg (Tc.LamArg ty name) = do
     ty <- dsType ty
     pure (Arg name ty)
-
 
 -- TODO: Rewrite
 dsBlock :: Ctx -> ExplicitName -> Tc.BlockTc -> DsM [TyExpr]
@@ -441,7 +410,6 @@ dsBlock f variable (Tc.Block (_, ty) stmts (Just tail)) = do
     modifying staticStrings (<> strings)
     pure (toList emits)
 
-
 dsLit :: Tc.LitTc -> DsM Expr
 dsLit = \case
     Tc.IntLit NoExtField int -> pure $ Constant $ IntLit int
@@ -454,7 +422,6 @@ dsLit = \case
     Tc.CharLit NoExtField char -> pure $ Constant $ CharLit char
     Tc.BoolLit NoExtField bool -> pure $ Constant $ BoolLit bool
     Tc.UnitLit NoExtField -> pure $ Constant UnitLit
-
 
 ass :: ExplicitName -> Tc.TypeTc -> Bound.Boundedness -> Tc.AssignOp -> Tc.ExprTc -> DsM Expr
 ass name typ binding op xpr = do
@@ -474,28 +441,22 @@ ass name typ binding op xpr = do
             Tc.SubAssign -> assignment Sub
             Tc.ModAssign -> assignment Mod
 
-
 true :: TyExpr
 true = Typed (I 8) $ Constant $ BoolLit True
-
 
 unit :: TyExpr
 unit = Typed (I 1) $ Constant UnitLit
 
-
 typed :: Tc.TypeTc -> Expr -> DsM TyExpr
 typed ty expr = Typed <$> dsType ty <*> pure expr
 
-
 lookupCon :: ExplicitName -> DsM Int
 lookupCon name = uses constructorIndex (fromJust . Map.lookup name)
-
 
 dsPrefixOp :: Tc.PrefixOp -> PrefixOp
 dsPrefixOp = \case
     Tc.Not -> Not
     Tc.Neg -> Neg
-
 
 dsBinOp :: Tc.BinOp -> BinOp
 dsBinOp = \case
@@ -513,7 +474,6 @@ dsBinOp = \case
     Tc.Eq -> Eq
     Tc.Neq -> Neq
 
-
 dsBound :: Bound.Boundedness -> Binding
 dsBound = \case
     Bound.Free -> Free
@@ -522,7 +482,6 @@ dsBound = \case
     Bound.Constructor -> Constructor
     Bound.Builtin -> Function
     Bound.Imported -> Function
-
 
 contextually :: DsM a -> DsM (DList TyExpr, a)
 contextually m = do

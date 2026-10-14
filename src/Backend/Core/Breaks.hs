@@ -5,7 +5,6 @@ import Relude
 
 import Backend.Core.Types
 
-
 simplifyBreakAndReturn :: Program -> Program
 simplifyBreakAndReturn = everywhere (mkT go)
   where
@@ -17,23 +16,19 @@ simplifyBreakAndReturn = everywhere (mkT go)
         While condition@(Typed _ty (Return _)) _body -> condition
         e -> Typed ty e
 
-
 removeUnreachable :: Program -> Program
 removeUnreachable = everywhere (mkT go)
   where
     go :: [TyExpr] -> [TyExpr]
     go = takeWhilePlusOne (\x -> not (isBreak x || isReturn x))
 
-
 isBreak :: TyExpr -> Bool
 isBreak (Typed _ Break) = True
 isBreak _ = False
 
-
 isReturn :: TyExpr -> Bool
 isReturn (Typed _ (Return _)) = True
 isReturn _ = False
-
 
 takeWhilePlusOne :: (a -> Bool) -> [a] -> [a]
 takeWhilePlusOne f = go

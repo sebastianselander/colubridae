@@ -12,27 +12,21 @@ import Frontend.Error
 import Frontend.Renamer.Types
 import Frontend.Types
 
-
 newtype Ctx = Ctx {_inLoop :: Bool}
     deriving (Show)
 
-
 $(makeLenses ''Ctx)
-
 
 newtype ChM a = ChM {runCh :: ReaderT Ctx (Validate [ChError]) a}
     deriving (Applicative, Functor, Monad, MonadReader Ctx, MonadValidate [ChError])
 
-
 runCheck :: Ctx -> ChM a -> Either [ChError] a
 runCheck ctx = runValidate . flip runReaderT ctx . runCh
-
 
 check :: ProgramRn -> Either [ChError] ProgramRn
 check prg@(Program _ mods) = case lefts $ map checkMod (Relude.toList mods) of
     [] -> pure prg
     xs -> Left $ concat xs
-
 
 checkFunction :: FnRn -> Either [ChError] ()
 checkFunction (Fn info name _ _ returnType block) = runCheck (Ctx False) $ case returnType of
@@ -45,25 +39,20 @@ checkFunction (Fn info name _ _ returnType block) = runCheck (Ctx False) $ case 
                 True -> pure ()
                 False -> missingReturn info name
 
-
 checkMod :: ModuleRn -> Either [ChError] ()
 checkMod (Module namespace defs) = mapM_ checkDef defs
-
 
 checkDef :: DefRn -> Either [ChError] ()
 checkDef (DefFn fn) = checkFunction fn
 checkDef (DefAdt _) = pure ()
 checkDef (DefImport _) = pure ()
 
-
 breakBlock :: BlockRn -> ChM ()
 breakBlock (Block _ statements tail) = mapM_ breakStmt statements >> mapM_ breakExpr tail
-
 
 breakStmt :: StmtRn -> ChM ()
 breakStmt = \case
     SExpr NoExtField expr -> breakExpr expr
-
 
 breakExpr :: ExprRn -> ChM ()
 breakExpr = \case
@@ -93,14 +82,11 @@ breakExpr = \case
         breakExpr scrutinee
         mapM_ breakMatchArm arms
 
-
 breakMatchArm :: MatchArmRn -> ChM ()
 breakMatchArm (MatchArm _ _ expr) = breakExpr expr
 
-
 returnBlock :: BlockRn -> ChM Bool
 returnBlock (Block _ statements _) = returnStmts statements
-
 
 returnStmts :: [StmtRn] -> ChM Bool
 returnStmts [] = pure False
@@ -111,11 +97,9 @@ returnStmts (x : xs) = do
             [] -> pure True
             _ -> unreachableStatement (hasInfoStmt x) >> pure True
 
-
 returnStmt :: StmtRn -> ChM Bool
 returnStmt = \case
     SExpr NoExtField expr -> returnExpr expr
-
 
 returnExpr :: ExprRn -> ChM Bool
 returnExpr = \case
@@ -144,25 +128,20 @@ returnExpr = \case
     Lam {} -> pure False
     Match _ scrutinee arms -> (&&) <$> returnExpr scrutinee <*> allM returnArm arms
 
-
 returnArm :: MatchArmRn -> ChM Bool
 returnArm (MatchArm _ _ body) = returnExpr body
-
 
 -- TODO: Make mini evaluator
 alwaysTrue :: ExprRn -> Bool
 alwaysTrue = const False
 
-
 -- TODO: Make mini evaluator
 alwaysFalse :: ExprRn -> Bool
 alwaysFalse = const False
 
-
 hasInfoStmt :: StmtRn -> SourceInfo
 hasInfoStmt = \case
     SExpr NoExtField expr -> hasInfoExpr expr
-
 
 hasInfoExpr :: ExprRn -> SourceInfo
 hasInfoExpr = \case

@@ -22,15 +22,12 @@ import Frontend.Types
 import Names (ExplicitName (..), Namespace)
 import Utils (listify')
 
-
 data Collection = Collection {namespace :: Namespace, items :: Set Item}
     deriving (Eq, Ord, Show)
-
 
 data Item = Item
     {name :: ExplicitName, ty :: TypeTc, type_args :: [TypeTc], loc :: SourceInfo}
     deriving (Eq, Ord, Show)
-
 
 prettyItem :: Item -> Text
 prettyItem item =
@@ -47,13 +44,11 @@ prettyItem item =
         <+> "used at"
         <+> show item.loc
 
-
 collect :: ProgramTc -> NonEmpty Collection
 collect (Program NoExtField mods) =
     fmap
         (\(Module namespace defs) -> Collection namespace $ Set.fromList $ listify' find_type_app defs)
         mods
-
 
 find_type_app :: ExprTc -> Maybe Item
 find_type_app expr = case expr of

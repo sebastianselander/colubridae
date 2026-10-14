@@ -35,41 +35,32 @@ import Prettyprinter qualified as Pretty
 
 import Impossible (__IMPOSSIBLE__)
 
-
 newtype Names = Names {unNames :: Map Ident Ident}
     deriving (Data, Show)
-
 
 -- | Prefers items in the first `Names`
 combine :: Names -> Names -> Names
 combine (Names names1) (Names names2) = Names (Map.union names1 names2)
 
-
 mkNames :: Map Ident Ident -> Names
 mkNames = Names
-
 
 mkNamespace :: String -> Namespace
 mkNamespace name = Namespace $ fmap pack (fromList (splitDirectories name))
 
-
 toPythonStyle :: Namespace -> Text
 toPythonStyle (Namespace list) = Text.intercalate "." $ toList list
-
 
 -- Namespace, e.g: `foo::bar::baz`, here `foo::bar` is the namespace and `baz` is an Ident
 newtype Namespace = Namespace (NonEmpty Text)
     deriving (Data, Eq, Ord, Semigroup, Show)
 
-
 -- Identifier: `foo`
 newtype Ident = Ident Text
     deriving (Data, Eq, IsString, Monoid, Ord, Semigroup, Show)
 
-
 data ExplicitName = EName {namespace :: Namespace, name :: Ident, oldname :: Ident}
     deriving (Data, Ord, Show)
-
 
 instance Pretty ExplicitName where
     pretty name =
@@ -78,30 +69,23 @@ instance Pretty ExplicitName where
             <> "::"
             <> Pretty.pretty name.name
 
-
 instance Eq ExplicitName where
     a == b = a.namespace == b.namespace && a.name == b.name
-
 
 getText :: Ident -> Text
 getText (Ident txt) = txt
 
-
 instance Pretty Ident where
     pretty (Ident name) = pretty name
-
 
 instance Pretty Namespace where
     pretty (Namespace list) = concatWith (surround "::") $ fmap pretty list
 
-
 append :: Text -> Ident -> Ident
 append suffix (Ident name) = Ident (name <> suffix)
 
-
 prepend :: Text -> Ident -> Ident
 prepend prefix (Ident name) = Ident (prefix <> name)
-
 
 intercalate :: Text -> [Ident] -> Ident
 intercalate _ [] = __IMPOSSIBLE__
@@ -112,24 +96,19 @@ intercalate t xs = Ident $ go $ fmap (\(Ident name) -> name) xs
     go [x] = x
     go (x : xs) = x <> t <> go xs
 
-
 getOriginalName' :: Ident -> Names -> Ident
 getOriginalName' name names =
     fromMaybe __IMPOSSIBLE__
         $ Map.lookup name (unNames names)
 
-
 getOriginalName :: Ident -> Names -> Maybe Ident
 getOriginalName name names = Map.lookup name (unNames names)
-
 
 existName :: Ident -> Names -> Bool
 existName name names = Map.member name (unNames names)
 
-
 insertName :: Ident -> Names -> Names
 insertName name names = Names $ Map.insertWith (\_ x -> x) name name (unNames names)
-
 
 renameBack :: (Data a) => Names -> a -> a
 renameBack names = everywhere (mkT f)

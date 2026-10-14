@@ -9,9 +9,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Relude hiding (All, First, Type)
 
-
 data ErrType = All | First
-
 
 gen :: ErrType -> String -> Q [Dec]
 gen errType str = do
@@ -23,7 +21,6 @@ gen errType str = do
                 All -> concatMapM (validateCon str) cons
                 First -> concatMapM (errorCon str) cons
         _ -> error "Not a type constructor"
-
 
 errorCon :: String -> Con -> Q [Dec]
 errorCon errName con@(NormalC nm _) = do
@@ -44,7 +41,6 @@ errorCon errName con@(NormalC nm _) = do
         , FunD (mkName (small name)) [Clause pats (NormalB exp) []]
         ]
 errorCon _ _ = error "Not a normal constructor"
-
 
 validateCon :: String -> Con -> Q [Dec]
 validateCon errName con@(NormalC nm _) = do
@@ -95,17 +91,14 @@ validateCon errName con@(NormalC nm _) = do
         ]
 validateCon _ _ = error "Not a normal constructor"
 
-
 small :: String -> String
 small [] = []
 small (x : xs) = toLower x : xs
-
 
 getName :: Con -> String
 getName (NormalC nm _) = case nm of
     Name occNm _ -> coerce occNm
 getName _ = error "Can not generate function for non-normal constructor"
-
 
 genLast :: Type -> Type
 genLast = \case
@@ -113,20 +106,17 @@ genLast = \case
     ConT {} -> AppT (VarT . mkName $ "m") (VarT . mkName $ "a")
     x -> delinearize x
 
-
 unitLast :: Type -> Type
 unitLast = \case
     AppT t1 t2 -> AppT t1 (unitLast t2)
     ConT {} -> AppT (VarT . mkName $ "m") (TupleT 0)
     x -> delinearize x
 
-
 delinearize :: Type -> Type
 delinearize = \case
     AppT MulArrowT _ -> ArrowT
     AppT t1 t2 -> AppT (delinearize t1) (delinearize t2)
     ty -> ty
-
 
 nArgs :: (Num a) => Type -> a
 nArgs = \case

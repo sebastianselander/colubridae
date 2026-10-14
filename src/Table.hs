@@ -10,7 +10,6 @@ import Frontend.Builtin (Builtins)
 import Frontend.Types (Forall)
 import Names (ExplicitName)
 
-
 data DefTable phase a info = Table
     { _builtIns :: Builtins phase
     , _functions :: Map ExplicitName (a, info)
@@ -18,8 +17,6 @@ data DefTable phase a info = Table
     , _constructors :: Map ExplicitName (a, info)
     }
 
-
 deriving instance (Forall Show phase, Show a, Show info) => Show (DefTable phase a info)
-
 
 $(makeLenses ''DefTable)

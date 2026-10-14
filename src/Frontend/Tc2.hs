@@ -40,16 +40,13 @@ import Frontend.Substitution qualified as Sub
 import Frontend.Typechecker.Ctx qualified as Ctx
 import Table qualified as DefTable
 
-
 data Env = Env
     { _variables :: Map ExplicitName (TypeTc, SourceInfo)
     , _fresh :: Int
     }
     deriving (Show)
 
-
 $(makeLenses ''Env)
-
 
 newtype TcM a = Tc
     { runTc ::
@@ -64,10 +61,8 @@ newtype TcM a = Tc
         , MonadValidate [TcError]
         )
 
-
 run :: Ctx -> Env -> TcM a -> (Either [TcError] a, [TcWarning])
 run ctx env = runWriter . runValidateT . flip runReaderT ctx . flip evalStateT env . runTc
-
 
 typecheck ::
     ProgramRn ->
@@ -83,7 +78,6 @@ typecheck (Program NoExtField mods) =
             (([], mod : mods), warnings) -> (Right $ Program NoExtField (mod :| mods), mconcat warnings)
             ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
 
-
 tcModule ::
     DefTable Tc PolyType SourceInfo ->
     ModuleRn ->
@@ -93,7 +87,6 @@ tcModule defTable (Module namespace defs) =
         (([], defs), warnings) -> (Right $ Module namespace defs, mconcat warnings)
         ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
 
-
 tcDefs ::
     DefTable Tc PolyType SourceInfo ->
     DefRn ->
@@ -102,7 +95,6 @@ tcDefs table (DefFn fn) =
     first (fmap DefFn) $ tcFunction table fn
 tcDefs _ (DefAdt adt) = first (Right . DefAdt) $ tcAdt adt
 tcDefs table (DefImport imp) = (Right (DefImport (tcImport table imp)), [])
-
 
 tcImport :: DefTable Tc PolyType SourceInfo -> ImportRn -> ImportTc
 tcImport table (ImportExplicit _ namespace names) =
@@ -123,11 +115,9 @@ tcImport table (ImportExplicit _ namespace names) =
             _ -> __IMPOSSIBLE__
      in ImportExplicit (fmap mkFnType tys) namespace names
 
-
 tcAdt :: AdtRn -> (AdtTc, [TcWarning])
 tcAdt (Adt loc name constructors) =
     (Adt loc name (fmap (inferConstructor (TyCon NoExtField name)) constructors), [])
-
 
 inferConstructor :: TypeTc -> ConstructorRn -> ConstructorTc
 inferConstructor ty = \case
@@ -135,7 +125,6 @@ inferConstructor ty = \case
     FunCons loc name types ->
         let types' = fmap typeOf types
          in FunCons (loc, TyFun NoExtField types' ty) name types'
-
 
 tcFunction ::
     DefTable Tc PolyType SourceInfo ->
@@ -179,10 +168,8 @@ tcFunction defTable fun@(Fn _ _ _ args rt _) =
                     pure $ apply sub $ Block (info, Any) stmts Nothing
             pure (Fn NoExtField name tyParams args retTy block)
 
-
 infer_arg :: (Monad m) => ArgRn -> m ArgTc
 infer_arg (Arg _ name ty) = pure $ Arg NoExtField name (typeOf ty)
-
 
 getFuns :: (Data a) => a -> [(ExplicitName, (PolyType, SourceInfo))]
 getFuns = listify' f
@@ -192,12 +179,10 @@ getFuns = listify' f
         let funTy = PolyType tyvars (TyFun NoExtField (fmap typeOf args) (typeOf returnType))
          in Just (name, (funTy, info))
 
-
 data TypeCons = TypeCons
     { types :: [(ExplicitName, (PolyType, SourceInfo))]
     , cons :: [(ExplicitName, (PolyType, SourceInfo))]
     }
-
 
 getTypesAndCons :: (Data a) => a -> TypeCons
 getTypesAndCons a = TypeCons {types = listify' h a, cons = concat (listify' f a)}
@@ -217,7 +202,6 @@ getTypesAndCons a = TypeCons {types = listify' h a, cons = concat (listify' f a)
             EnumCons loc name -> (name, (PolyType [] returnType, loc))
             FunCons loc name argTys ->
                 (name, (PolyType [] $ TyFun NoExtField (fmap typeOf argTys) returnType, loc))
-
 
 check_expr ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -308,7 +292,6 @@ check_expr expected_type current_expr = Ctx.push current_expr $ case current_exp
         modifying variables (Map.map (first (apply sub3)))
         pure (sub3, expr)
 
-
 check_exprs ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     [(TypeTc, ExprRn)] -> m (Substitution, [ExprTc])
@@ -318,7 +301,6 @@ check_exprs = fmap (second reverse) . foldM f (Sub.empty, [])
         (sub2, expr) <- check_expr (apply sub1 ty) expr
         let sub3 = Sub.compose sub2 sub1
         pure (sub3, fmap (apply sub3) (expr : exprs))
-
 
 -- FIXME(sebsel): Figure out when/how to apply substitution to the environment
 infer_expr ::
@@ -341,7 +323,6 @@ infer_expr current_expr = Ctx.push current_expr $ case current_expr of
     Lam info args body -> infer_lam info args body
     Match loc scrutinee match_arms -> infer_match loc scrutinee match_arms
 
-
 infer_exprs ::
     (MonadState Env m, MonadReader Ctx m, MonadValidate [TcError] m) =>
     [ExprRn] -> m (Substitution, [ExprTc])
@@ -352,12 +333,10 @@ infer_exprs = fmap (second reverse) . foldM f (Sub.empty, [])
         let sub3 = Sub.compose sub2 sub1
         pure (sub3, fmap (apply sub3) (expr : exprs))
 
-
 infer_lit :: (Monad m) => SourceInfo -> LitRn -> m (Substitution, ExprTc)
 infer_lit loc lit = do
     let (ty, lit') = infLit lit
     pure (Sub.empty, Lit (loc, ty) lit')
-
 
 infer_var ::
     (MonadReader Ctx m, MonadState Env m) =>
@@ -395,7 +374,6 @@ infer_var loc boundedness name = case boundedness of
                 pure (Sub.empty, Var (info, ty, boundedness) name)
             _ -> __IMPOSSIBLE__
 
-
 -- pure (Sub.empty, Var (info, ty, boundedness) name)
 
 infer_prefix ::
@@ -410,7 +388,6 @@ infer_prefix loc op expr =
             (sub, expr) <- check_expr (TyLit NoExtField Bool) expr
             pure (sub, Prefix (loc, TyLit NoExtField Bool) Not expr)
 
-
 infer_binop ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     SourceInfo -> ExprRn -> BinOp -> ExprRn -> m (Substitution, ExprTc)
@@ -422,7 +399,6 @@ infer_binop loc left op right = do
     let return_type = operatorReturnType expected_type op
     modifying variables (Map.map (first (apply sub3)))
     pure (sub3, apply sub3 (BinOp (loc, return_type) left op right))
-
 
 infer_app ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -444,7 +420,6 @@ infer_app loc func args = do
             modifying variables (Map.map (first (apply sub3)))
             pure (sub3, apply sub3 $ App (loc, return_type) func args)
 
-
 infer_let ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     SourceInfo -> Maybe TypeRn -> ExplicitName -> ExprRn -> m (Substitution, ExprTc)
@@ -458,7 +433,6 @@ infer_let info mbty name expr = case mbty of
         (sub, expr) <- check_expr ty' expr
         insertVar name ty' info
         pure (sub, Let (StmtType unit_type ty' info) name expr)
-
 
 infer_ass ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -482,7 +456,6 @@ infer_ass loc boundedness name op expr =
                 Assign -> pure ()
             pure (sub, Ass (StmtType unit_type ty loc, boundedness) name op expr)
 
-
 infer_ret ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     SourceInfo -> Maybe ExprRn -> m (Substitution, ExprTc)
@@ -501,7 +474,6 @@ infer_ret loc maybe_expr = do
             let sub2 = Sub.compose sub1 sub
             modifying variables (Map.map (first (apply sub2)))
             pure (sub2, apply sub2 $ Ret (loc, Any) (Just expr))
-
 
 infer_block ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -526,7 +498,6 @@ infer_block (Block info statements tail_expr) = do
             modifying variables (Map.map (first (apply sub3)))
             pure (sub3, apply sub3 (Block (info, typeOf expr) stmts (Just expr)))
 
-
 check_block ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     TypeTc -> BlockRn -> m (Substitution, BlockTc)
@@ -545,7 +516,6 @@ check_block expected_type (Block loc statements tail_expr) = do
             modifying variables (Map.map (first (apply sub4)))
             pure (sub4, apply sub4 (Block (loc, expected_type) statements (Just expr)))
 
-
 infer_stmts ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     [StmtRn] -> m (Substitution, [StmtTc])
@@ -555,12 +525,10 @@ infer_stmts = fmap (second reverse) . foldM f (Sub.empty, [])
         (sub2, stmt) <- infer_stmt stmt
         pure (Sub.compose sub2 sub1, stmt : stmts)
 
-
 infer_stmt ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     StmtRn -> m (Substitution, StmtTc)
 infer_stmt (SExpr NoExtField expr) = second (SExpr NoExtField) <$> infer_expr expr
-
 
 infer_break ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -570,7 +538,6 @@ infer_break loc maybe_expr = case maybe_expr of
     Just expr -> do
         (sub, expr) <- infer_expr expr
         pure (sub, Break (loc, typeOf expr) (Just expr))
-
 
 infer_if ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -595,7 +562,6 @@ infer_if loc scrutinee true_block false_block = do
                     (If (loc, typeOf true_block) scrutinee true_block (Just false_block))
                 )
 
-
 infer_while ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     SourceInfo -> ExprRn -> BlockRn -> m (Substitution, ExprTc)
@@ -607,7 +573,6 @@ infer_while loc expr block = do
     let sub5 = Sub.compose sub4 sub3
     modifying variables (Map.map (first (apply sub5)))
     pure (sub5, apply sub5 (While (loc, typeOf block) expr block))
-
 
 infer_loop ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -632,7 +597,6 @@ infer_loop loc block = do
     modifying variables (Map.map (first (apply sub2)))
     pure (sub2, apply sub2 $ Loop (loc, break_type) block)
 
-
 infer_lam ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     SourceInfo -> [LamArgRn] -> ExprRn -> m (Substitution, ExprTc)
@@ -642,7 +606,6 @@ infer_lam loc args expr = do
     modifying variables (Map.map (first (apply sub)))
     pure (sub, apply sub $ Lam (loc, TyFun NoExtField (fmap typeOf args) (typeOf expr)) args expr)
 
-
 infer_lamarg ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     LamArgRn -> m LamArgTc
@@ -650,7 +613,6 @@ infer_lamarg (LamArg (info, maybe_type) name) = do
     ty <- maybe fresh_type (pure . typeOf) maybe_type
     insertVar name ty info
     pure (LamArg ty name)
-
 
 infer_match ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -672,7 +634,6 @@ infer_match loc scrutinee arms = do
             modifying variables (Map.map (first (apply sub2)))
             pure (sub2, Match (loc, typeOf arm) scrutinee (arm : arms))
 
-
 check_arm ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     TypeTc -> TypeTc -> MatchArmRn -> m (Substitution, MatchArmTc)
@@ -683,7 +644,6 @@ check_arm pattern_type arm_type (MatchArm loc pat expr) = do
     modifying variables (Map.map (first (apply sub3)))
     pure (sub3, apply sub3 (MatchArm loc pat body))
 
-
 infer_arm ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     TypeTc -> MatchArmRn -> m (Substitution, MatchArmTc)
@@ -693,7 +653,6 @@ infer_arm pattern_type (MatchArm loc pat expr) = do
     let sub3 = Sub.compose sub2 sub1
     modifying variables (Map.map (first (apply sub3)))
     pure (sub3, apply sub3 (MatchArm loc pat body))
-
 
 check_pattern ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -725,7 +684,6 @@ check_pattern pattype currentPattern = case currentPattern of
                 | otherwise -> expectedPatNArgs' loc currentPattern (length argtys) (length pats)
             other -> tyExpectedGot' loc [pattype] other
 
-
 hasInfo :: ExprTc -> SourceInfo
 hasInfo = \case
     Lit info _ -> fst info
@@ -745,7 +703,6 @@ hasInfo = \case
     Match info _ _ -> fst info
     Expr (TypeApp expr _) -> hasInfo expr
 
-
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
     Mul -> inputTy
@@ -761,7 +718,6 @@ operatorReturnType inputTy = \case
     Gte -> TyLit NoExtField Bool
     Eq -> TyLit NoExtField Bool
     Neq -> TyLit NoExtField Bool
-
 
 operatorType :: BinOp -> TypeTc
 operatorType = \case
@@ -779,7 +735,6 @@ operatorType = \case
     Eq -> TyLit NoExtField Int
     Neq -> TyLit NoExtField Int
 
-
 infLit :: LitRn -> (TypeTc, LitTc)
 infLit = \case
     IntLit info n -> (TyLit NoExtField Int, IntLit info n)
@@ -789,26 +744,20 @@ infLit = \case
     BoolLit info b -> (TyLit NoExtField Bool, BoolLit info b)
     UnitLit info -> (TyLit NoExtField Unit, UnitLit info)
 
-
 unit_type :: TypeTc
 unit_type = TyLit NoExtField Unit
-
 
 int_type :: TypeTc
 int_type = TyLit NoExtField Int
 
-
 double_type :: TypeTc
 double_type = TyLit NoExtField Double
-
 
 bool_type :: TypeTc
 bool_type = TyLit NoExtField Bool
 
-
 insertVar :: (MonadState Env m) => ExplicitName -> TypeTc -> SourceInfo -> m ()
 insertVar name ty info = modifying variables (Map.insert name (ty, info))
-
 
 lookupVar :: (MonadState Env m) => ExplicitName -> m (TypeTc, SourceInfo)
 lookupVar name =
@@ -818,20 +767,16 @@ lookupVar name =
             . Map.lookup name
         )
 
-
 lookupCon :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
 lookupCon name =
     views Ctx.defTable (fromJust . Map.lookup name . view DefTable.constructors)
-
 
 lookupFun :: (MonadReader Ctx m) => ExplicitName -> m (PolyType, SourceInfo)
 lookupFun name =
     views (Ctx.defTable . DefTable.functions) (fromMaybe __IMPOSSIBLE__ . Map.lookup name)
 
-
 apply_env :: (MonadState Env m) => Substitution -> m ()
 apply_env sub = modifying variables (Map.map (first (apply sub)))
-
 
 instantiateTc :: (MonadState Env m) => PolyType -> m TypeTc
 instantiateTc ty = do
@@ -840,10 +785,8 @@ instantiateTc ty = do
     assign fresh fr'
     pure ty'
 
-
 fresh_type :: (MonadState Env m) => m TypeTc
 fresh_type = Type . Mono <$> fresh_mono
-
 
 fresh_mono :: (MonadState Env m) => m MonoType
 fresh_mono = do
@@ -851,14 +794,11 @@ fresh_mono = do
     fresh += 1
     pure (MonoType fr)
 
-
 get_exprs :: BlockTc -> [ExprTc]
 get_exprs (Block _ exprs tail) = fmap (\(SExpr NoExtField expr) -> expr) exprs <> maybeToList tail
 
-
 find_all_breaks_stmts :: [StmtTc] -> [ExprTc]
 find_all_breaks_stmts = concatMap (find_all_breaks . (\(SExpr NoExtField expr) -> expr))
-
 
 -- \| Find all breaks in a block. Do not traverse further on expressions where breaks are allowed
 find_all_breaks :: ExprTc -> [ExprTc]

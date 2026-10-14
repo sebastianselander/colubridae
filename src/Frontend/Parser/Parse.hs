@@ -23,14 +23,12 @@ import Frontend.Types
 import Names (Ident (Ident), Namespace (Namespace), mkNamespace)
 import Utils (File (..))
 
-
 parse :: NonEmpty File -> Either Text ProgramPar
 parse files =
     let modules = fmap parseModule files
      in case partitionEithers (Relude.toList modules) of
             ([], mod : mods) -> pure (Program NoExtField (mod :| mods))
             (xs, _) -> Left $ Text.intercalate "\n" (fmap report xs)
-
 
 parse' ::
     BindingPowerTable PrefixOp BinOp Void ->
@@ -45,10 +43,8 @@ parse' table file =
             file.name
             file.content
 
-
 parseModule :: File -> Either (ParseErrorBundle Text CustomParseError) ModulePar
 parseModule = parse' defaultBindingPowerTable
-
 
 import_ :: Parser ImportPar
 import_ = do
@@ -62,7 +58,6 @@ import_ = do
         ]
         <* semicolon
 
-
 tyParamList :: Parser TyParamList
 tyParamList = do
     gs <- spanStart
@@ -70,14 +65,12 @@ tyParamList = do
     loc <- spanEnd gs
     pure (Params loc (fromMaybe [] params))
 
-
 namespace :: Parser Namespace
 namespace =
     Namespace
         . fromList
         . fmap (\(Ident name) -> name)
         <$> lexeme (P.sepBy identifier (P.hidden namespaceSeparator))
-
 
 datatype :: Parser AdtPar
 datatype = do
@@ -87,7 +80,6 @@ datatype = do
     constructors <- curlyBrackets (commaSepEnd constructor)
     loc <- spanEnd gs
     pure (Adt loc adtName constructors)
-
 
 constructor :: Parser ConstructorPar
 constructor = do
@@ -99,10 +91,8 @@ constructor = do
         Nothing -> pure $ EnumCons loc constructorName
         Just tys -> pure $ FunCons loc constructorName tys
 
-
 definition :: Parser DefPar
 definition = DefImport <$> import_ <|> DefFn <$> function <|> DefAdt <$> datatype
-
 
 function :: Parser FnPar
 function = do
@@ -116,7 +106,6 @@ function = do
     info <- spanEnd gs
     pure (Fn info name tyParams args ty expressions)
 
-
 argument :: Parser ArgPar
 argument = do
     gs <- spanStart
@@ -124,7 +113,6 @@ argument = do
     lexeme (keyword ":")
     (ty, info) <- span gs type_
     pure (Arg info name ty)
-
 
 type_ :: Parser TypePar
 type_ = P.choice [typeAtom, pFunTy, pTyCon, parens type_] <?> "type"
@@ -156,14 +144,12 @@ type_ = P.choice [typeAtom, pFunTy, pTyCon, parens type_] <?> "type"
             , primtype Bool "bool"
             ]
 
-
 primtype :: TyLit -> Text -> Parser TypePar
 primtype lit text = do
     gs <- spanStart
     lexeme (keyword text)
     loc <- spanEnd gs
     pure (TyLit loc lit)
-
 
 -- TODO: Remove needing semicolon after if, loop, while!
 pStmtColon :: Parser (Maybe StmtPar)
@@ -173,7 +159,6 @@ pStmtColon =
             [ Just <$> sExpression <* semicolon
             , Nothing <$ P.hidden semicolon
             ]
-
 
 if_ :: Parser ExprPar
 if_ = P.label "if" $ do
@@ -185,7 +170,6 @@ if_ = P.label "if" $ do
     info <- spanEnd gs
     pure (If info cond thenB elseB)
 
-
 while :: Parser ExprPar
 while = P.label "while" $ do
     gs <- spanStart
@@ -195,7 +179,6 @@ while = P.label "while" $ do
     info <- spanEnd gs
     pure (While info cond loopBody)
 
-
 loop :: Parser ExprPar
 loop = P.label "loop" $ do
     gs <- spanStart
@@ -203,7 +186,6 @@ loop = P.label "loop" $ do
     body <- block
     info <- spanEnd gs
     pure $ Loop info body
-
 
 ret :: Parser ExprPar
 ret = P.label "return" $ do
@@ -213,7 +195,6 @@ ret = P.label "return" $ do
     info <- spanEnd gs
     pure (Ret info expr)
 
-
 break :: Parser ExprPar
 break = P.label "break" $ do
     gs <- spanStart
@@ -221,7 +202,6 @@ break = P.label "break" $ do
     expr <- P.optional expression
     info <- spanEnd gs
     pure $ Break info expr
-
 
 let_ :: Parser ExprPar
 let_ = P.label "let" $ do
@@ -234,7 +214,6 @@ let_ = P.label "let" $ do
     info <- spanEnd gs
     pure (Let (info, ty) name expr)
 
-
 assignment :: Parser ExprPar
 assignment = P.label "assignment" $ do
     gs <- spanStart
@@ -244,7 +223,6 @@ assignment = P.label "assignment" $ do
         pure (name, assignOp)
     info <- spanEnd gs
     Ass info name op <$> expression
-
 
 match :: Parser ExprPar
 match = do
@@ -284,7 +262,6 @@ match = do
                 loc <- spanEnd gs
                 pure $ PVar loc name
 
-
 assignmentOp :: Parser AssignOp
 assignmentOp =
     P.choice
@@ -295,7 +272,6 @@ assignmentOp =
         , keyword "/=" $> DivAssign
         , keyword "%=" $> ModAssign
         ]
-
 
 block :: Parser BlockPar
 block = uncurry3 Block <$> go
@@ -309,10 +285,8 @@ block = uncurry3 Block <$> go
         info <- spanEnd gs
         pure (info, catMaybes stmts, tail)
 
-
 sExpression :: Parser StmtPar
 sExpression = SExpr NoExtField <$> expression
-
 
 lambda :: Parser ExprPar
 lambda = do
@@ -336,7 +310,6 @@ lambda = do
                     pure $ LamArg (info, Nothing) name
                 )
 
-
 call :: Parser ExprPar
 call = do
     gs <- spanStart
@@ -345,10 +318,8 @@ call = do
     let res = foldl' (\l (info, rs) -> App info l rs) expr args
     pure res
 
-
 expression :: Parser ExprPar
 expression = lambda <|> assignment <|> prattExpr prefixOp infixOp call
-
 
 atom :: Parser ExprPar
 atom =
@@ -380,7 +351,6 @@ atom =
 
         info <- spanEnd gs
         pure (Var (info, namespaceOpt) name)
-
 
 literal :: Parser ExprPar
 literal =
@@ -427,14 +397,12 @@ literal =
         info <- spanEnd gs
         pure (Lit info res)
 
-
 prefixOp :: Parser PrefixOp
 prefixOp =
     P.choice
         [ keyword "!" $> Not
         , keyword "-" $> Neg
         ]
-
 
 infixOp :: Parser BinOp
 infixOp =
@@ -453,7 +421,6 @@ infixOp =
         , keyword "&&" $> And
         , keyword "||" $> Or
         ]
-
 
 defaultBindingPowerTable :: BindingPowerTable PrefixOp BinOp Void
 defaultBindingPowerTable =
@@ -480,7 +447,6 @@ defaultBindingPowerTable =
             , _infixTable
             , _postfixTable
             }
-
 
 prattExpr :: Parser PrefixOp -> Parser BinOp -> Parser ExprPar -> Parser ExprPar
 prattExpr prefixParser infixParser atomParser = exprbp 0

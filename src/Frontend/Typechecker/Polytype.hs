@@ -24,18 +24,15 @@ import Frontend.Typechecker.Types
 import Frontend.Types (NoExtField (NoExtField), TyVar (TyVar), Type (..))
 import Names (Ident (Ident))
 
-
 instantiate_with :: Map TyVar MonoType -> PolyType -> TypeTc
 instantiate_with tbl (PolyType tyvars ty) =
     assert (and [Map.member tyvar tbl | tyvar <- tyvars])
         $ replaceTyVars (Map.map (Type . Mono) tbl) ty
 
-
 instantiate :: Int -> PolyType -> (TypeTc, Int)
 instantiate n (PolyType typevars ty) =
     let tvars_to_replace = Map.fromList $ zipWith (\ty n -> (ty, Monotype n)) typevars [n ..]
      in (replaceTyVars tvars_to_replace ty, n + Map.size tvars_to_replace)
-
 
 replaceTyVars :: Map TyVar TypeTc -> TypeTc -> TypeTc
 replaceTyVars tbl = \case
@@ -45,7 +42,6 @@ replaceTyVars tbl = \case
     t@(TypeVar NoExtField tyvar) -> fromMaybe t (Map.lookup tyvar tbl)
     Type meta -> Type meta
 
-
 occurs :: MonoType -> TypeTc -> Bool
 occurs mono ty = case ty of
     TyLit NoExtField _ -> False
@@ -54,7 +50,6 @@ occurs mono ty = case ty of
     TyFun NoExtField args ret -> any (occurs mono) args || occurs mono ret
     Type (Mono m) -> mono == m
     Type AnyX -> False
-
 
 generalize :: TypeTc -> (PolyType, Substitution)
 generalize ty =
@@ -80,7 +75,6 @@ generalize ty =
             let (monos2, tvars2) = find_all_monotypes t
              in (monos <> monos2, tvars <> tvars2)
 
-
 tvar_names :: Set Ident -> [Ident]
 tvar_names exclude =
     filter (`Set.notMember` exclude)
@@ -88,12 +82,10 @@ tvar_names exclude =
         $ [1 ..]
         >>= flip replicateM ['A' .. 'Z']
 
-
 {- ===== Testing ====== -}
 
 tyvar :: Text -> TypeTc
 tyvar name = TypeVar NoExtField (TyVar $ Ident name)
-
 
 ty :: PolyType
 ty = PolyType [TyVar "a"] $ TyFun NoExtField [tyvar "b", tyvar "a"] (tyvar "a")

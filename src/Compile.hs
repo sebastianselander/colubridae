@@ -60,29 +60,23 @@ import Names (ExplicitName (EName, namespace), Ident (..), Namespace (Namespace)
 import Options (Pass (..))
 import Utils (File (name), zipNE)
 
-
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
     deriving (Show)
-
 
 data DebugOutputs = Debugs {debugs :: [DebugOutput], warnings :: [Text]}
     deriving (Show)
 
-
 instance Semigroup DebugOutputs where
     (<>) (Debugs l1 r1) (Debugs l2 r2) = Debugs (l1 <> l2) (r1 <> r2)
-
 
 instance Monoid DebugOutputs where
     mempty = Debugs [] []
     mappend = (<>)
 
-
 log :: (MonadWriter DebugOutputs m, MonadIO m) => Set Pass -> DebugOutput -> [Text] -> m ()
 log passes_to_log debug@(Debug phase _ _) warnings = do
     when (Set.member phase passes_to_log) $ liftIO $ Text.putStrLn (showDebug debug)
     tell (Debugs [debug] warnings)
-
 
 gatherSymbols :: NonEmpty (File, ModulePar) -> Set ExplicitName
 gatherSymbols =
@@ -103,7 +97,6 @@ gatherSymbols =
         DefFn (Fn _ name _ _ _ _) -> Just name
         DefAdt (Adt _ name _) -> Just name
         DefImport _ -> Nothing
-
 
 compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Ir)
 compile passes files = do
@@ -145,10 +138,8 @@ compile passes files = do
     log passes (Debug Llvm (Just $ llvmOut res) (toStrict $ pShow program)) []
     pure programs
 
-
 runCompile :: Set Pass -> NonEmpty File -> IO (Either Text (NonEmpty Ir), DebugOutputs)
 runCompile passes = runWriterT . runExceptT . compile passes
-
 
 produceAsmFile :: FilePath -> Either Text Ir -> IO FilePath
 produceAsmFile asmFilename ir = do
@@ -168,7 +159,6 @@ produceAsmFile asmFilename ir = do
             hPutStrLn stderr (pack err)
             exitWith (ExitFailure code)
 
-
 produceObjectFile :: FilePath -> FilePath -> IO FilePath
 produceObjectFile asmFilename objectFilename = do
     let process = proc "as" ["--64", asmFilename, "-o", objectFilename]
@@ -179,7 +169,6 @@ produceObjectFile asmFilename objectFilename = do
             hPutStrLn stderr ("Failed producing object file: " <> pack objectFilename)
             hPutStrLn stderr (pack err)
             exitWith (ExitFailure code)
-
 
 linkObjectFiles :: NonEmpty FilePath -> FilePath -> IO FilePath
 linkObjectFiles files out = do
@@ -197,7 +186,6 @@ linkObjectFiles files out = do
             hPutStrLn stderr ("Failed producing executable: " <> pack out)
             hPutStrLn stderr (pack err)
             exitWith (ExitFailure code)
-
 
 produceExecutable ::
     (HasCallStack) => Set Pass -> NonEmpty File -> FilePath -> IO FilePath
@@ -221,7 +209,6 @@ produceExecutable passes files out = do
                 mapM (\file -> produceObjectFile file (replaceExtension file "o")) (preludeFile :| toList asmFiles)
             linkObjectFiles objFiles (buildDir </> out)
 
-
 showDebug :: DebugOutput -> Text
 showDebug (Debug phase pretty normal) =
     unlines
@@ -231,7 +218,6 @@ showDebug (Debug phase pretty normal) =
         , fromMaybe "" pretty
         , ""
         ]
-
 
 showDebugs :: Set Pass -> DebugOutputs -> Text
 showDebugs dumps (Debugs debugs warnings) =

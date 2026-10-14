@@ -19,24 +19,18 @@ import Frontend.Types
     )
 import Names (ExplicitName (..), Ident (..), Namespace (Namespace))
 
-
 newtype Builtins a = Builtins (Map ExplicitName (PolyType, SourceInfo))
 
-
 deriving instance (Forall Show a) => Show (Builtins a)
-
 
 names :: Builtins a -> Set ExplicitName
 names (Builtins builtins) = Set.fromList (Map.keys builtins)
 
-
 isBuiltin :: ExplicitName -> Builtins a -> Bool
 isBuiltin name (Builtins m) = isJust $ Map.lookup name m
 
-
 lookup :: ExplicitName -> Builtins a -> Maybe (PolyType, SourceInfo)
 lookup name (Builtins m) = Map.lookup name m
-
 
 builtins :: Builtins Tc
 builtins =

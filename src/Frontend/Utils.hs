@@ -4,7 +4,6 @@ import Relude
 
 import Frontend.Types (SourceInfo, TyParamList (..), TyVar)
 
-
 isUnique :: TyParamList -> Maybe (SourceInfo, TyVar)
 isUnique (Params _ []) = Nothing
 isUnique (Params loc xs) = go (reverse (toList xs))

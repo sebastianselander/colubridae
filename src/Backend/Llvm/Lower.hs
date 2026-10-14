@@ -14,10 +14,8 @@ import Backend.Types (Type (..))
 import Impossible (__IMPOSSIBLE__)
 import Names (ExplicitName (..))
 
-
 target :: Doc ann
 target = "target triple = \"x86_64-pc-linux-gnu\""
-
 
 libc :: Doc ann
 libc =
@@ -27,18 +25,14 @@ libc =
         , "declare ptr @malloc(i64)"
         ]
 
-
 llvmOut :: (Pretty a) => a -> Text
 llvmOut = renderStrict . layoutPretty (LayoutOptions {layoutPageWidth = Unbounded}) . pretty
-
 
 indentLevel :: Int
 indentLevel = 4
 
-
 indentedBlock :: [Named Instruction] -> Doc ann
 indentedBlock instr = indent indentLevel (hcat $ punctuate hardline (fmap pretty instr))
-
 
 instance Pretty Ir where
     pretty (IrMain decls) =
@@ -53,7 +47,6 @@ instance Pretty Ir where
             <> libc
             <> hardline
             <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
-
 
 instance Pretty Decl where
     pretty (TypeDefinition name ty) =
@@ -101,7 +94,6 @@ instance Pretty Decl where
                     <> if ellipsis == Ellipsis then ", ..." else ""
                 )
 
-
 instance Pretty Type where
     pretty = \case
         I n -> "i" <> show n
@@ -118,7 +110,6 @@ instance Pretty Type where
         Mut ty -> pretty ty
         TyCon name -> "%" <> pretty name
 
-
 instance Pretty Constant where
     pretty = \case
         LInt _ int -> show int
@@ -133,7 +124,6 @@ instance Pretty Constant where
                 $ fmap (\x -> pretty (typeOf x) <+> pretty x) constants
         Undef _ -> "undef"
         GlobalReference _ name -> "@" <> pretty name
-
 
 instance Pretty Instruction where
     pretty = \case
@@ -184,18 +174,14 @@ instance Pretty Instruction where
                         (fmap ((\(l, r) -> l <> comma <+> "label %" <> r) . bimap typed pretty) pairs)
                     )
 
-
 commasep :: [Doc ann] -> Doc ann
 commasep = concatWith (surround (comma <> space))
-
 
 typed :: (Pretty a, Typed a) => a -> Doc ann
 typed a = pretty (typeOf a) <+> pretty a
 
-
 instance Pretty Label where
     pretty (L name) = pretty name
-
 
 instance Pretty CmpOp where
     pretty = \case
@@ -206,7 +192,6 @@ instance Pretty CmpOp where
         LlvmGe -> "sge"
         LlvmLe -> "sle"
 
-
 instance Pretty ArithOp where
     pretty = \case
         LlvmAdd -> "add"
@@ -215,12 +200,10 @@ instance Pretty ArithOp where
         LlvmRem -> "urem"
         LlvmDiv -> "udiv"
 
-
 instance Pretty Operand where
     pretty = \case
         LocalReference _ name -> "%" <> pretty name
         ConstantOperand constant -> pretty constant
-
 
 instance (Pretty a) => Pretty (Named a) where
     pretty (Named name a) = "%" <> pretty name <+> "=" <+> pretty a

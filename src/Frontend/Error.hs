@@ -26,7 +26,6 @@ import Frontend.Types (SourceInfo (..), Span (..), TyVar)
 import Names (ExplicitName (oldname), Namespace)
 import Utils (indent, quote)
 
-
 data RnError
     = UnboundVariable SourceInfo ExplicitName
     | UnboundType SourceInfo ExplicitName
@@ -36,7 +35,6 @@ data RnError
     | UnboundImport SourceInfo Namespace
     | FreeVarsNotAllowed SourceInfo ExplicitName
     deriving (Show)
-
 
 data TcError
     = TyExpectedGot SourceInfo [ExprRn] [TypeTc] TypeTc
@@ -53,45 +51,35 @@ data TcError
     | ExpectedPatNArgs SourceInfo [ExprRn] PatternRn Int Int
     deriving (Show)
 
-
 data ChError
     = BreakOutsideLoop SourceInfo
     | MissingReturn SourceInfo ExplicitName
     | UnreachableStatement SourceInfo
     deriving (Show)
 
-
 data TcWarning = MakeExpressionBreak SourceInfo ExprTc
     deriving (Show)
-
 
 class Report a where
     report :: a -> Text
 
-
 instance Report (ParseErrorBundle Text CustomParseError) where
     report = pack . errorBundlePretty
-
 
 instance (Report a) => Report [a] where
     report xs = intercalate "\n\n" $ fmap report xs
 
-
 instance Report RnError where
     report = reportRnError
-
 
 instance Report TcError where
     report = reportTcError
 
-
 instance Report TcWarning where
     report = show
 
-
 instance Report ChError where
     report = show
-
 
 reportRnError :: RnError -> Text
 reportRnError err = case err of
@@ -108,7 +96,6 @@ reportRnError err = case err of
         combineRn
             loc
             (unwords ["Capturing variable: `", quote $ pThing name.oldname, "` not allowed in this context"])
-
 
 reportTcError :: TcError -> Text
 reportTcError err = case err of
@@ -195,10 +182,8 @@ reportTcError err = case err of
                 ]
             )
 
-
 combineRn :: SourceInfo -> Text -> Text
 combineRn info msg = mconcat [reportSourceInfo info, ":\n", indent 2 ("* " <> msg)]
-
 
 combineTc :: SourceInfo -> [ExprRn] -> Text -> Text
 combineTc info expr msg =
@@ -218,7 +203,6 @@ combineTc info expr msg =
                         ("\n" <> Text.unlines (barAndLine line $ Text.lines (pThing expr)))
             ]
 
-
 barAndLine :: Maybe Int -> [Text] -> [Text]
 barAndLine n ys = go n ys
   where
@@ -235,7 +219,6 @@ barAndLine n ys = go n ys
         maxIndent Nothing _ = 0
         maxIndent (Just line) xs = length $ show @String $ line + length xs
 
-
 reportSourceInfo :: SourceInfo -> Text
 reportSourceInfo info = do
     let path = pack info.sourceFile
@@ -243,7 +226,6 @@ reportSourceInfo info = do
             let (Span (startRow, startCol) (_endRow, _endCol)) = info.spanInfo
             pure $ mconcat [show $ unPos startRow, ":", show $ unPos startCol]
     mconcat [path, ":", fromMaybe "?:?" pos]
-
 
 tyExpectedGot' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) =>
@@ -255,7 +237,6 @@ tyExpectedGot' a c d = do
     exprStack <- view exprStack
     refute (return $ TyExpectedGot a exprStack c d)
 
-
 tyExpectedGot ::
     (MonadReader Ctx m, MonadValidate [TcError] m) =>
     SourceInfo ->
@@ -266,13 +247,11 @@ tyExpectedGot a c d = do
     exprStack <- view exprStack
     dispute (return $ TyExpectedGot a exprStack c d)
 
-
 immutableVariable' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m a
 immutableVariable' a name = do
     exprStack <- view exprStack
     refute (return $ ImmutableVariable a exprStack name)
-
 
 immutableVariable ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m ()
@@ -280,13 +259,11 @@ immutableVariable a c = do
     exprStack <- view exprStack
     dispute (return $ ImmutableVariable a exprStack c)
 
-
 emptyReturnNonUnit' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
 emptyReturnNonUnit' a c = do
     exprStack <- view exprStack
     refute (return $ EmptyReturnNonUnit a exprStack c)
-
 
 emptyReturnNonUnit ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
@@ -294,13 +271,11 @@ emptyReturnNonUnit a c = do
     exprStack <- view exprStack
     dispute (return $ EmptyReturnNonUnit a exprStack c)
 
-
 applyNonFunction' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
 applyNonFunction' a c = do
     exprStack <- view exprStack
     refute (return $ ApplyNonFunction a exprStack c)
-
 
 applyNonFunction ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
@@ -308,13 +283,11 @@ applyNonFunction a c = do
     exprStack <- view exprStack
     dispute (return $ ApplyNonFunction a exprStack c)
 
-
 partiallyAppliedFunction' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
 partiallyAppliedFunction' a c d = do
     exprStack <- view exprStack
     refute (return $ PartiallyAppliedFunction a exprStack c d)
-
 
 partiallyAppliedFunction ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
@@ -322,13 +295,11 @@ partiallyAppliedFunction a c d = do
     exprStack <- view exprStack
     dispute (return $ PartiallyAppliedFunction a exprStack c d)
 
-
 tooManyArguments' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
 tooManyArguments' a c d = do
     exprStack <- view exprStack
     refute (return $ TooManyArguments a exprStack c d)
-
 
 tooManyArguments ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
@@ -336,13 +307,11 @@ tooManyArguments a c d = do
     exprStack <- view exprStack
     dispute (return $ TooManyArguments a exprStack c d)
 
-
 assignNonVariable' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m a
 assignNonVariable' a c = do
     exprStack <- view exprStack
     refute (return $ AssignNonVariable a exprStack c)
-
 
 assignNonVariable ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m ()
@@ -350,13 +319,11 @@ assignNonVariable a c = do
     exprStack <- view exprStack
     dispute (return $ AssignNonVariable a exprStack c)
 
-
 expectingImmutable' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> m a
 expectingImmutable' a = do
     exprStack <- view exprStack
     refute (return $ ExpectingImmutable a exprStack)
-
 
 expectingImmutable ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> m ()
@@ -364,13 +331,11 @@ expectingImmutable a = do
     exprStack <- view exprStack
     dispute (return $ ExpectingImmutable a exprStack)
 
-
 typeMustBeKnown' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m a
 typeMustBeKnown' a c = do
     exprStack <- view exprStack
     refute (return $ TypeMustBeKnown a exprStack c)
-
 
 typeMustBeKnown ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> ExplicitName -> m ()
@@ -378,13 +343,11 @@ typeMustBeKnown a c = do
     exprStack <- view exprStack
     dispute (return $ TypeMustBeKnown a exprStack c)
 
-
 expectedTyGotLambda' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m a
 expectedTyGotLambda' a c = do
     exprStack <- view exprStack
     refute (return $ ExpectedTyGotLambda a exprStack c)
-
 
 expectedTyGotLambda ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> TypeTc -> m ()
@@ -392,13 +355,11 @@ expectedTyGotLambda a c = do
     exprStack <- view exprStack
     dispute (return $ ExpectedTyGotLambda a exprStack c)
 
-
 expectedLambdaNArgs' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m a
 expectedLambdaNArgs' a c d = do
     exprStack <- view exprStack
     refute (return $ ExpectedLambdaNArgs a exprStack c d)
-
 
 expectedLambdaNArgs ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> Int -> Int -> m ()
@@ -406,13 +367,11 @@ expectedLambdaNArgs a c d = do
     exprStack <- view exprStack
     dispute (return $ ExpectedLambdaNArgs a exprStack c d)
 
-
 expectedPatNArgs ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m ()
 expectedPatNArgs loc pat expected got = do
     exprStack <- view exprStack
     dispute (return $ ExpectedPatNArgs loc exprStack pat expected got)
-
 
 expectedPatNArgs' ::
     (MonadReader Ctx m, MonadValidate [TcError] m) => SourceInfo -> PatternRn -> Int -> Int -> m a
@@ -420,14 +379,11 @@ expectedPatNArgs' loc pat expected got = do
     exprStack <- view exprStack
     refute (return $ ExpectedPatNArgs loc exprStack pat expected got)
 
-
 importDoesNotExist' :: (MonadValidate [RnError] m) => SourceInfo -> Namespace -> m a
 importDoesNotExist' loc = refute . return . UnboundImport loc
 
-
 importDoesNotExist :: (MonadValidate [RnError] m) => SourceInfo -> Namespace -> m ()
 importDoesNotExist loc = dispute . return . UnboundImport loc
-
 
 $(gen All "RnError")
 $(gen All "ChError")

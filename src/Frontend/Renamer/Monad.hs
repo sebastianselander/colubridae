@@ -46,7 +46,6 @@ import Frontend.Typechecker.Types (Tc)
 import Frontend.Types (Boundedness (..))
 import Names (ExplicitName (EName), Ident (..), Namespace)
 
-
 data Env = Env
     { _numbering :: Map Ident Int
     , _scope :: NonEmpty (Map Ident ExplicitName)
@@ -55,10 +54,8 @@ data Env = Env
     }
     deriving (Show)
 
-
 newtype SymbolTable = SymbolTable {symbols :: Map Namespace Symbols}
     deriving (Monoid, Semigroup, Show)
-
 
 data Symbols = Symbols
     { functions :: Map Ident ExplicitName
@@ -73,7 +70,6 @@ data Symbols = Symbols
     }
     deriving (Show)
 
-
 data Ctx = Ctx
     { _freeVarsAllowed :: Bool
     , _symbolTable :: SymbolTable
@@ -82,10 +78,8 @@ data Ctx = Ctx
     }
     deriving (Show)
 
-
 $(makeLenses ''Env)
 $(makeLenses ''Ctx)
-
 
 newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
     deriving
@@ -97,7 +91,6 @@ newtype Gen a = Gen {runGen' :: StateT Env (ReaderT Ctx (Validate [RnError])) a}
         , MonadValidate [RnError]
         )
 
-
 emptyEnv :: Env
 emptyEnv =
     Env
@@ -107,10 +100,8 @@ emptyEnv =
         , _importName = mempty
         }
 
-
 createCtx :: SymbolTable -> Namespace -> Builtins Tc -> Ctx
 createCtx = Ctx True
-
 
 runGen :: Env -> Ctx -> Gen a -> Either [RnError] a
 runGen env ctx =
@@ -119,17 +110,14 @@ runGen env ctx =
         . flip evalStateT env
         . runGen'
 
-
 lookupFunction ::
     (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
 lookupFunction namespace name =
     views symbolTable (Map.lookup name . functions <=< Map.lookup namespace . symbols)
 
-
 lookupType ::
     (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
 lookupType namespace name = views symbolTable (Map.lookup name . datatypes <=< Map.lookup namespace . symbols)
-
 
 lookupConstructor ::
     (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe ExplicitName)
@@ -141,7 +129,6 @@ lookupConstructor namespace name =
             <=< Map.lookup namespace
             . symbols
         )
-
 
 boundArg ::
     (MonadState Env m, MonadReader Ctx m) => Ident -> m (Maybe (Boundedness, ExplicitName))
@@ -157,7 +144,6 @@ boundArg name = do
         Just info -> pure info
         Nothing -> findArg name xs
 
-
 lookupBuiltin :: (MonadReader Ctx m) => Namespace -> Ident -> m (Maybe (Boundedness, ExplicitName))
 lookupBuiltin namespace name = do
     map <- view builtins
@@ -165,7 +151,6 @@ lookupBuiltin namespace name = do
     if isBuiltin name' map
         then pure (Just (Builtin, name'))
         else pure Nothing
-
 
 {-| Checks if a variable is bound in the closest scope
   | It does *not* check if a variable is completely unbound
@@ -184,7 +169,6 @@ boundVar name = do
         Just name' -> pure name'
         Nothing -> findVar name xs
 
-
 -- | Insert and rename a variable into the outermost scope
 insertVar :: (MonadReader Ctx m, MonadState Env m) => Ident -> m ExplicitName
 insertVar name@(Ident nm) = do
@@ -198,7 +182,6 @@ insertVar name@(Ident nm) = do
     modifying numbering (Map.insert name n)
     pure name'
 
-
 insertArg :: (MonadState Env m) => Namespace -> Ident -> m ExplicitName
 insertArg namespace name@(Ident nm) = do
     numb <- use numbering
@@ -210,14 +193,11 @@ insertArg namespace name@(Ident nm) = do
     assign arguments args
     pure name'
 
-
 insertImportName :: (MonadState Env m) => Namespace -> Namespace -> m ()
 insertImportName name path = modifying importName (Map.insert name path)
 
-
 resetArgs :: (MonadState Env m) => m ()
 resetArgs = assign arguments (mempty :| [])
-
 
 newContext :: Gen a -> Gen a
 newContext rn = do

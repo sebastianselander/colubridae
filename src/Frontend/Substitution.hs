@@ -38,10 +38,8 @@ import Frontend.Types
       (~~),
     )
 
-
 newtype Substitution = Subst (Map TypeTc TypeTc)
     deriving (Data, Eq, Ord, Show)
-
 
 pretty :: Substitution -> Text
 pretty (Subst m) =
@@ -52,24 +50,19 @@ pretty (Subst m) =
             [show (Pretty.pretty k) <> " == " <> show (Pretty.pretty v) | (k, v) <- Map.toList m]
         <> " ]"
 
-
 empty :: Substitution
 empty = Subst Map.empty
-
 
 singleton :: TypeTc -> TypeTc -> Substitution
 singleton tyvar ty = Subst (Map.singleton tyvar ty)
 
-
 lookup :: (Ord (TypeTc)) => TypeTc -> Substitution -> Maybe TypeTc
 lookup tyvar (Subst sub) = Map.lookup tyvar sub
-
 
 insert :: (Ord TypeTc) => TypeTc -> TypeTc -> Substitution -> Maybe Substitution
 insert tyvar ty (Subst sub)
     | Just found <- Map.lookup tyvar sub = if found ~~ ty then Just (Subst sub) else Nothing
     | otherwise = Just (Subst (Map.insert tyvar ty sub))
-
 
 {-
 apply (compose a b) t == apply a (apply b) t
@@ -80,7 +73,6 @@ might depend on some result from the first
 compose :: Substitution -> Substitution -> Substitution
 compose sub1@(Subst m1) (Subst m2) = Subst $ Map.map (apply sub1) m2 `Map.union` m1
 
-
 substitute :: Substitution -> TypeTc -> TypeTc
 substitute sub ty = case ty of
     Type (Mono _) -> fromMaybe ty (lookup ty sub)
@@ -90,10 +82,8 @@ substitute sub ty = case ty of
     TyLit _ _ -> ty
     TyCon _ _ -> ty
 
-
 class Substitute t where
     apply :: Substitution -> t -> t
-
 
 instance Substitute TypeTc where
     apply sub ty = case ty of
@@ -103,7 +93,6 @@ instance Substitute TypeTc where
         TypeVar NoExtField _ -> fromMaybe ty (lookup ty sub)
         TyLit NoExtField _ -> fromMaybe ty (lookup ty sub)
         TyCon NoExtField _ -> fromMaybe ty (lookup ty sub)
-
 
 instance Substitute ExprTc where
     apply sub expr = case expr of
@@ -124,14 +113,11 @@ instance Substitute ExprTc where
         Match (loc, ty) scrutinee matchArms -> Match (loc, apply sub ty) (apply sub scrutinee) (fmap (apply sub) matchArms)
         Expr (TypeApp expr type_args) -> Expr (TypeApp (apply sub expr) (fmap (apply sub) type_args))
 
-
 instance Substitute LamArgTc where
     apply sub (LamArg ty name) = LamArg (apply sub ty) name
 
-
 instance Substitute MatchArmTc where
     apply sub (MatchArm loc pat expr) = MatchArm loc (apply sub pat) (apply sub expr)
-
 
 instance Substitute PatternTc where
     apply sub pat = case pat of
@@ -139,18 +125,14 @@ instance Substitute PatternTc where
         PEnumCon (loc, ty) name -> PEnumCon (loc, apply sub ty) name
         PFunCon (loc, ty) name pats -> PFunCon (loc, apply sub ty) name (fmap (apply sub) pats)
 
-
 instance Substitute BlockTc where
     apply sub (Block (loc, ty) stmts mret) = Block (loc, apply sub ty) (fmap (apply sub) stmts) (fmap (apply sub) mret)
-
 
 instance Substitute StmtTc where
     apply sub (SExpr NoExtField expr) = SExpr NoExtField (apply sub expr)
 
-
 instance Substitute StmtType where
     apply sub d = over stmtType (apply sub) $ over varType (apply sub) d
-
 
 instance Substitute PolyType where
     apply sub (PolyType tvars ty) = PolyType tvars (apply sub ty)
