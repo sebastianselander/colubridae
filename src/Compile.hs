@@ -135,7 +135,7 @@ compile passes files = do
     log passes (Debug Core (Just $ prettyCore program) "") []
 
     let programs = assemble program
-    log passes (Debug Llvm (Just $ llvmOut res) (toStrict $ pShow program)) []
+    log passes (Debug Llvm (Just $ llvmOut programs) (toStrict $ pShow programs)) []
     pure programs
 
 runCompile :: Set Pass -> NonEmpty File -> IO (Either Text (NonEmpty Ir), DebugOutputs)
