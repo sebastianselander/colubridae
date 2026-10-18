@@ -53,7 +53,7 @@ instance Pretty ImportTc where
 instance Pretty AdtTc where
     pretty (Adt _ name typarams cons) =
         "type"
-            <+> Pretty.pretty name.name
+            <+> Pretty.pretty name.oldname
                 <> Pretty.angles (Pretty.pretty typarams)
             <+> Pretty.braces
                 ( Pretty.hardline
@@ -68,9 +68,9 @@ instance Pretty AdtTc where
 
 instance Pretty ConstructorTc where
     pretty = \case
-        EnumCons _ name -> Pretty.pretty name.name
+        EnumCons _ name -> Pretty.pretty name.oldname
         FunCons _ name types ->
-            Pretty.pretty name.name
+            Pretty.pretty name.oldname
                 <> Pretty.parens
                     (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap Pretty.pretty types))
 
@@ -83,7 +83,7 @@ instance Pretty TyParamList where
 instance Pretty FnTc where
     pretty (Fn _ name tyParams args ty block) =
         "def"
-            <+> Pretty.pretty name.name
+            <+> Pretty.pretty name.oldname
                 <> Pretty.pretty tyParams
                 <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty args))
             <+> "->"
@@ -105,7 +105,7 @@ instance Pretty StmtTc where
     pretty (SExpr NoExtField expr) = Pretty.pretty expr <> Pretty.semi
 
 instance Pretty ArgTc where
-    pretty (Arg NoExtField name ty) = Pretty.pretty name.name <> ":" <+> Pretty.pretty ty
+    pretty (Arg NoExtField name ty) = Pretty.pretty name.oldname <> ":" <+> Pretty.pretty ty
 
 instance Pretty TypeTc where
     pretty = prettyType1
@@ -180,18 +180,18 @@ prettyExpr7 :: ExprTc -> Doc ann
 prettyExpr7 e@BinOp {} = Pretty.parens (Pretty.pretty e)
 prettyExpr7 e@Prefix {} = Pretty.parens (Pretty.pretty e)
 prettyExpr7 (Lit _ lit) = Pretty.pretty lit
-prettyExpr7 (Var (_, ty, _) name) = Pretty.parens $ Pretty.pretty name.name <> ":" <+> Pretty.pretty ty
+prettyExpr7 (Var (_, ty, _) name) = Pretty.parens $ Pretty.pretty name.oldname <> ":" <+> Pretty.pretty ty
 prettyExpr7 (App _ l rs) =
     Pretty.pretty l
         <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty rs))
 prettyExpr7 (Let (StmtType {_varType = ty}) name e) =
     "let"
-        <+> Pretty.pretty name.name
+        <+> Pretty.pretty name.oldname
             <> ":"
             <> Pretty.pretty ty
         <+> "="
         <+> Pretty.pretty e
-prettyExpr7 (Ass _ name op e) = Pretty.pretty name.name <+> Pretty.pretty op <+> Pretty.pretty e
+prettyExpr7 (Ass _ name op e) = Pretty.pretty name.oldname <+> Pretty.pretty op <+> Pretty.pretty e
 prettyExpr7 (Ret _ Nothing) = "return"
 prettyExpr7 (Ret _ (Just e)) = "return" <+> Pretty.pretty e
 prettyExpr7 (EBlock _ block) = Pretty.pretty block
@@ -232,7 +232,7 @@ instance Pretty PatternTc where
         PVar _ varName -> Pretty.pretty varName.name
         PEnumCon _ conName -> Pretty.pretty conName.name
         PFunCon _ conName pats ->
-            Pretty.pretty conName.name
+            Pretty.pretty conName.oldname
                 <> Pretty.parens
                     ( Pretty.concatWith
                         (Pretty.surround (Pretty.comma <> Pretty.space))
@@ -240,7 +240,7 @@ instance Pretty PatternTc where
                     )
 
 instance Pretty LamArgTc where
-    pretty (LamArg ty name) = Pretty.parens (Pretty.pretty name.name <+> Pretty.pretty ty)
+    pretty (LamArg ty name) = Pretty.parens (Pretty.pretty name.oldname <+> Pretty.pretty ty)
 
 instance Pretty LitTc where
     pretty lit = case lit of

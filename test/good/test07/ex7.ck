@@ -1,6 +1,6 @@
 def main() {
     let i = 0;
-    let x = loop {
+    let x: int = loop {
         i += 1;
         if (i > 10) {
             break 69420
