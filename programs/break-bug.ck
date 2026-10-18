@@ -2,9 +2,11 @@ type Foo {
     Foo,
 }
 def main() {
-    loop {
+    let x: int = loop {
         match Foo {
-            Foo => break,
+            Foo => break 123,
+            Foo => 123,
         }
-    }
+    };
+    std::printInt(x)
 }
