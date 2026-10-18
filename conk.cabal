@@ -59,6 +59,7 @@ library
     Frontend.Renamer.Monad
     Frontend.Renamer.Pretty
     Frontend.Renamer.Rn
+    Frontend.Renamer.SymbolTable
     Frontend.Renamer.Types
     Frontend.StatementCheck
     Frontend.Substitution
