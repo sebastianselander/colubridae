@@ -172,6 +172,9 @@ malloc ty operand = do
 store :: Operand -> Operand -> IRBuilder ()
 store lop rop = unnamed (Store lop rop)
 
+unreachable :: IRBuilder ()
+unreachable = unnamed Unreachable
+
 load :: Type -> Operand -> IRBuilder Operand
 load ty operand = LocalReference ty <$> named (Load operand)
 
@@ -266,3 +269,6 @@ blankline = unnamed Blankline
 
 undef :: Type -> Operand
 undef = ConstantOperand . Undef
+
+poison :: Type -> Operand
+poison = ConstantOperand . Poison

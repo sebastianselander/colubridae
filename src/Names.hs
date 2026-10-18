@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Names
     ( Ident (..),
@@ -64,9 +63,8 @@ data ExplicitName = EName {namespace :: Namespace, name :: Ident, oldname :: Ide
 
 instance Pretty ExplicitName where
     pretty name =
-        Pretty.dquotes
-            $ Pretty.pretty name.namespace
-            <> "::"
+        Pretty.pretty name.namespace
+            <> "."
             <> Pretty.pretty name.name
 
 instance Eq ExplicitName where
@@ -79,7 +77,7 @@ instance Pretty Ident where
     pretty (Ident name) = pretty name
 
 instance Pretty Namespace where
-    pretty (Namespace list) = concatWith (surround "::") $ fmap pretty list
+    pretty (Namespace list) = concatWith (surround ".") $ fmap pretty list
 
 append :: Text -> Ident -> Ident
 append suffix (Ident name) = Ident (name <> suffix)

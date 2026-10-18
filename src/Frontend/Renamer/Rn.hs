@@ -15,9 +15,7 @@ import Control.Lens.Setter (assign)
 import Control.Monad.Validate (MonadValidate (dispute, refute), runValidate)
 import Data.Foldable (foldrM)
 import Data.List.NonEmpty ((<|))
-import Data.Text.Lazy (unpack)
 import Relude hiding (intercalate)
-import Text.Pretty.Simple (pShow)
 
 import Data.Map qualified as Map
 import Data.Set qualified as Set
@@ -29,7 +27,7 @@ import Frontend.Renamer.Monad
 import Frontend.Renamer.Types
 import Frontend.Types
 import Frontend.Utils (isUnique)
-import Names (ExplicitName (EName), Ident (..), Namespace (Namespace))
+import Names (ExplicitName (EName), Ident (..), Namespace (..))
 import Utils (listify')
 
 import Frontend.Builtin qualified as Builtins
@@ -166,9 +164,9 @@ rnImport (ImportExplicit loc namespace imports) = do
 rnImport (XImport extraimport) = rnExtraImport extraimport
   where
     rnExtraImport :: ExtraImports SourceInfo -> Gen ImportRn
-    rnExtraImport (ImportAs namespace name loc) = do
+    rnExtraImport (ImportAs namespace (Ident asname) loc) = do
         symbols <- views symbolTable (Map.lookup namespace . symbols)
-        insertImportName name namespace
+        insertImportName (Namespace (asname :| [])) namespace
         case symbols of
             Nothing -> unboundImport' loc namespace
             Just symbols -> do
@@ -187,13 +185,14 @@ rnImport (XImport extraimport) = rnExtraImport extraimport
                 pure (ImportExplicit loc namespace functions)
 
 rnAdt :: AdtPar -> Gen AdtRn
-rnAdt (Adt loc name@(Ident nm) constructors) = do
+rnAdt (Adt loc name@(Ident nm) typarams constructors) = do
     namespace <- view namespace
     let typeNamespace = Namespace (nm :| [])
-    Adt loc (EName namespace name name) <$> mapM (rnConstructor typeNamespace) constructors
+    Adt loc (EName namespace name name) typarams
+        <$> mapM (rnConstructor typeNamespace typarams) constructors
 
-rnConstructor :: Namespace -> ConstructorPar -> Gen ConstructorRn
-rnConstructor typeNamespace con = do
+rnConstructor :: Namespace -> TyParamList -> ConstructorPar -> Gen ConstructorRn
+rnConstructor typeNamespace typarams con = do
     namespace <- view namespace
     case con of
         EnumCons loc name -> do
@@ -222,7 +221,7 @@ rnConstructor typeNamespace con = do
                         <=< Map.lookup namespace
                         . symbols
                     )
-            types <- mapM (renameType emptyTyParamList) types
+            types <- mapM (renameType typarams) types
             name <-
                 maybe
                     ( unboundVariable'
@@ -398,13 +397,13 @@ getTypeNames :: Namespace -> [DefPar] -> [(SourceInfo, ExplicitName)]
 getTypeNames namespace = listify' adtName
   where
     adtName :: AdtPar -> Maybe (SourceInfo, ExplicitName)
-    adtName (Adt info name _) = Just (info, EName namespace name name)
+    adtName (Adt info name typarams _) = Just (info, EName namespace name name)
 
 getConstructorNames :: Namespace -> [DefPar] -> [[(SourceInfo, ExplicitName)]]
 getConstructorNames namespace = listify' adtName
   where
     adtName :: AdtPar -> Maybe [(SourceInfo, ExplicitName)]
-    adtName (Adt _ _ cons) = Just (fmap conName cons)
+    adtName (Adt _ _ typarams cons) = Just (fmap conName cons)
       where
         conName :: ConstructorPar -> (SourceInfo, ExplicitName)
         conName (EnumCons loc name) = (loc, EName namespace name name)
@@ -447,7 +446,9 @@ renameType typeParams ty = do
     namespace <- view namespace
     userDefinedTypes <- views symbolTable (fmap datatypes . Map.lookup namespace . symbols)
     case ty of
-        TyCon _ name -> pure (TyCon NoExtField (EName namespace name name))
+        TyCon _ name params -> do
+            params <- mapM (renameType typeParams) params
+            pure (TyCon NoExtField (EName namespace name name) params)
         TypeVar _ tyvar -> pure (TypeVar NoExtField tyvar)
         TyLit _ lit -> pure (TyLit NoExtField lit)
         TyFun _ args ret -> TyFun NoExtField <$> mapM (renameType typeParams) args <*> renameType typeParams ret
@@ -455,7 +456,7 @@ renameType typeParams ty = do
             | isTypeVar unresolved typeParams -> pure (TypeVar NoExtField (tyVarOf unresolved))
             | Just types <- userDefinedTypes
             , Just name <- Map.lookup (nameOf unresolved) types ->
-                pure (TyCon NoExtField name)
+                pure (TyCon NoExtField name [])
             | let name = EName namespace (nameOf unresolved) (nameOf unresolved)
             , otherwise ->
                 refute [UnboundType loc name]

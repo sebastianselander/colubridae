@@ -149,8 +149,11 @@ type instance XExprStmt Tc = NoExtField
 
 type instance XApp Tc = TcInfo
 
+data NodeType = Function | Constructor
+    deriving (Data, Eq, Ord, Show)
+
 -- FIXME: Make this unique to function calls (and perhaps constructors, or make a separate one) and remove Toplevel from boundedness
-data TypeApp = TypeApp {expr :: ExprTc, type_args :: [TypeTc]}
+data TypeApp = TypeApp {expr :: ExprTc, type_args :: [TypeTc], nodeType :: NodeType}
     deriving (Data, Show)
 
 type instance XExpr Tc = TypeApp

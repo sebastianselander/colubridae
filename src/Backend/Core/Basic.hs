@@ -162,7 +162,7 @@ dsDef (Tc.DefImport (ImportExplicit tys namespace names)) = zipWithM (declare na
         Decl namespace <$> dsType fnType.retType <*> pure name <*> mapM dsType fnType.argTypes
 
 dsAdt :: Tc.AdtTc -> DsM [Def]
-dsAdt (Tc.Adt _loc name constructors) = do
+dsAdt (Tc.Adt _loc name typarams constructors) = do
     alloc <- constructorAllocSize constructors
     funs <- mapWithIndexM mkConstructorFunction constructors
     case alloc of
@@ -296,7 +296,7 @@ dsExpr = \case
         matchArms <- dsMatchArms matchArms
         matchArms <- extractCatch loc matchArms
         named $ pure $ Typed ty $ uncurry (Match scrutinee) matchArms
-    Tc.Expr (Tc.TypeApp expr _) -> dsExpr expr
+    Tc.Expr (Tc.TypeApp expr _ _) -> dsExpr expr
 
 -- TODO: Really reconsider if this is the logic we want
 extractCatch :: SourceInfo -> [Either MatchArm Catch] -> DsM ([MatchArm], Catch)
@@ -345,14 +345,14 @@ dsPat = \case
         let toVar (Tc.PVar (_, ty) name) = do
                 ty <- dsType ty
                 pure (name, ty)
-            toVar _ = __IMPOSSIBLE__
+            toVar _ = error "INTERNAL ERROR: Nested pattern matches not supported yet" __IMPOSSIBLE__
         Right . PCon index <$> mapM toVar nestedPats
 
 dsType :: (Monad m) => Tc.TypeTc -> m Type
 dsType = \case
-    Tc.Type (Mono _) -> pure OpaquePointer -- NOTE: Should be impossible
+    Tc.Type (Mono _) -> __IMPOSSIBLE__ -- NOTE: Should be impossible
     Tc.TypeVar _ _ -> pure OpaquePointer
-    Tc.TyCon NoExtField name -> pure (TyCon name)
+    Tc.TyCon NoExtField name _ -> pure (TyCon name)
     Tc.TyLit NoExtField Tc.Unit -> pure Unit
     Tc.TyLit NoExtField Tc.String -> pure (PointerType (I 8))
     Tc.TyLit NoExtField Tc.Char -> pure (I 8)

@@ -194,7 +194,7 @@ insertArg namespace name@(Ident nm) = do
     pure name'
 
 insertImportName :: (MonadState Env m) => Namespace -> Namespace -> m ()
-insertImportName name path = modifying importName (Map.insert name path)
+insertImportName asname path = modifying importName (Map.insert asname path)
 
 resetArgs :: (MonadState Env m) => m ()
 resetArgs = assign arguments (mempty :| [])

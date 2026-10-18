@@ -13,6 +13,8 @@ import Frontend.Parser.Types
 import Frontend.Types hiding (toList)
 import Names (Ident (..))
 
+import Frontend.Types qualified
+
 prettyRenamer :: (Pretty a) => a -> Text
 prettyRenamer = show . Pretty.pretty
 
@@ -46,13 +48,14 @@ instance Pretty ImportPar where
     pretty (XImport extraImports) = pretty extraImports
 
 instance (Show a) => Pretty (ExtraImports a) where
-    pretty (ImportAs namespace name _a) = "import" <+> Pretty.pretty namespace <+> "as" <+> Pretty.pretty name
+    pretty (ImportAs namespace asname _a) = "import" <+> Pretty.pretty namespace <+> "as" <+> Pretty.pretty asname
     pretty (ImportQualified namespace _a) = "import" <+> Pretty.pretty namespace
 
 instance Pretty AdtPar where
-    pretty (Adt _ name cons) =
+    pretty (Adt _ name typarams cons) =
         "type"
             <+> Pretty.pretty name
+                <> Pretty.angles (Pretty.pretty typarams)
             <+> Pretty.braces
                 ( Pretty.hardline
                     <> Pretty.indent
@@ -130,7 +133,12 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypePar -> Doc ann
 prettyType2 = \case
-    TyCon _ name -> Pretty.pretty name
+    TyCon _ name typarams
+        | null typarams -> Pretty.pretty name
+        | otherwise ->
+            Pretty.pretty name
+                <> Pretty.angles
+                    (Pretty.concatWith (Pretty.surround $ Pretty.comma <> Pretty.space) $ fmap Pretty.pretty typarams)
     TyLit _ tylit -> case tylit of
         Unit -> "()"
         String -> "string"

@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -53,10 +52,10 @@ instance Pretty Decl where
         ";the type inside the array is just used to allocate the correct amount of bytes"
             <> hardline
             <> "%"
-            <> pretty name
+            <> prettyName name
             <+> "= type"
             <+> pretty ty
-    pretty (GlobalString name ty string) = "@" <> pretty name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
+    pretty (GlobalString name ty string) = "@" <> prettyName name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
     pretty (LlvmMain instr) =
         "define dso_local i1 @main()"
             <+> lbrace
@@ -73,7 +72,7 @@ instance Pretty Decl where
             <+> "dso_local"
             <+> pretty ty
             <+> "@"
-            <> pretty name
+            <> prettyName name
             <> tupled (fmap typed args)
             <+> lbrace
             <> hardline
@@ -86,7 +85,7 @@ instance Pretty Decl where
         "declare"
             <+> pretty ty
             <+> "@"
-            <> pretty name
+            <> prettyName name
             <> parens
                 ( concatWith
                     (surround (comma <> space))
@@ -108,7 +107,7 @@ instance Pretty Type where
         TyFun tys ty -> pretty ty <> tupled (fmap pretty tys) <> "*"
         StructType tys -> braces $ space <> concatWith (surround (comma <> space)) (fmap pretty tys) <> space
         Mut ty -> pretty ty
-        TyCon name -> "%" <> pretty name
+        TyCon name -> "%" <> prettyName name
 
 instance Pretty Constant where
     pretty = \case
@@ -123,7 +122,8 @@ instance Pretty Constant where
                 $ concatWith (surround (comma <> space))
                 $ fmap (\x -> pretty (typeOf x) <+> pretty x) constants
         Undef _ -> "undef"
-        GlobalReference _ name -> "@" <> pretty name
+        Poison _ -> "poison"
+        GlobalReference _ name -> "@" <> prettyName name
 
 instance Pretty Instruction where
     pretty = \case
@@ -174,6 +174,9 @@ instance Pretty Instruction where
                         (fmap ((\(l, r) -> l <> comma <+> "label %" <> r) . bimap typed pretty) pairs)
                     )
 
+prettyName :: ExplicitName -> Doc ann
+prettyName = dquotes . pretty
+
 commasep :: [Doc ann] -> Doc ann
 commasep = concatWith (surround (comma <> space))
 
@@ -202,9 +205,9 @@ instance Pretty ArithOp where
 
 instance Pretty Operand where
     pretty = \case
-        LocalReference _ name -> "%" <> pretty name
+        LocalReference _ name -> "%" <> prettyName name
         ConstantOperand constant -> pretty constant
 
 instance (Pretty a) => Pretty (Named a) where
-    pretty (Named name a) = "%" <> pretty name <+> "=" <+> pretty a
+    pretty (Named name a) = "%" <> prettyName name <+> "=" <+> pretty a
     pretty (Nameless a) = pretty a

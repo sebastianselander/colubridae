@@ -60,8 +60,8 @@ unify info ty1 ty2 = case (ty1, ty2) of
         if occurs mono t then tyExpectedGot' info [ty1] ty2 else pure $ Sub.singleton (Type (Mono mono)) t
     (Type AnyX, _) -> pure Sub.empty
     (_, Type AnyX) -> pure Sub.empty
-    (TyCon NoExtField name1, TyCon NoExtField name2)
-        | name1 == name2 -> pure Sub.empty
+    (TyCon NoExtField name1 params1, TyCon NoExtField name2 params2)
+        | name1 == name2 -> unifies info (zip params1 params2)
         | otherwise -> tyExpectedGot' info [ty1] ty2
     (ty1, ty2) -> tyExpectedGot' info [ty1] ty2
 
@@ -102,7 +102,7 @@ instance TypeOf ExprTc where
         Loop ty _ -> snd ty
         Lam ty _ _ -> snd ty
         Match ty _ _ -> snd ty
-        Expr (TypeApp expr _) -> typeOf expr
+        Expr (TypeApp expr _ _) -> typeOf expr
 
 instance TypeOf BlockTc where
     typeOf (Block ty _ _) = snd ty
@@ -111,7 +111,7 @@ instance TypeOf TypeRn where
     typeOf = \case
         TyLit NoExtField b -> TyLit NoExtField b
         TyFun NoExtField b c -> TyFun NoExtField (fmap typeOf b) (typeOf c) -- NOTE: is `emptyTyParamList` correct?
-        TyCon NoExtField b -> TyCon NoExtField b
+        TyCon NoExtField b params -> TyCon NoExtField b (fmap typeOf params)
         TypeVar NoExtField b -> TypeVar NoExtField b
 
 instance TypeOf LamArgTc where

@@ -134,7 +134,7 @@ type family XImportExplicit a
 
 deriving instance (Show name, Forall Show a) => Show (Import name a)
 
-data Adt name a = Adt !(XAdt a) name [Constructor name a]
+data Adt name a = Adt !(XAdt a) name TyParamList [Constructor name a]
 
 type family XAdt a
 
@@ -171,7 +171,7 @@ instance Pretty TyVar where
 data Type name a
     = TyLit !(XTyLit a) TyLit
     | TyFun !(XTyFun a) [Type name a] (Type name a)
-    | TyCon !(XTyCon a) name
+    | TyCon !(XTyCon a) name [Type name a]
     | TypeVar !(XTypeVar a) TyVar
     | Type !(XType a)
 
@@ -179,7 +179,7 @@ data Type name a
 l ~~ r = case (l, r) of
     (TyLit _ left, TyLit _ right) -> left == right
     (TyFun _ largs lret, TyFun _ rargs rret) -> and (zipWith (~~) largs rargs) && lret ~~ rret
-    (TyCon _ left, TyCon _ right) -> left == right
+    (TyCon _ left typarams1, TyCon _ right typarams2) -> and (zipWith (~~) typarams1 typarams2) && left == right
     (TypeVar _ left, TypeVar _ right) -> left == right
     (Type a, Type b) -> a == b
     _ -> False
@@ -208,7 +208,7 @@ coerceType ::
 coerceType ty = case ty of
     TyLit a b -> TyLit a b
     TyFun a b c -> TyFun a (fmap coerceType b) (coerceType c)
-    TyCon a b -> TyCon a b
+    TyCon a b typarams -> TyCon a b (fmap coerceType typarams)
     Type a -> Type a
     TypeVar a b -> TypeVar a b
 

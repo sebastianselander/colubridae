@@ -15,6 +15,8 @@ import Frontend.Typechecker.Types
 import Frontend.Types hiding (toList)
 import Names (ExplicitName (..))
 
+import Frontend.Types qualified
+
 pThing :: (Pretty a) => a -> Text
 pThing = Pretty.renderStrict . Pretty.layoutPretty Pretty.defaultLayoutOptions . Pretty.pretty
 
@@ -49,9 +51,10 @@ instance Pretty ImportTc where
                 )
 
 instance Pretty AdtTc where
-    pretty (Adt _ name cons) =
+    pretty (Adt _ name typarams cons) =
         "type"
             <+> Pretty.pretty name.name
+                <> Pretty.angles (Pretty.pretty typarams)
             <+> Pretty.braces
                 ( Pretty.hardline
                     <> Pretty.indent
@@ -116,7 +119,12 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeTc -> Doc ann
 prettyType2 = \case
-    TyCon _ name -> Pretty.pretty name.name
+    TyCon _ name typarams
+        | null typarams -> Pretty.pretty name
+        | otherwise ->
+            Pretty.pretty name
+                <> Pretty.angles
+                    (Pretty.concatWith (Pretty.surround $ Pretty.comma <> Pretty.space) $ fmap Pretty.pretty typarams)
     TyLit _ tylit -> case tylit of
         Unit -> "()"
         String -> "string"
@@ -211,7 +219,7 @@ prettyExpr7 (Match _ scrutinee arms) =
                     )
                 <> Pretty.hardline
             )
-prettyExpr7 (Expr (TypeApp expr ty_args)) =
+prettyExpr7 (Expr (TypeApp expr ty_args _)) =
     Pretty.pretty expr
         <> Pretty.angles
             (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap Pretty.pretty ty_args))

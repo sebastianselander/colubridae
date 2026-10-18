@@ -158,7 +158,7 @@ assembleExpr (Core.Typed taggedType expr) =
             expr <- assembleExpr expr
             let operand = LocalReference (ptr varType) name
             store expr operand
-            pure operand
+            unit
         Core.Return expr -> do
             comment "Return expression"
             expr <- assembleExpr expr
@@ -243,9 +243,10 @@ assembleExpr (Core.Typed taggedType expr) =
             variable <- alloca bindName taggedType
             store operand variable
             pure variable
-        -- TODO: Rewrite without phi-node, break-expressions cause some pain atm
         Core.Match scrutinee@(Core.Typed _ _) matchArms (Core.Catch name catchExpr) -> do
             comment "Match expression"
+            resultOperand <- fresh
+            result <- alloca resultOperand taggedType
             scrutOperand <- assembleExpr scrutinee
             tag <- extractValue (Just Int64) scrutOperand [0]
             doneLbl <- mkLabel "Done"
@@ -255,37 +256,29 @@ assembleExpr (Core.Typed taggedType expr) =
                     (LInt Int64 (indexOf pat),)
                         <$> mkLabel ("Case_" <> show (indexOf pat))
             switch tag catchLbl switchCases
-            phiArgs <- forM (zip (fmap snd switchCases) matchArms) $ \(lbl, Core.MatchArm (Core.PCon _ vars) body) -> do
-                label lbl
-
-                forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
-                    var <- alloca name ty
-                    ptr <- extractValue (Just (ptr ty)) scrutOperand [1, index]
-                    ptr <- gep ptr [i32 @Int 0]
-                    val <- load ty ptr
-                    store val var
-                let isBreak = case NonEmpty.last body of
-                        Core.Typed _ Core.Break -> True
-                        _ -> False
-                operand <- NonEmpty.last <$> mapM assembleExpr body
-                comeFrom <-
-                    if isBreak
-                        then pure Nothing
-                        else do
-                            jump doneLbl
-                            Just <$> use predBlock
-                pure (operand, comeFrom)
-            label catchLbl
-            comment (show catchExpr)
-            operand <- NonEmpty.last <$> mapM assembleExpr catchExpr
-            alloced <- alloca name taggedType
-            store operand alloced
-            jump doneLbl
+            forM_ (zip switchCases matchArms)
+                $ \((constructorTag, lbl), Core.MatchArm (Core.PCon _ vars) body) -> do
+                    label lbl
+                    comment ("Constructor tag: " <> show constructorTag)
+                    forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
+                        comment "var"
+                        var <- alloca name ty
+                        ptr <- extractValue (Just (ptr ty)) scrutOperand [1, index]
+                        ptr <- gep ptr [i32 @Int 0]
+                        val <- load ty ptr
+                        store val var
+                    operand <- NonEmpty.last <$> mapM assembleExpr body
+                    comment "storing into result"
+                    store operand result
+                    jump doneLbl
+            () <- do
+                label catchLbl
+                comment "catchExpr"
+                comment (show catchExpr)
+                mapM_ assembleExpr catchExpr
+                unreachable
             label doneLbl
-
-            phiArgs <- pure $ catMaybesSnd phiArgs
-
-            phi (phiArgs <> [(operand, catchLbl)])
+            load taggedType result
         Core.ToStderrExit var -> do
             void
                 $ call
@@ -297,7 +290,7 @@ assembleExpr (Core.Typed taggedType expr) =
                     (I 1)
                     (global (TyFun [] Void) (fst3 exitFailure))
                     []
-            pure (undef taggedType)
+            pure (poison taggedType)
 
 indexOf :: Core.Pattern -> Integer
 indexOf = \case

@@ -80,6 +80,7 @@ data Constant
     | LNull !Type
     | LStruct [Constant]
     | Undef !Type
+    | Poison !Type
     | GlobalReference !Type !ExplicitName
     deriving (Eq, Ord, Show)
 
@@ -104,4 +105,5 @@ instance Typed Constant where
         LNull ty -> ty
         LStruct constants -> StructType (fmap typeOf constants)
         Undef ty -> ty
+        Poison ty -> ty
         GlobalReference ty _ -> ty

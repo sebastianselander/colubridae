@@ -7,8 +7,8 @@ module Frontend.Monomorphizer where
 
 import Control.Monad (foldM)
 import Data.Either.Extra (fromEither)
+import Data.Foldable (foldrM)
 import Data.Generics (everywhereM, mkM)
-import Data.Traversable (for)
 import Relude hiding (Type)
 
 import Data.Functor qualified as Functor
@@ -18,20 +18,23 @@ import Prettyprinter qualified as Pretty
 import Frontend.MonomorphizerCollector (Item (..))
 import Frontend.Substitution (Substitution (Subst), apply)
 import Frontend.Typechecker.Types
-    ( DefTc,
+    ( AdtTc,
+      ConstructorTc,
+      DefTc,
       ExprTc,
       FnTc,
       FnType (..),
-      ImportTc,
       ModuleTc,
+      NodeType (..),
       ProgramTc,
       TypeApp (TypeApp),
       TypeTc,
     )
 import Frontend.Types
-    ( Arg (Arg),
-      Boundedness (Imported),
-      Def (DefFn, DefImport),
+    ( Adt (Adt),
+      Arg (Arg),
+      Constructor (..),
+      Def (DefAdt, DefFn, DefImport),
       Expr (Expr, Var),
       Fn (Fn),
       Import (ImportExplicit),
@@ -56,10 +59,7 @@ monomorphize items (Program NoExtField mods) =
      in (Program NoExtField mods', Map.unionsWith __IMPOSSIBLE__ renameTables)
 
 monomorphizeModule :: ModuleTc -> Map Namespace [Item] -> (ModuleTc, RenameTable)
-monomorphizeModule mod@(Module namespace _) items =
-    runState
-        (foldM insert_mono_fn mod (deduplicate (fromMaybe [] $ Map.lookup namespace items)))
-        Map.empty
+monomorphizeModule mod@(Module namespace _) items = insertMonoNode mod (deduplicate (fromMaybe [] $ Map.lookup namespace items))
 
 -- FIXME: Ugly. Need to figure out a more sensible algorithm
 apply_rename :: RenameTable -> ModuleTc -> ModuleTc
@@ -73,20 +73,17 @@ apply_rename tbl prg =
          in DefImport $ ImportExplicit (existingFnTypes <> fntypes') namespace (existingNames <> names')
     renameImport _ def = def
 
-make_import :: ExplicitName -> FnType -> ImportTc
-make_import name fnType = ImportExplicit [fnType] name.namespace [name]
-
 rename :: (MonadState ([(ExplicitName, FnType)]) m) => RenameTable -> ExprTc -> m ExprTc
 rename tbl expr = case expr of
-    Expr (TypeApp (Var (loc, ty, bind) name) type_args) ->
+    Expr (TypeApp (Var (loc, ty, bind) name) type_args nodeType) ->
         case Map.lookup (name, type_args) tbl of
             Just name -> do
                 let (args, ret)
                         | TyFun NoExtField args ret <- ty = (args, ret)
                         | otherwise = __IMPOSSIBLE__
                 modify ((name, FnType {tyvars = [], retType = ret, argTypes = args}) :)
-                pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
-            Nothing -> pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args)
+                pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args nodeType)
+            Nothing -> pure $ Expr (TypeApp (Var (loc, ty, bind) name) type_args nodeType)
     _ -> pure expr
 
 make_mono_name ::
@@ -112,39 +109,17 @@ make_mono_name type_args name =
         }
 
 -- We can optimize this by grouping items by the function they are monomorphizing.
-insert_mono_fn ::
-    (MonadState RenameTable m) => ModuleTc -> Item -> m ModuleTc
-insert_mono_fn (Module namespace defs) item = do
-    fn <- mono_fn
-    pure (Module namespace (DefFn fn : defs))
-  where
-    Fn NoExtField original_name typaramlist args original_type body =
-        fromMaybe __IMPOSSIBLE__ (find_fn item.name defs)
-    sub =
-        Subst
-            $ Map.fromList
-                ( zip
-                    (fmap (TypeVar NoExtField) (Frontend.Types.toList typaramlist))
-                    item.type_args
-                )
-    name = make_mono_name item.type_args original_name
-    mono_fn = do
-        modify (Map.insert (original_name, item.type_args) name)
-        pure
-            $ Fn
-                NoExtField
-                name
-                emptyTyParamList
-                (fmap (\(Arg _ name ty) -> Arg NoExtField name (apply sub ty)) args)
-                (apply sub original_type)
-                (apply sub body)
+insertMonoNode :: ModuleTc -> [Item] -> (ModuleTc, RenameTable)
+insertMonoNode (Module namespace defs) items =
+    let (monoDefs, tbl) = runState (monomorphizeDefs defs items) mempty
+     in (Module namespace (defs <> monoDefs), tbl)
 
 find_fn ::
     -- | Function we're looking for
     ExplicitName ->
     -- | All defs in the program
     [DefTc] ->
-    -- | Pair of function X we were looking for and all defs \\ function X
+    -- | Function X we were looking for
     Maybe FnTc
 find_fn name = foldr f Nothing
   where
@@ -153,6 +128,110 @@ find_fn name = foldr f Nothing
     f def Nothing = case def of
         DefFn fn@(Fn _ fnname _ _ _ _) | name == fnname -> Just fn
         _ -> Nothing
+
+find_adt ::
+    -- | Constructor we're looking for
+    ExplicitName ->
+    -- | All defs in the program
+    [DefTc] ->
+    -- | Type X we were looking for
+    Maybe AdtTc
+find_adt name = foldr f Nothing
+  where
+    f :: DefTc -> Maybe AdtTc -> Maybe AdtTc
+    f _ (Just fn) = Just fn
+    f def Nothing = case def of
+        DefAdt adt@(Adt _ _ _ constructors) | any ((name ==) . conNameOf) constructors -> Just adt
+        _ -> Nothing
+
+conNameOf :: ConstructorTc -> ExplicitName
+conNameOf (EnumCons _ name) = name
+conNameOf (FunCons _ name _) = name
+
+defNameOf :: DefTc -> ExplicitName
+defNameOf (DefFn (Fn _ name _ _ _ _)) = name
+defNameOf (DefAdt (Adt _ name _ _)) = name
+defNameOf _ = __IMPOSSIBLE__
+
+-- FIXME: We must rename constructors too, currently we get a collision for each monomorphized type
+monomorphizeDefs ::
+    (MonadState RenameTable m) =>
+    -- | All defs
+    [DefTc] ->
+    -- | All items
+    [Item] ->
+    -- | Newly added monomorphized defs. Not including the already existing ones.
+    m [DefTc]
+monomorphizeDefs defs = fmap Map.elems . foldrM f mempty
+  where
+    f ::
+        (MonadState RenameTable m) =>
+        Item ->
+        Map (ExplicitName, [TypeTc]) DefTc ->
+        m (Map (ExplicitName, [TypeTc]) DefTc)
+    f item store =
+        case item.nodeType of
+            Function -> case find_fn item.name defs of
+                Nothing -> __IMPOSSIBLE__
+                Just (Fn NoExtField name typarams args ty body) ->
+                    case Map.lookup (name, item.type_args) store of
+                        Just _ -> pure store
+                        Nothing -> do
+                            let sub =
+                                    Subst
+                                        $ Map.fromList
+                                            ( zip
+                                                (fmap (TypeVar NoExtField) (Frontend.Types.toList typarams))
+                                                item.type_args
+                                            )
+                            let monoName = make_mono_name item.type_args name
+                            modify $ Map.insert (item.name, item.type_args) monoName
+                            pure
+                                $ Map.insert
+                                    (name, item.type_args)
+                                    ( DefFn
+                                        ( Fn
+                                            NoExtField
+                                            monoName
+                                            emptyTyParamList
+                                            (fmap (\(Arg _ name ty) -> Arg NoExtField name (apply sub ty)) args)
+                                            (apply sub ty)
+                                            (apply sub body)
+                                        )
+                                    )
+                                    store
+            Constructor -> case find_adt item.name defs of
+                Nothing -> __IMPOSSIBLE__
+                Just (Adt loc name typarams cons) -> case Map.lookup (name, item.type_args) store of
+                    Just _ -> pure store
+                    Nothing -> do
+                        let sub =
+                                Subst
+                                    $ Map.fromList
+                                        ( zip
+                                            (fmap (TypeVar NoExtField) (Frontend.Types.toList typarams))
+                                            item.type_args
+                                        )
+                        let monoName = make_mono_name item.type_args name
+                        modify $ Map.insert (item.name, item.type_args) monoName
+                        cons <- mapM (monomorphizeCon sub item.type_args) cons
+                        pure
+                            $ Map.insert
+                                (name, item.type_args)
+                                (DefAdt (Adt loc monoName emptyTyParamList cons))
+                                store
+
+monomorphizeCon ::
+    (MonadState RenameTable m) =>
+    Substitution -> [TypeTc] -> ConstructorTc -> m ConstructorTc
+monomorphizeCon sub typeArgs (EnumCons (loc, ty) name) = do
+    let monoName = make_mono_name typeArgs name
+    modify $ Map.insert (name, typeArgs) monoName
+    pure $ EnumCons (loc, apply sub ty) monoName
+monomorphizeCon sub typeArgs (FunCons (loc, ty) name tys) = do
+    let monoName = make_mono_name typeArgs name
+    modify $ Map.insert (name, typeArgs) monoName
+    pure $ FunCons (loc, apply sub ty) monoName (fmap (apply sub) tys)
 
 -- I don't get how this works. Why do we early exit using Either?
 deduplicate :: [Item] -> [Item]

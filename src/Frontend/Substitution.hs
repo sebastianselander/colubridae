@@ -13,6 +13,7 @@ import Prettyprinter qualified as Pretty
 import Frontend.Typechecker.Pretty ()
 import Frontend.Typechecker.Types
     ( BlockTc,
+      ConstructorTc,
       ExprTc,
       LamArgTc,
       MatchArmTc,
@@ -28,6 +29,7 @@ import Frontend.Typechecker.Types
     )
 import Frontend.Types
     ( Block (..),
+      Constructor (..),
       Expr (..),
       LamArg (..),
       MatchArm (..),
@@ -80,7 +82,7 @@ substitute sub ty = case ty of
     Type AnyX -> ty
     TypeVar _ _ -> ty
     TyLit _ _ -> ty
-    TyCon _ _ -> ty
+    TyCon _ typarams _ -> ty
 
 class Substitute t where
     apply :: Substitution -> t -> t
@@ -92,7 +94,7 @@ instance Substitute TypeTc where
         Type AnyX -> fromMaybe ty (lookup ty sub)
         TypeVar NoExtField _ -> fromMaybe ty (lookup ty sub)
         TyLit NoExtField _ -> fromMaybe ty (lookup ty sub)
-        TyCon NoExtField _ -> fromMaybe ty (lookup ty sub)
+        TyCon NoExtField name params -> fromMaybe (TyCon NoExtField name (fmap (apply sub) params)) (lookup ty sub)
 
 instance Substitute ExprTc where
     apply sub expr = case expr of
@@ -111,7 +113,7 @@ instance Substitute ExprTc where
         Loop (loc, ty) block -> Loop (loc, apply sub ty) (apply sub block)
         Lam (loc, ty) args body -> Lam (loc, apply sub ty) (fmap (apply sub) args) (apply sub body)
         Match (loc, ty) scrutinee matchArms -> Match (loc, apply sub ty) (apply sub scrutinee) (fmap (apply sub) matchArms)
-        Expr (TypeApp expr type_args) -> Expr (TypeApp (apply sub expr) (fmap (apply sub) type_args))
+        Expr (TypeApp expr type_args nodeType) -> Expr (TypeApp (apply sub expr) (fmap (apply sub) type_args) nodeType)
 
 instance Substitute LamArgTc where
     apply sub (LamArg ty name) = LamArg (apply sub ty) name
@@ -136,3 +138,7 @@ instance Substitute StmtType where
 
 instance Substitute PolyType where
     apply sub (PolyType tvars ty) = PolyType tvars (apply sub ty)
+
+instance Substitute ConstructorTc where
+    apply sub (EnumCons (loc, ty) name) = EnumCons (loc, apply sub ty) name
+    apply sub (FunCons (loc, ty) name tys) = FunCons (loc, apply sub ty) name (fmap (apply sub) tys)

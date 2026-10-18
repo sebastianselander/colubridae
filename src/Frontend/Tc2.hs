@@ -16,8 +16,11 @@ import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Data (Data)
 import Data.Foldable (foldrM)
+import Data.Text.Lazy (unpack)
+import Debug.Trace (traceWith)
 import Relude hiding (Any, Type, intercalate)
 import Relude.Unsafe (fromJust)
+import Text.Pretty.Simple (pShow)
 
 import Data.Map.Strict qualified as Map
 
@@ -27,7 +30,7 @@ import Frontend.Renamer.Types
 import Frontend.Substitution (Substitute (apply), Substitution)
 import Frontend.Typechecker.Ctx (Ctx, defTable)
 import Frontend.Typechecker.Polytype (instantiate, instantiate_with)
-import Frontend.Typechecker.Types
+import Frontend.Typechecker.Types hiding (Constructor, Function)
 import Frontend.Typechecker.Unify (typeOf, unify)
 import Frontend.Types
 import Impossible (__IMPOSSIBLE__)
@@ -38,6 +41,8 @@ import Utils (listify')
 import Frontend.Builtin qualified as Builtins
 import Frontend.Substitution qualified as Sub
 import Frontend.Typechecker.Ctx qualified as Ctx
+import Frontend.Typechecker.Types qualified as Frontend.TypeCheck.Types
+import Options qualified as Frontend
 import Table qualified as DefTable
 
 data Env = Env
@@ -116,8 +121,19 @@ tcImport table (ImportExplicit _ namespace names) =
      in ImportExplicit (fmap mkFnType tys) namespace names
 
 tcAdt :: AdtRn -> (AdtTc, [TcWarning])
-tcAdt (Adt loc name constructors) =
-    (Adt loc name (fmap (inferConstructor (TyCon NoExtField name)) constructors), [])
+tcAdt (Adt loc name typarams constructors) =
+    ( Adt
+        loc
+        name
+        typarams
+        ( fmap
+            ( inferConstructor
+                (TyCon NoExtField name (tyParamsToTypes typarams))
+            )
+            constructors
+        )
+    , []
+    )
 
 inferConstructor :: TypeTc -> ConstructorRn -> ConstructorTc
 inferConstructor ty = \case
@@ -189,19 +205,21 @@ getTypesAndCons a = TypeCons {types = listify' h a, cons = concat (listify' f a)
   where
     h :: AdtRn -> Maybe (ExplicitName, (PolyType, SourceInfo))
     -- TODO: Add type params to polytype
-    h (Adt loc name _) = Just (name, (PolyType [] $ TyCon NoExtField name, loc))
+    h (Adt loc name typarams _) = Just (name, (PolyType [] $ TyCon NoExtField name (tyParamsToTypes typarams), loc))
 
     f :: AdtRn -> Maybe [(ExplicitName, (PolyType, SourceInfo))]
-    f (Adt _ name cons) =
+    f (Adt _ name typarams cons) =
         -- TODO: Add type params to polytype
-        let returnType = TyCon NoExtField name
+        let returnType = TyCon NoExtField name (tyParamsToTypes typarams)
          in Just $ fmap (g returnType) cons
       where
         g :: TypeTc -> ConstructorRn -> (ExplicitName, (PolyType, SourceInfo))
         g returnType = \case
-            EnumCons loc name -> (name, (PolyType [] returnType, loc))
+            EnumCons loc name -> (name, (PolyType (Frontend.Types.toList typarams) returnType, loc))
             FunCons loc name argTys ->
-                (name, (PolyType [] $ TyFun NoExtField (fmap typeOf argTys) returnType, loc))
+                ( name
+                , (PolyType (Frontend.Types.toList typarams) $ TyFun NoExtField (fmap typeOf argTys) returnType, loc)
+                )
 
 check_expr ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -345,6 +363,24 @@ infer_var loc boundedness name = case boundedness of
     Free; Bound -> do
         (ty, _) <- lookupVar name
         pure (Sub.empty, Var (loc, ty, boundedness) name)
+    Constructor -> do
+        (polytype, _) <- lookupCon name
+        let PolyType tyvars _ = polytype
+        tbl <- traverse (\ty -> (ty,) <$> fresh_mono) tyvars
+        let ty = instantiate_with (Map.fromList tbl) polytype
+        if not (null tbl)
+            then
+                -- FIXME(sebsel): We don't need to monomorphize phantom parameters
+                pure
+                    ( Sub.empty
+                    , Expr
+                        $ TypeApp
+                            (Var (loc, ty, boundedness) name)
+                            (fmap (Type . Mono . snd) tbl)
+                            Frontend.TypeCheck.Types.Constructor
+                    )
+            else
+                pure (Sub.empty, Var (loc, ty, boundedness) name)
     Function; Imported -> do
         (polytype, _) <- lookupFun name
         let PolyType tyvars _ = polytype
@@ -359,13 +395,10 @@ infer_var loc boundedness name = case boundedness of
                         $ TypeApp
                             (Var (loc, ty, boundedness) name)
                             (fmap (Type . Mono . snd) tbl)
+                            Frontend.TypeCheck.Types.Function
                     )
             else
                 pure (Sub.empty, Var (loc, ty, boundedness) name)
-    Constructor -> do
-        (polytype, _) <- lookupCon name
-        ty <- instantiateTc polytype
-        pure (Sub.empty, Var (loc, ty, boundedness) name)
     Builtin -> do
         builtins <- view (defTable . builtIns)
         case Builtins.lookup name builtins of
@@ -579,9 +612,9 @@ infer_loop ::
     SourceInfo -> BlockRn -> m (Substitution, ExprTc)
 infer_loop loc block = do
     (sub, block) <- infer_block block
-    let break_exprs = concatMap find_all_breaks (get_exprs block)
-    break_type <- case break_exprs of
-        [] -> pure Any
+    let breakExprs = concatMap find_all_breaks (get_exprs block)
+    breakType <- case breakExprs of
+        [] -> fresh_type
         (x : xs) -> do
             sub <-
                 foldM
@@ -592,10 +625,10 @@ infer_loop loc block = do
                     sub
                     xs
             pure (apply sub $ typeOf x)
-    sub1 <- unify loc unit_type (typeOf block)
+    sub1 <- unify loc breakType (typeOf block)
     let sub2 = Sub.compose sub1 sub
     modifying variables (Map.map (first (apply sub2)))
-    pure (sub2, apply sub2 $ Loop (loc, break_type) block)
+    pure (sub2, apply sub2 $ Loop (loc, breakType) block)
 
 infer_lam ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -701,7 +734,7 @@ hasInfo = \case
     Loop info _ -> fst info
     Lam info _ _ -> fst info
     Match info _ _ -> fst info
-    Expr (TypeApp expr _) -> hasInfo expr
+    Expr (TypeApp expr _ _) -> hasInfo expr
 
 operatorReturnType :: TypeTc -> BinOp -> TypeTc
 operatorReturnType inputTy = \case
@@ -821,7 +854,10 @@ find_all_breaks e = case e of
     Loop {} -> []
     Lam {} -> []
     Match _ scrutinee arms -> find_all_breaks scrutinee <> concatMap breakArm arms
-    Expr (TypeApp expr _) -> find_all_breaks expr
+    Expr (TypeApp expr _ _) -> find_all_breaks expr
   where
     breakArm :: MatchArmTc -> [ExprTc]
     breakArm (MatchArm _ _ body) = find_all_breaks body
+
+tyParamsToTypes :: TyParamList -> [TypeTc]
+tyParamsToTypes typarams = TypeVar NoExtField <$> Frontend.Types.toList typarams

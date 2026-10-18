@@ -10,10 +10,11 @@ import Relude hiding (intercalate)
 
 import Prettyprinter qualified as Pretty
 
-import Frontend.Parser.Utils (namespaceSeparator)
 import Frontend.Renamer.Types
 import Frontend.Types hiding (toList)
 import Names (ExplicitName (..))
+
+import Frontend.Types qualified
 
 prettyRenamer :: (Pretty a) => a -> Text
 prettyRenamer = show . Pretty.pretty
@@ -47,9 +48,10 @@ instance Pretty ImportRn where
                 (Pretty.concatWith (Pretty.surround (Pretty.comma <> Pretty.space)) (fmap pretty imports))
 
 instance Pretty AdtRn where
-    pretty (Adt _ name cons) =
+    pretty (Adt _ name typarams cons) =
         "type"
             <+> Pretty.pretty name
+                <> Pretty.angles (Pretty.pretty typarams)
             <+> Pretty.braces
                 ( Pretty.hardline
                     <> Pretty.indent
@@ -127,7 +129,12 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeRn -> Doc ann
 prettyType2 = \case
-    TyCon _ name -> Pretty.pretty name
+    TyCon _ name typarams
+        | null typarams -> Pretty.pretty name
+        | otherwise ->
+            Pretty.pretty name
+                <> Pretty.angles
+                    (Pretty.concatWith (Pretty.surround $ Pretty.comma <> Pretty.space) $ fmap Pretty.pretty typarams)
     TyLit _ tylit -> case tylit of
         Unit -> "()"
         String -> "string"

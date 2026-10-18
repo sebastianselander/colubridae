@@ -38,14 +38,14 @@ replaceTyVars :: Map TyVar TypeTc -> TypeTc -> TypeTc
 replaceTyVars tbl = \case
     TyLit NoExtField lit -> TyLit NoExtField lit
     TyFun tyParamList args ret -> TyFun tyParamList (fmap (replaceTyVars tbl) args) (replaceTyVars tbl ret)
-    TyCon NoExtField name -> TyCon NoExtField name
+    TyCon NoExtField name params -> TyCon NoExtField name (fmap (replaceTyVars tbl) params)
     t@(TypeVar NoExtField tyvar) -> fromMaybe t (Map.lookup tyvar tbl)
     Type meta -> Type meta
 
 occurs :: MonoType -> TypeTc -> Bool
 occurs mono ty = case ty of
     TyLit NoExtField _ -> False
-    TyCon NoExtField _ -> False
+    TyCon NoExtField _ params -> any (occurs mono) params
     TypeVar NoExtField _ -> False
     TyFun NoExtField args ret -> any (occurs mono) args || occurs mono ret
     Type (Mono m) -> mono == m
@@ -67,7 +67,7 @@ generalize ty =
              in (mono <> monos, tvar <> tvars)
         Type (Mono m) -> (Set.singleton m, mempty)
         TyLit NoExtField _ -> (mempty, mempty)
-        TyCon NoExtField _ -> (mempty, mempty)
+        TyCon NoExtField _ params -> foldr f (mempty, mempty) params
         TypeVar NoExtField _ -> (mempty, mempty)
         Type AnyX -> (mempty, mempty)
       where

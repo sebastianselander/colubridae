@@ -83,7 +83,7 @@ pDef (Decl namespace ty name tys) =
     "declare"
         <+> pType ty
         <+> pretty namespace
-        <> "::"
+        <> "."
         <> pretty name.name
         <> parens (concatWith (surround (comma <> space)) (fmap pType tys))
 pDef (TypeSyn name ty) = "type" <+> pretty name.name <+> "=" <+> pType ty
@@ -153,8 +153,10 @@ pExpr (Typed _ expr) = go expr
         While cond exprs ->
             "while"
                 <+> pExpr cond
-                <> "{"
+                <+> "{"
+                <> hardline
                 <> indent 4 (hcat $ punctuate hardline (fmap pExpr exprs))
+                <> hardline
                 <> "}"
         Closure fun freeVars ->
             braces
@@ -170,7 +172,7 @@ pExpr (Typed _ expr) = go expr
             "match"
                 <+> pExpr scrutinee
                 <+> braces (hardline <> prettyArms arms <> hardline <> pCatch catch <> hardline)
-        ToStderrExit txt -> "exit: " <> pretty txt.name
+        ToStderrExit txt -> "exit" <> parens (pretty txt.name)
 
 pCatch :: Catch -> Doc ann
 pCatch (Catch name expr) = pretty name.name <+> "=>" <+> concatWith (surround (semi <> hardline)) (fmap pExpr (toList expr))

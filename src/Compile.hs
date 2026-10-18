@@ -13,16 +13,16 @@ import Data.Text.IO (hPutStrLn)
 import Relude hiding (concat, concatMap, intercalate)
 import System.Directory.Extra
     ( createDirectory,
+      createDirectoryIfMissing,
       doesDirectoryExist,
       removeDirectoryRecursive,
     )
 import System.Exit (ExitCode (..))
 import System.FilePath
     ( dropExtension,
-      replaceDirectory,
       replaceExtension,
       splitDirectories,
-      takeBaseName,
+      takeDirectory,
       (</>),
     )
 import System.Process.Extra (proc, readCreateProcessWithExitCode)
@@ -95,7 +95,7 @@ gatherSymbols =
     nameOf :: DefPar -> Maybe Ident
     nameOf = \case
         DefFn (Fn _ name _ _ _ _) -> Just name
-        DefAdt (Adt _ name _) -> Just name
+        DefAdt (Adt _ name _ _) -> Just name
         DefImport _ -> Nothing
 
 compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Ir)
@@ -109,7 +109,7 @@ compile passes files = do
     res <- liftEither $ left report $ check program
     log passes (Debug StCheck (Just $ prettyRenamer program) "") []
 
-    (program, warnings) <- pure $ typecheck res
+    (program, _warnings) <- pure $ typecheck res
     program <- case program of
         Left errs -> liftEither $ Left $ report errs
         Right program -> pure program
@@ -144,11 +144,14 @@ runCompile passes = runWriterT . runExceptT . compile passes
 produceAsmFile :: FilePath -> Either Text Ir -> IO FilePath
 produceAsmFile asmFilename ir = do
     ir <- pure $ fmap (updateDecls (fst prelude <>)) ir
-    let llFile = "./build/" <> replaceExtension (takeBaseName asmFilename) "ll"
+    let llFile = "./build/" <> replaceExtension asmFilename "ll"
+    createDirectoryIfMissing True (takeDirectory llFile)
     case ir of
-        Right ir -> writeFileText llFile (llvmOut ir)
-        Left raw -> writeFileText llFile raw
-    let out = replaceDirectory asmFilename "./build/"
+        Right ir -> do
+            writeFileText llFile (llvmOut ir)
+        Left raw -> do
+            writeFileText llFile raw
+    let out = "./build/" </> asmFilename
     let process = proc "llc" [llFile, "-o", out]
     (code, _, err) <- readCreateProcessWithExitCode process ""
     case code of

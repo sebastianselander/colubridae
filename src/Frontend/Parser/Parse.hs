@@ -52,7 +52,7 @@ import_ = do
     keyword "import"
     ns <- namespace
     P.choice
-        [ (\asName loc -> XImport $ ImportAs ns asName loc) <$> (keyword "as" *> namespace) <*> spanEnd gs
+        [ (\asName loc -> XImport $ ImportAs ns asName loc) <$> (keyword "as" *> identifier) <*> spanEnd gs
         , ((\symbols loc -> ImportExplicit loc ns symbols) <$> parens (commaSepEnd identifier)) <*> spanEnd gs
         , XImport . ImportQualified ns <$> spanEnd gs
         ]
@@ -61,9 +61,9 @@ import_ = do
 tyParamList :: Parser TyParamList
 tyParamList = do
     gs <- spanStart
-    params <- P.optional (angles $ commaSepEnd (lexeme (TyVar <$> upperIdentifier)))
+    params <- angles $ commaSepEnd (lexeme (TyVar <$> upperIdentifier))
     loc <- spanEnd gs
-    pure (Params loc (fromMaybe [] params))
+    pure (Params loc params)
 
 namespace :: Parser Namespace
 namespace =
@@ -77,9 +77,10 @@ datatype = do
     gs <- spanStart
     keyword "type"
     adtName <- lexeme upperIdentifier
+    tyParams <- P.optional tyParamList
     constructors <- curlyBrackets (commaSepEnd constructor)
     loc <- spanEnd gs
-    pure (Adt loc adtName constructors)
+    pure (Adt loc adtName (fromMaybe emptyTyParamList tyParams) constructors)
 
 constructor :: Parser ConstructorPar
 constructor = do
@@ -99,12 +100,12 @@ function = do
     gs <- spanStart
     lexeme (keyword "def")
     name <- lexeme identifier
-    tyParams <- tyParamList
+    tyParams <- P.optional tyParamList
     args <- parens (commaSep argument)
     ty <- P.option (TyLit emptyInfo Unit) (lexeme (keyword "->") *> type_)
     expressions <- block
     info <- spanEnd gs
-    pure (Fn info name tyParams args ty expressions)
+    pure (Fn info name (fromMaybe emptyTyParamList tyParams) args ty expressions)
 
 argument :: Parser ArgPar
 argument = do
@@ -121,8 +122,11 @@ type_ = P.choice [typeAtom, pFunTy, pTyCon, parens type_] <?> "type"
     pTyCon = do
         gs <- spanStart
         name <- lexeme upperIdentifier
+        typarams <- P.optional (lexeme $ angles $ some type_)
         loc <- spanEnd gs
-        pure $ Type (UnresolvedType loc (TyVar name))
+        case typarams of
+            Nothing -> pure $ Type (UnresolvedType loc (TyVar name))
+            Just params -> pure $ TyCon loc name params
 
     pFunTy :: Parser TypePar
     pFunTy = do

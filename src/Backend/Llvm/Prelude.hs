@@ -10,8 +10,8 @@ import Relude hiding (exitFailure, exitSuccess)
 import Prettyprinter qualified as Pretty
 
 import Backend.Llvm.Lower (llvmOut)
-import Backend.Llvm.Types (Decl (..), Ellipsis (Ellipsis, NoEllipsis))
-import Backend.Types (Type (I, OpaquePointer, PointerType, Void))
+import Backend.Llvm.Types (Decl (..), Ellipsis (NoEllipsis))
+import Backend.Types (Type (I, OpaquePointer, PointerType))
 import Names (ExplicitName (..), Ident (Ident), Namespace (Namespace))
 
 prelude :: ([Decl], Text)
