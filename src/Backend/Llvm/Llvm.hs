@@ -102,6 +102,13 @@ assembleArg (Core.Arg name ty) = do
 mkArgName :: Ident -> Ident
 mkArgName (Ident name) = Ident $ name <> ".arg"
 
+assembleLoadExpr :: Core.TyExpr -> IRBuilder Operand
+assembleLoadExpr expr = do
+    operand <- assembleExpr expr
+    case operand of
+        LocalReference {} -> load (Core.typeOf expr) operand
+        ConstantOperand {} -> pure operand
+
 assembleExpr :: Core.TyExpr -> IRBuilder Operand
 assembleExpr (Core.Typed taggedType expr) =
     case expr of
@@ -111,57 +118,48 @@ assembleExpr (Core.Typed taggedType expr) =
             case binding of
                 Core.Constructor ->
                     case taggedType of
-                        TyFun _ _ -> do
-                            fun <- call taggedType (global taggedType name) []
-                            name <- fresh
-                            let structType = taggedType
-                            alloced <- alloca name structType
-                            store fun alloced
-                            load structType alloced
+                        TyFun _ _ -> call taggedType (global taggedType name) []
                         _ -> call taggedType (global taggedType name) []
-                Core.Free -> load taggedType $ LocalReference (ptr taggedType) name
-                Core.Bound -> load taggedType $ LocalReference (ptr taggedType) name
+                Core.Free -> pure $ LocalReference (ptr taggedType) name
+                Core.Bound -> pure $ LocalReference (ptr taggedType) name
                 Core.Function -> pure $ global taggedType name
-                Core.GlobalConstant -> do
-                    -- NOTE: This will not work with global strings
-                    op <- gep (global (ptr taggedType) name) [i32 @Integer 0]
-                    load taggedType op
+                Core.GlobalConstant -> gep (global (ptr taggedType) name) [i32 @Integer 0]
                 Core.Argument -> pure $ LocalReference taggedType name
-                Core.Lambda -> load taggedType $ LocalReference (ptr taggedType) name
+                Core.Lambda -> pure $ LocalReference (ptr taggedType) name
         Core.BinOp leftExpr operator rightExpr -> do
             comment "BinOp expression"
-            left <- assembleExpr leftExpr
-            right <- assembleExpr rightExpr
+            left <- assembleLoadExpr leftExpr
+            right <- assembleLoadExpr rightExpr
             llvmBinOp operator taggedType left right
         Core.PrefixOp Core.Not expr -> do
             comment "PrefixOp expression"
-            expr <- assembleExpr expr
+            expr <- assembleLoadExpr expr
             eq Bool (ConstantOperand (LBool taggedType False)) expr
         Core.PrefixOp Core.Neg expr -> do
             comment "PrefixOp expression"
-            expr <- assembleExpr expr
+            expr <- assembleLoadExpr expr
             sub taggedType (ConstantOperand (LInt taggedType 0)) expr
         Core.App appExpr argExprs -> do
             comment "App expression"
-            app <- assembleExpr appExpr
-            args <- mapM assembleExpr argExprs
+            app <- assembleLoadExpr appExpr
+            args <- mapM assembleLoadExpr argExprs
             call taggedType app args
         Core.Let name varType Nothing -> comment "Let expression" >> alloca name varType
         Core.Let name varType (Just expr) -> do
             comment "Let expression"
             decl <- alloca name varType
-            expr <- assembleExpr expr
+            expr <- assembleLoadExpr expr
             store expr decl
             pure decl
         Core.Ass name varType expr -> do
             comment "Ass expression"
-            expr <- assembleExpr expr
+            expr <- assembleLoadExpr expr
             let operand = LocalReference (ptr varType) name
             store expr operand
             unit
         Core.Return expr -> do
             comment "Return expression"
-            expr <- assembleExpr expr
+            expr <- assembleLoadExpr expr
             ret expr
             unit
         Core.Break -> do
@@ -174,7 +172,7 @@ assembleExpr (Core.Typed taggedType expr) =
             true <- mkLabel "if_true"
             false <- mkLabel "if_false"
             end <- mkLabel "if_after"
-            condition <- assembleExpr condition
+            condition <- assembleLoadExpr condition
             -- jump to end if no else branch exist
             br condition true (maybe end (const false) falseBlk)
             -- true case
@@ -202,7 +200,7 @@ assembleExpr (Core.Typed taggedType expr) =
             exit <- mkLabel "while_exit"
             jump continue
             label continue
-            expr <- assembleExpr condition
+            expr <- assembleLoadExpr condition
             br expr start exit
             label start
             locally breakLabel (const exit) $ mapM_ assembleExpr blk
@@ -247,7 +245,7 @@ assembleExpr (Core.Typed taggedType expr) =
             comment "Match expression"
             resultOperand <- fresh
             result <- alloca resultOperand taggedType
-            scrutOperand <- assembleExpr scrutinee
+            scrutOperand <- assembleLoadExpr scrutinee
             tag <- extractValue (Just Int64) scrutOperand [0]
             doneLbl <- mkLabel "Done"
             catchLbl <- mkLabel "Catch"
@@ -267,7 +265,7 @@ assembleExpr (Core.Typed taggedType expr) =
                         ptr <- gep ptr [i32 @Int 0]
                         val <- load ty ptr
                         store val var
-                    operand <- NonEmpty.last <$> mapM assembleExpr body
+                    operand <- NonEmpty.last <$> mapM assembleLoadExpr body
                     comment "storing into result"
                     store operand result
                     jump doneLbl
@@ -278,7 +276,7 @@ assembleExpr (Core.Typed taggedType expr) =
                 mapM_ assembleExpr catchExpr
                 unreachable
             label doneLbl
-            load taggedType result
+            pure result
         Core.ToStderrExit var -> do
             void
                 $ call

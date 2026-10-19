@@ -99,7 +99,12 @@ fresh = do
     pure $ EName namespace (Ident ("_" <> show n)) (Ident ("_" <> show n))
 
 call :: Type -> Operand -> [Operand] -> IRBuilder Operand
-call ty function args = LocalReference ty <$> named (Call ty function args)
+call ty function args = do
+    name <- fresh
+    operand <- alloca name ty
+    name <- named (Call ty function args)
+    store (LocalReference ty name) operand
+    pure operand
 
 voidCall :: Operand -> [Operand] -> IRBuilder ()
 voidCall function args = emit $ Nameless $ Call Unit function args
@@ -120,7 +125,13 @@ rem :: Type -> Operand -> Operand -> IRBuilder Operand
 rem = arith LlvmRem
 
 arith :: ArithOp -> Type -> Operand -> Operand -> IRBuilder Operand
-arith op ty l r = LocalReference ty <$> named (Arith op ty l r)
+arith op ty l r = do
+    -- FIXME(sebsel): this should be a constant operand
+    name <- fresh
+    operand <- alloca name ty
+    name <- named (Arith op ty l r)
+    store (LocalReference ty name) operand
+    pure operand
 
 named :: Instruction -> IRBuilder ExplicitName
 named instr = do
@@ -132,7 +143,12 @@ unnamed :: Instruction -> IRBuilder ()
 unnamed instr = emit (Nameless instr)
 
 cmp :: CmpOp -> Type -> Operand -> Operand -> IRBuilder Operand
-cmp op ty l r = LocalReference ty <$> named (Cmp op ty l r)
+cmp op ty l r = do
+    name <- fresh
+    operand <- alloca name ty
+    name <- named (Cmp op ty l r)
+    store (LocalReference ty name) operand
+    pure operand
 
 eq :: Type -> Operand -> Operand -> IRBuilder Operand
 eq = cmp LlvmEq
@@ -153,10 +169,20 @@ le :: Type -> Operand -> Operand -> IRBuilder Operand
 le = cmp LlvmLe
 
 and :: Type -> Operand -> Operand -> IRBuilder Operand
-and ty l r = LocalReference ty <$> named (And ty l r)
+and ty l r = do
+    name <- fresh
+    operand <- alloca name ty
+    name <- named (And ty l r)
+    store (LocalReference ty name) operand
+    pure operand
 
 or :: Type -> Operand -> Operand -> IRBuilder Operand
-or ty l r = LocalReference ty <$> named (Or ty l r)
+or ty l r = do
+    name <- fresh
+    operand <- alloca name ty
+    name <- named (Or ty l r)
+    store (LocalReference ty name) operand
+    pure operand
 
 alloca :: ExplicitName -> Type -> IRBuilder Operand
 alloca name ty = do
