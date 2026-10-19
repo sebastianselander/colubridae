@@ -129,6 +129,7 @@ prettyType1 ty = prettyType2 ty
 
 prettyType2 :: TypeRn -> Doc ann
 prettyType2 = \case
+    PointerType NoExtField ty -> prettyType2 ty <> "*"
     TyCon _ name typarams
         | null typarams -> Pretty.pretty name
         | otherwise ->
@@ -177,8 +178,10 @@ prettyExpr6 :: ExprRn -> Doc ann
 prettyExpr6 (BinOp _ l Mod r) = Pretty.pretty l <+> "%" <+> Pretty.pretty r
 prettyExpr6 (BinOp _ l Div r) = Pretty.pretty l <+> "/" <+> Pretty.pretty r
 prettyExpr6 (BinOp _ l Mul r) = Pretty.pretty l <+> "*" <+> Pretty.pretty r
-prettyExpr6 (Prefix _ Not r) = "!" <+> Pretty.pretty r
-prettyExpr6 (Prefix _ Neg r) = "-" <+> Pretty.pretty r
+prettyExpr6 (Prefix _ Not r) = "!" <> Pretty.pretty r
+prettyExpr6 (Prefix _ Neg r) = "-" <> Pretty.pretty r
+prettyExpr6 (Prefix _ Ref r) = "&" <> Pretty.pretty r
+prettyExpr6 (Prefix _ Deref r) = "*" <> Pretty.pretty r
 prettyExpr6 e = prettyExpr7 e
 
 prettyExpr7 :: ExprRn -> Doc ann
@@ -191,6 +194,7 @@ prettyExpr7 (App _ l rs) =
         <> Pretty.parens (Pretty.concatWith (Pretty.surround Pretty.comma) (fmap Pretty.pretty rs))
 prettyExpr7 (Let (_, Nothing) name e) = "let" <+> Pretty.pretty name <+> "=" <+> Pretty.pretty e
 prettyExpr7 (Let (_, Just ty) name e) = "let" <+> Pretty.pretty name <> ":" <+> Pretty.pretty ty <+> "=" <+> Pretty.pretty e
+prettyExpr7 (Ass _ name DerefAssign e) = "*" <> Pretty.pretty name <+> "=" <+> Pretty.pretty e
 prettyExpr7 (Ass _ name op e) = Pretty.pretty name <+> Pretty.pretty op <+> Pretty.pretty e
 prettyExpr7 (Ret _ Nothing) = "return"
 prettyExpr7 (Ret _ (Just e)) = "return" <+> Pretty.pretty e

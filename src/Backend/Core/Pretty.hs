@@ -71,6 +71,7 @@ pPrefixOp :: PrefixOp -> Doc ann
 pPrefixOp = \case
     Not -> "!"
     Neg -> "-"
+    Ref -> "&"
 
 pProgram :: Program -> Doc ann
 pProgram (Program mods) = concatWith (surround (hardline <> hardline)) (fmap pModule mods)
@@ -125,7 +126,7 @@ pExpr (Typed _ expr) = go expr
         Constant lit -> pLit lit
         Var _ ident -> pIdent ident.name
         BinOp l op r -> pExpr l <+> pBinOp op <+> pExpr r
-        PrefixOp op expr -> pPrefixOp op <+> pExpr expr
+        PrefixOp op expr -> pPrefixOp op <> pExpr expr
         App l rs -> pExpr l <> parens (hcat (punctuate comma $ fmap pExpr rs))
         Let name ty expr -> "let" <+> pIdent name.name <> ":" <+> pType ty <+> maybe emptyDoc (\e -> "=" <+> pExpr e) expr
         Ass name ty expr -> pIdent name.name <> ":" <+> pType ty <+> "=" <+> pExpr expr

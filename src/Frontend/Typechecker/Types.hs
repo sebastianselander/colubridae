@@ -176,6 +176,8 @@ type instance XTyFun Tc = NoExtField
 
 type instance XTyCon Tc = NoExtField
 
+type instance XPointerType Tc = NoExtField
+
 type instance XTypeVar Tc = NoExtField
 
 type instance XType Tc = MetaTy

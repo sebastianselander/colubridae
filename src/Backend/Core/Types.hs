@@ -38,6 +38,7 @@ data Expr
     | App TyExpr [TyExpr]
     | Let ExplicitName Type (Maybe TyExpr)
     | Ass ExplicitName Type TyExpr
+    | DerefAss ExplicitName Type TyExpr
     | Return TyExpr
     | Break
     | If TyExpr [TyExpr] (Maybe [TyExpr])
@@ -85,7 +86,7 @@ data BinOp
     | Neq
     deriving (Data, Eq, Ord, Show)
 
-data PrefixOp = Not | Neg
+data PrefixOp = Not | Neg | Ref | Deref
     deriving (Data, Eq, Ord, Show)
 
 data Constant

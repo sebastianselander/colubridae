@@ -165,6 +165,8 @@ type instance XTyCon Rn = NoExtField
 
 type instance XTypeVar Rn = NoExtField
 
+type instance XPointerType Rn = NoExtField
+
 type instance XLoop Rn = SourceInfo
 
 type instance XLam Rn = XLam Par

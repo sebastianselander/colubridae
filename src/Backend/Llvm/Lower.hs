@@ -102,7 +102,6 @@ instance Pretty Type where
         OpaquePointer -> "ptr"
         PointerType OpaquePointer -> "ptr"
         PointerType Void -> "ptr"
-        PointerType (PointerType _) -> "ptr"
         PointerType ty -> pretty ty <> "*"
         TyFun tys ty -> pretty ty <> tupled (fmap pretty tys) <> "*"
         StructType tys -> braces $ space <> concatWith (surround (comma <> space)) (fmap pretty tys) <> space
@@ -139,7 +138,7 @@ instance Pretty Instruction where
             let ty = case typeOf operand of
                     PointerType ty -> ty
                     OpaquePointer -> OpaquePointer
-                    _ -> __IMPOSSIBLE__
+                    _ -> OpaquePointer -- __IMPOSSIBLE__
             "load" <+> pretty ty <> "," <+> typed operand
         Ret operand -> "ret" <+> typed operand
         Label lbl -> pretty lbl <> ":"

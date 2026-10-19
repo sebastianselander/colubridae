@@ -91,6 +91,7 @@ keywords =
     , "}"
     , "import"
     , "as"
+    , "&"
     ]
 
 keyword :: Text -> Parser ()

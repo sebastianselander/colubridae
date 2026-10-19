@@ -125,6 +125,7 @@ prettyType2 = \case
             Pretty.pretty name
                 <> Pretty.angles
                     (Pretty.concatWith (Pretty.surround $ Pretty.comma <> Pretty.space) $ fmap Pretty.pretty typarams)
+    PointerType NoExtField ty -> "&" <> Pretty.pretty ty
     TyLit _ tylit -> case tylit of
         Unit -> "()"
         String -> "string"

@@ -173,6 +173,7 @@ data Type name a
     | TyFun !(XTyFun a) [Type name a] (Type name a)
     | TyCon !(XTyCon a) name [Type name a]
     | TypeVar !(XTypeVar a) TyVar
+    | PointerType !(XPointerType a) (Type name a)
     | Type !(XType a)
 
 (~~) :: (Eq name, Eq (XType a)) => Type name a -> Type name a -> Bool
@@ -182,6 +183,7 @@ l ~~ r = case (l, r) of
     (TyCon _ left typarams1, TyCon _ right typarams2) -> and (zipWith (~~) typarams1 typarams2) && left == right
     (TypeVar _ left, TypeVar _ right) -> left == right
     (Type a, Type b) -> a == b
+    (PointerType _ ty1, PointerType _ ty2) -> ty1 ~~ ty2
     _ -> False
 
 type family XTyLit a
@@ -191,6 +193,8 @@ type family XTyFun a
 type family XType a
 
 type family XTyCon a
+
+type family XPointerType a
 
 type family XTypeVar a
 
@@ -202,6 +206,7 @@ coerceType ::
     , XType t1 ~ XType t2
     , XTyCon t1 ~ XTyCon t2
     , XTypeVar t1 ~ XTypeVar t2
+    , XPointerType t1 ~ XPointerType t2
     ) =>
     Type name t1 ->
     Type name t2
@@ -211,6 +216,7 @@ coerceType ty = case ty of
     TyCon a b typarams -> TyCon a b (fmap coerceType typarams)
     Type a -> Type a
     TypeVar a b -> TypeVar a b
+    PointerType a b -> PointerType a (coerceType b)
 
 data TyLit = Unit | String | Int | Double | Char | Bool
     deriving (Data, Enum, Eq, Ord, Show)
@@ -237,6 +243,7 @@ data AssignOp
     | DivAssign
     | ModAssign
     | Assign
+    | DerefAssign
     deriving (Data, Eq, Ord, Show)
 
 deriving instance (Show name, Forall Show a) => Show (Stmt name a)
@@ -321,7 +328,7 @@ type family XLamArg a
 
 deriving instance (Show name, Forall Show a) => Show (LamArg name a)
 
-data PrefixOp = Not | Neg
+data PrefixOp = Not | Neg | Ref | Deref
     deriving (Data, Eq, Ord, Show)
 
 data BinOp
@@ -389,6 +396,7 @@ type Forall (c :: Data.Kind.Type -> Constraint) a =
     , c (XTyLit a)
     , c (XTyCon a)
     , c (XTyFun a)
+    , c (XPointerType a)
     , c (XVar a)
     , c (XWhile a)
     , c (XEBlock a)

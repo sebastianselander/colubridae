@@ -75,15 +75,6 @@ might depend on some result from the first
 compose :: Substitution -> Substitution -> Substitution
 compose sub1@(Subst m1) (Subst m2) = Subst $ Map.map (apply sub1) m2 `Map.union` m1
 
-substitute :: Substitution -> TypeTc -> TypeTc
-substitute sub ty = case ty of
-    Type (Mono _) -> fromMaybe ty (lookup ty sub)
-    TyFun loc args ret -> TyFun loc (fmap (substitute sub) args) (substitute sub ret)
-    Type AnyX -> ty
-    TypeVar _ _ -> ty
-    TyLit _ _ -> ty
-    TyCon _ typarams _ -> ty
-
 class Substitute t where
     apply :: Substitution -> t -> t
 
@@ -95,6 +86,7 @@ instance Substitute TypeTc where
         TypeVar NoExtField _ -> fromMaybe ty (lookup ty sub)
         TyLit NoExtField _ -> fromMaybe ty (lookup ty sub)
         TyCon NoExtField name params -> fromMaybe (TyCon NoExtField name (fmap (apply sub) params)) (lookup ty sub)
+        PointerType NoExtField ty -> fromMaybe (PointerType NoExtField (apply sub ty)) (lookup ty sub)
 
 instance Substitute ExprTc where
     apply sub expr = case expr of

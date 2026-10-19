@@ -63,6 +63,7 @@ unify info ty1 ty2 = case (ty1, ty2) of
     (TyCon NoExtField name1 params1, TyCon NoExtField name2 params2)
         | name1 == name2 -> unifies info (zip params1 params2)
         | otherwise -> tyExpectedGot' info [ty1] ty2
+    (PointerType NoExtField ty1, PointerType NoExtField ty2) -> unify info ty1 ty2
     (ty1, ty2) -> tyExpectedGot' info [ty1] ty2
 
 unifies ::
@@ -113,6 +114,7 @@ instance TypeOf TypeRn where
         TyFun NoExtField b c -> TyFun NoExtField (fmap typeOf b) (typeOf c) -- NOTE: is `emptyTyParamList` correct?
         TyCon NoExtField b params -> TyCon NoExtField b (fmap typeOf params)
         TypeVar NoExtField b -> TypeVar NoExtField b
+        PointerType NoExtField ty -> PointerType NoExtField (typeOf ty)
 
 instance TypeOf LamArgTc where
     typeOf (LamArg ty _) = ty

@@ -102,7 +102,6 @@ compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (
 compile passes files = do
     program <- liftEither $ parse files
     log passes (Debug Parse Nothing "") []
-
     program <- liftEither $ left report $ rename program
     log passes (Debug Rename (Just $ prettyRenamer program) "") []
 

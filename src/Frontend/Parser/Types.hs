@@ -167,6 +167,8 @@ type instance XTyCon Par = SourceInfo
 
 type instance XTypeVar Par = SourceInfo
 
+type instance XPointerType Par = SourceInfo
+
 type instance XLoop Par = SourceInfo
 
 type instance XLam Par = SourceInfo

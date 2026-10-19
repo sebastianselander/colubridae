@@ -114,7 +114,7 @@ assembleExpr (Core.Typed taggedType expr) =
     case expr of
         Core.Constant lit -> comment "Lit expression" >> assembleLit lit
         Core.Var binding name -> do
-            comment "Var expression"
+            comment $ "Var expression : " <> show binding
             case binding of
                 Core.Constructor ->
                     case taggedType of
@@ -131,6 +131,17 @@ assembleExpr (Core.Typed taggedType expr) =
             left <- assembleLoadExpr leftExpr
             right <- assembleLoadExpr rightExpr
             llvmBinOp operator taggedType left right
+        Core.PrefixOp Core.Deref expr -> do
+            comment "Deref"
+            assembleLoadExpr expr
+        Core.PrefixOp Core.Ref expr -> do
+            comment "Ref"
+            e <- assembleExpr expr
+            name <- fresh
+            operand <- alloca name (ptr taggedType)
+            store e operand
+            comment "Ref over"
+            pure operand
         Core.PrefixOp Core.Not expr -> do
             comment "PrefixOp expression"
             expr <- assembleLoadExpr expr
@@ -151,6 +162,14 @@ assembleExpr (Core.Typed taggedType expr) =
             expr <- assembleLoadExpr expr
             store expr decl
             pure decl
+        Core.DerefAss name varType expr -> do
+            comment "DerefAss"
+            let operand = LocalReference (ptr varType) name
+            value <- assembleLoadExpr expr
+            mem <- load varType operand
+            store value mem
+            comment "DerefAss over"
+            unit
         Core.Ass name varType expr -> do
             comment "Ass expression"
             expr <- assembleLoadExpr expr

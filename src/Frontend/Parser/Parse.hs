@@ -207,6 +207,19 @@ break = P.label "break" $ do
     info <- spanEnd gs
     pure $ Break info expr
 
+dereference :: Parser ExprPar
+dereference = do
+    gs <- spanStart
+    -- FIXME: eliminate try
+    name <- P.try $ do
+        lexeme (keyword "*")
+        name <- lexeme identifier
+        lexeme (keyword "=")
+        pure name
+    expr <- expression
+    info <- spanEnd gs
+    pure (Ass info name DerefAssign expr)
+
 let_ :: Parser ExprPar
 let_ = P.label "let" $ do
     gs <- spanStart
@@ -335,6 +348,7 @@ atom =
         , loop
         , break
         , let_
+        , dereference
         , EBlock NoExtField <$> block
         , literal
         , variable
@@ -406,6 +420,8 @@ prefixOp =
     P.choice
         [ keyword "!" $> Not
         , keyword "-" $> Neg
+        , keyword "&" $> Ref
+        , keyword "*" $> Deref
         ]
 
 infixOp :: Parser BinOp
@@ -444,7 +460,7 @@ defaultBindingPowerTable =
                 , (And, (4, 3))
                 , (Or, (3, 2))
                 ]
-        _prefixTable = Map.fromList [(Not, 9), (Neg, 9)]
+        _prefixTable = Map.fromList [(Not, 9), (Neg, 9), (Ref, 9), (Deref, 9)]
         _postfixTable = Map.empty
      in BindingPowerTable
             { _prefixTable

@@ -350,8 +350,9 @@ dsPat = \case
 
 dsType :: (Monad m) => Tc.TypeTc -> m Type
 dsType = \case
-    Tc.Type (Mono _) -> __IMPOSSIBLE__ -- NOTE: Should be impossible
+    Tc.Type (Mono _) -> pure OpaquePointer
     Tc.TypeVar _ _ -> pure OpaquePointer
+    Tc.PointerType NoExtField ty -> PointerType <$> dsType ty
     Tc.TyCon NoExtField name _ -> pure (TyCon name)
     Tc.TyLit NoExtField Tc.Unit -> pure Unit
     Tc.TyLit NoExtField Tc.String -> pure (PointerType (I 8))
@@ -424,6 +425,10 @@ dsLit = \case
     Tc.UnitLit NoExtField -> pure $ Constant UnitLit
 
 ass :: ExplicitName -> Tc.TypeTc -> Bound.Boundedness -> Tc.AssignOp -> Tc.ExprTc -> DsM Expr
+ass name typ _ Tc.DerefAssign xpr = do
+    ty <- dsType typ
+    expr <- dsExpr xpr
+    pure (DerefAss name ty expr)
 ass name typ binding op xpr = do
     expr <- dsExpr xpr
     ty <- dsType typ
@@ -457,6 +462,8 @@ dsPrefixOp :: Tc.PrefixOp -> PrefixOp
 dsPrefixOp = \case
     Tc.Not -> Not
     Tc.Neg -> Neg
+    Tc.Ref -> Ref
+    Tc.Deref -> Deref
 
 dsBinOp :: Tc.BinOp -> BinOp
 dsBinOp = \case

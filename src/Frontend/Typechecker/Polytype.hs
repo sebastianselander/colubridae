@@ -40,6 +40,7 @@ replaceTyVars tbl = \case
     TyFun tyParamList args ret -> TyFun tyParamList (fmap (replaceTyVars tbl) args) (replaceTyVars tbl ret)
     TyCon NoExtField name params -> TyCon NoExtField name (fmap (replaceTyVars tbl) params)
     t@(TypeVar NoExtField tyvar) -> fromMaybe t (Map.lookup tyvar tbl)
+    PointerType NoExtField ty -> PointerType NoExtField (replaceTyVars tbl ty)
     Type meta -> Type meta
 
 occurs :: MonoType -> TypeTc -> Bool
@@ -48,6 +49,7 @@ occurs mono ty = case ty of
     TyCon NoExtField _ params -> any (occurs mono) params
     TypeVar NoExtField _ -> False
     TyFun NoExtField args ret -> any (occurs mono) args || occurs mono ret
+    PointerType NoExtField ty -> occurs mono ty
     Type (Mono m) -> mono == m
     Type AnyX -> False
 
@@ -69,6 +71,7 @@ generalize ty =
         TyLit NoExtField _ -> (mempty, mempty)
         TyCon NoExtField _ params -> foldr f (mempty, mempty) params
         TypeVar NoExtField _ -> (mempty, mempty)
+        PointerType NoExtField ty -> find_all_monotypes ty
         Type AnyX -> (mempty, mempty)
       where
         f t (monos, tvars) =

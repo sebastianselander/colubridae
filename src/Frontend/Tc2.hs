@@ -16,11 +16,8 @@ import Control.Monad.Validate (MonadValidate, ValidateT, runValidateT)
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Data (Data)
 import Data.Foldable (foldrM)
-import Data.Text.Lazy (unpack)
-import Debug.Trace (traceWith)
 import Relude hiding (Any, Type, intercalate)
 import Relude.Unsafe (fromJust)
-import Text.Pretty.Simple (pShow)
 
 import Data.Map.Strict qualified as Map
 
@@ -42,7 +39,6 @@ import Frontend.Builtin qualified as Builtins
 import Frontend.Substitution qualified as Sub
 import Frontend.Typechecker.Ctx qualified as Ctx
 import Frontend.Typechecker.Types qualified as Frontend.TypeCheck.Types
-import Options qualified as Frontend
 import Table qualified as DefTable
 
 data Env = Env
@@ -420,6 +416,15 @@ infer_prefix loc op expr =
         Not -> do
             (sub, expr) <- check_expr (TyLit NoExtField Bool) expr
             pure (sub, Prefix (loc, TyLit NoExtField Bool) Not expr)
+        Ref -> do
+            (sub, expr) <- infer_expr expr
+            pure (sub, Prefix (loc, PointerType NoExtField (typeOf expr)) Ref expr)
+        Deref -> do
+            (sub1, expr) <- infer_expr expr
+            ty <- fresh_type
+            sub2 <- unify loc (PointerType NoExtField ty) (typeOf expr)
+            let sub3 = Sub.compose sub2 sub1
+            pure (sub3, Prefix (loc, apply sub3 ty) Deref expr)
 
 infer_binop ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -481,13 +486,23 @@ infer_ass loc boundedness name op expr =
             assignNonVariable' loc name
         Free; Bound -> do
             (ty, _) <- lookupVar name
-            (sub, expr) <- check_expr ty expr
             case op of
-                AddAssign; SubAssign; MulAssign; DivAssign; ModAssign -> do
-                    let expected_types = [int_type, double_type]
-                    unless (ty `elem` expected_types) $ void $ tyExpectedGot loc expected_types ty
-                Assign -> pure ()
-            pure (sub, Ass (StmtType unit_type ty loc, boundedness) name op expr)
+                DerefAssign -> do
+                    case ty of
+                        PointerType NoExtField ty -> do
+                            (sub, expr) <- check_expr ty expr
+                            pure (sub, Ass (StmtType unit_type (PointerType NoExtField ty) loc, boundedness) name op expr)
+                        ty -> do
+                            ty' <- fresh_type
+                            tyExpectedGot' loc [PointerType NoExtField ty] ty'
+                _ -> do
+                    (sub, expr) <- check_expr ty expr
+                    case op of
+                        AddAssign; SubAssign; MulAssign; DivAssign; ModAssign -> do
+                            let expected_types = [int_type, double_type]
+                            unless (ty `elem` expected_types) $ void $ tyExpectedGot loc expected_types ty
+                        Assign -> pure ()
+                    pure (sub, Ass (StmtType unit_type ty loc, boundedness) name op expr)
 
 infer_ret ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
@@ -625,7 +640,7 @@ infer_loop loc block = do
                     sub
                     xs
             pure (apply sub $ typeOf x)
-    sub1 <- unify loc breakType (typeOf block)
+    sub1 <- unify loc unit_type (typeOf block)
     let sub2 = Sub.compose sub1 sub
     modifying variables (Map.map (first (apply sub2)))
     pure (sub2, apply sub2 $ Loop (loc, breakType) block)
