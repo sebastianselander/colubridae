@@ -126,7 +126,6 @@ rem = arith LlvmRem
 
 arith :: ArithOp -> Type -> Operand -> Operand -> IRBuilder Operand
 arith op ty l r = do
-    -- FIXME(sebsel): this should be a constant operand
     name <- fresh
     operand <- alloca name ty
     name <- named (Arith op ty l r)

@@ -52,7 +52,7 @@ assembleDecl (Core.Con index name ty tyArgs) = do
 assembleCon :: Int -> ExplicitName -> Type -> Maybe [Type] -> IRBuilder [Decl]
 assembleCon index name ty = \case
     Nothing -> do
-        instrs <- fmap snd $ inContext $ do
+        ((), instrs) <- inContext do
             name <- fresh
             alloced <- alloca name ty
             store (struct [LInt Int64 (fromIntegral index)]) alloced
