@@ -149,6 +149,7 @@ prettyType2 = \case
     ty@TyFun {} -> Pretty.parens (Pretty.pretty ty)
     TypeVar _ tyvar -> Pretty.pretty tyvar
     Type (UnresolvedType _ var) -> Pretty.pretty var
+    PointerType _ ty -> Pretty.pretty ty <> "*"
 
 instance Pretty ExprPar where
     pretty = prettyExpr1
@@ -268,3 +269,4 @@ instance Pretty AssignOp where
         DivAssign -> "/="
         ModAssign -> "%="
         Assign -> "="
+        DerefAssign -> "&="

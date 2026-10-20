@@ -41,7 +41,7 @@ pType = \case
             , pType ret
             ]
 
-pLit :: Constant -> Doc ann
+pLit :: Literal -> Doc ann
 pLit = \case
     IntLit lit -> show lit
     DoubleLit lit -> show lit
@@ -53,25 +53,26 @@ pLit = \case
 
 pBinOp :: BinOp -> Doc ann
 pBinOp = \case
-    Mul -> "*"
-    Div -> "/"
-    Add -> "+"
-    Sub -> "-"
-    Mod -> "%"
-    Or -> "||"
-    And -> "&&"
-    Lt -> "<"
-    Gt -> ">"
-    Lte -> "<="
-    Gte -> ">="
-    Eq -> "=="
-    Neq -> "!="
+    MulOp -> "*"
+    DivOp -> "/"
+    AddOp -> "+"
+    SubOp -> "-"
+    ModOp -> "%"
+    OrOp -> "||"
+    AndOp -> "&&"
+    LtOp -> "<"
+    GtOp -> ">"
+    LteOp -> "<="
+    GteOp -> ">="
+    EqOp -> "=="
+    NeqOp -> "!="
 
 pPrefixOp :: PrefixOp -> Doc ann
 pPrefixOp = \case
     Not -> "!"
     Neg -> "-"
     Ref -> "&"
+    Deref -> "*"
 
 pProgram :: Program -> Doc ann
 pProgram (Program mods) = concatWith (surround (hardline <> hardline)) (fmap pModule mods)
@@ -130,6 +131,7 @@ pExpr (Typed _ expr) = go expr
         App l rs -> pExpr l <> parens (hcat (punctuate comma $ fmap pExpr rs))
         Let name ty expr -> "let" <+> pIdent name.name <> ":" <+> pType ty <+> maybe emptyDoc (\e -> "=" <+> pExpr e) expr
         Ass name ty expr -> pIdent name.name <> ":" <+> pType ty <+> "=" <+> pExpr expr
+        DerefAss name ty expr -> "*" <> pIdent name.name <> ":" <+> pType ty <+> "=" <+> pExpr expr
         Return expr -> "return" <+> pExpr expr
         Break -> "break"
         If cond true mbfalse ->

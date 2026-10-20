@@ -440,11 +440,11 @@ ass name typ binding op xpr = do
                     (Typed ty $ BinOp (Typed ty $ Var (dsBound binding) name) operator expr)
      in case op of
             Tc.Assign -> pure $ Ass name ty expr
-            Tc.DivAssign -> assignment Div
-            Tc.MulAssign -> assignment Mul
-            Tc.AddAssign -> assignment Add
-            Tc.SubAssign -> assignment Sub
-            Tc.ModAssign -> assignment Mod
+            Tc.DivAssign -> assignment DivOp
+            Tc.MulAssign -> assignment MulOp
+            Tc.AddAssign -> assignment AddOp
+            Tc.SubAssign -> assignment SubOp
+            Tc.ModAssign -> assignment ModOp
 
 true :: TyExpr
 true = Typed (I 8) $ Constant $ BoolLit True
@@ -467,19 +467,19 @@ dsPrefixOp = \case
 
 dsBinOp :: Tc.BinOp -> BinOp
 dsBinOp = \case
-    Tc.Add -> Add
-    Tc.Sub -> Sub
-    Tc.Mul -> Mul
-    Tc.Div -> Div
-    Tc.Mod -> Mod
-    Tc.Or -> Or
-    Tc.And -> And
-    Tc.Lt -> Lt
-    Tc.Gt -> Gt
-    Tc.Lte -> Lte
-    Tc.Gte -> Gte
-    Tc.Eq -> Eq
-    Tc.Neq -> Neq
+    Tc.Add -> AddOp
+    Tc.Sub -> SubOp
+    Tc.Mul -> MulOp
+    Tc.Div -> DivOp
+    Tc.Mod -> ModOp
+    Tc.Or -> OrOp
+    Tc.And -> AndOp
+    Tc.Lt -> LtOp
+    Tc.Gt -> GtOp
+    Tc.Lte -> LteOp
+    Tc.Gte -> GteOp
+    Tc.Eq -> EqOp
+    Tc.Neq -> NeqOp
 
 dsBound :: Bound.Boundedness -> Binding
 dsBound = \case

@@ -6,7 +6,7 @@ import Data.Data (Data)
 import Relude hiding (Type)
 
 import Backend.Types (Type (..))
-import Names (ExplicitName, Ident)
+import Names (ExplicitName)
 import Origin
 
 data Ir = IrMain {_decls :: [Decl]} | IrLib {_decls :: [Decl]}

@@ -313,7 +313,7 @@ indexOf :: Core.Pattern -> Integer
 indexOf = \case
     Core.PCon n _ -> fromIntegral n
 
-assembleLit :: (Monad m) => Core.Constant -> m Operand
+assembleLit :: (Monad m) => Core.Literal -> m Operand
 assembleLit = \case
     Core.IntLit int -> pure $ ConstantOperand (LInt Int64 int)
     Core.DoubleLit double -> pure $ ConstantOperand (LDouble Float double)
@@ -327,21 +327,21 @@ unit = pure $ ConstantOperand LUnit
 
 llvmBinOp :: Core.BinOp -> (Type -> Operand -> Operand -> IRBuilder Operand)
 llvmBinOp op = case op of
-    Core.Mul -> mul
-    Core.Div -> div
-    Core.Add -> add
-    Core.Sub -> sub
-    Core.Mod -> rem
-    Core.Lt -> lt
-    Core.Or -> or
-    Core.And -> and
-    Core.Gt -> gt
-    Core.Lte -> le
-    Core.Gte -> ge
-    Core.Eq -> eq
-    Core.Neq -> neq
+    Core.MulOp -> mul
+    Core.DivOp -> div
+    Core.AddOp -> add
+    Core.SubOp -> sub
+    Core.ModOp -> rem
+    Core.LtOp -> lt
+    Core.OrOp -> or
+    Core.AndOp -> and
+    Core.GtOp -> gt
+    Core.LteOp -> le
+    Core.GteOp -> ge
+    Core.EqOp -> eq
+    Core.NeqOp -> neq
 
-llvmLit :: Type -> Core.Constant -> Constant
+llvmLit :: Type -> Core.Literal -> Constant
 llvmLit ty = \case
     Core.IntLit int -> LInt ty int
     Core.DoubleLit double -> LDouble ty double

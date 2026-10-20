@@ -25,13 +25,13 @@ data Def
 data Arg = Arg ExplicitName Type | EnvArg Type
     deriving (Data, Eq, Ord, Show)
 
-data Operand = ConstantOperand !Constant | LocalReference !Type !ExplicitName
+data Operand = ConstantOperand !Literal | LocalReference !Type !ExplicitName
 
 data TyExpr = Typed {typeOf :: Type, expr :: Expr}
     deriving (Data, Eq, Ord, Show)
 
 data Expr
-    = Constant Constant
+    = Constant Literal
     | Var Binding ExplicitName
     | BinOp TyExpr BinOp TyExpr
     | PrefixOp PrefixOp TyExpr
@@ -71,25 +71,25 @@ data Binding
     deriving (Data, Eq, Ord, Show)
 
 data BinOp
-    = Mul
-    | Div
-    | Add
-    | Sub
-    | Mod
-    | Or
-    | And
-    | Lt
-    | Gt
-    | Lte
-    | Gte
-    | Eq
-    | Neq
+    = MulOp
+    | DivOp
+    | AddOp
+    | SubOp
+    | ModOp
+    | OrOp
+    | AndOp
+    | LtOp
+    | GtOp
+    | LteOp
+    | GteOp
+    | EqOp
+    | NeqOp
     deriving (Data, Eq, Ord, Show)
 
 data PrefixOp = Not | Neg | Ref | Deref
     deriving (Data, Eq, Ord, Show)
 
-data Constant
+data Literal
     = IntLit !Integer
     | DoubleLit !Double
     | CharLit !Char
