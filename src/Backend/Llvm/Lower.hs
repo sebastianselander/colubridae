@@ -19,10 +19,12 @@ target = "target triple = \"x86_64-pc-linux-gnu\""
 libc :: Doc ann
 libc =
     hcat
-        [ "declare void @exit(i64)"
-        , "declare i32 @printf(ptr, ...)"
-        , "declare ptr @malloc(i64)"
-        ]
+        $ punctuate
+            hardline
+            [ "declare void @exit(i64)"
+            , "declare i32 @printf(ptr, ...)"
+            , "declare ptr @malloc(i64)"
+            ]
 
 llvmOut :: (Pretty a) => a -> Text
 llvmOut = renderStrict . layoutPretty (LayoutOptions {layoutPageWidth = Unbounded}) . pretty
@@ -30,8 +32,17 @@ llvmOut = renderStrict . layoutPretty (LayoutOptions {layoutPageWidth = Unbounde
 indentLevel :: Int
 indentLevel = 4
 
-indentedBlock :: [Named Instruction] -> Doc ann
-indentedBlock instr = indent indentLevel (hcat $ punctuate hardline (fmap pretty instr))
+indentedBlock :: BasicBlock -> Doc ann
+indentedBlock BasicBlock {label, instructions, terminator} =
+    pretty label
+        <> ":"
+        <> hardline
+        <> indent
+            indentLevel
+            (hcat $ punctuate hardline (fmap pretty instructions <> [pretty terminator]))
+
+indentedBlocks :: [BasicBlock] -> Doc ann
+indentedBlocks blocks = concatWith (surround hardline) $ fmap indentedBlock blocks
 
 instance Pretty Module where
     pretty (Module decls) =
@@ -50,7 +61,7 @@ instance Pretty Definition where
             <+> "= type"
             <+> pretty ty
     pretty (GlobalString name ty string) = "@" <> prettyName name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
-    pretty (Function _ name args ty instr) =
+    pretty (Function _ name args ty blocks) =
         "define"
             <+> "dso_local"
             <+> pretty ty
@@ -59,9 +70,7 @@ instance Pretty Definition where
             <> tupled (fmap typed args)
             <+> lbrace
             <> hardline
-            <> "entry:"
-            <> hardline
-            <> indentedBlock instr
+            <> indentedBlocks blocks
             <> hardline
             <> rbrace
     pretty (Declare ty name args ellipsis) =
@@ -123,17 +132,12 @@ instance Pretty Instruction where
                     OpaquePointer -> OpaquePointer
                     _ -> OpaquePointer -- __IMPOSSIBLE__
             "load" <+> pretty ty <> "," <+> typed operand
-        Ret operand -> "ret" <+> typed operand
-        Label lbl -> pretty lbl <> ":"
         Comment cmnt -> ";" <+> pretty cmnt
-        Br operand lbl1 lbl2 -> "br" <+> typed operand <> "," <+> "label %" <> pretty lbl1 <> "," <+> "label %" <> pretty lbl2
-        Jump lbl -> "br label %" <> pretty lbl
         GetElementPtr op ops -> case typeOf op of
             PointerType ty -> "getelementptr" <+> pretty ty <> "," <+> typed op <> "," <+> commasep (fmap typed ops)
             ty -> __IMPOSSIBLE__
         ExtractValue operand indices -> "extractvalue" <+> typed operand <> "," <+> commasep (fmap pretty indices)
         Malloc operand -> "call ptr @malloc" <> parens (typed operand)
-        Unreachable -> "unreachable"
         Phi [] -> __IMPOSSIBLE__
         Phi xs@(i : _) ->
             "phi"
@@ -144,6 +148,13 @@ instance Pretty Instruction where
                         (\(operand, label) -> brackets (space <> pretty operand <> comma <+> "%" <> pretty label <> space))
                         xs
                     )
+
+instance Pretty Terminator where
+    pretty = \case
+        Br operand lbl1 lbl2 -> "br" <+> typed operand <> "," <+> "label %" <> pretty lbl1 <> "," <+> "label %" <> pretty lbl2
+        Ret operand -> "ret" <+> maybe "i1 0" typed operand
+        Jump lbl -> "br label %" <> pretty lbl
+        Unreachable -> "unreachable"
         Switch op lbl pairs ->
             "switch"
                 <+> typed op
@@ -157,7 +168,9 @@ instance Pretty Instruction where
                     )
 
 prettyName :: ExplicitName -> Doc ann
-prettyName = dquotes . pretty
+prettyName name
+    | name.oldname == "main" = "main"
+    | otherwise = dquotes $ pretty name
 
 commasep :: [Doc ann] -> Doc ann
 commasep = concatWith (surround (comma <> space))

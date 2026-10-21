@@ -4,7 +4,7 @@
 module Backend.Llvm.Llvm where
 
 import Control.Lens.Getter (view)
-import Control.Lens.Setter (locally)
+import Control.Lens.Setter (assign, locally)
 import Control.Monad.Extra (concatMapM)
 import Data.Tuple.Extra (fst3)
 import Relude hiding (Type, and, div, exitFailure, null, or, rem)
@@ -36,57 +36,66 @@ assembleDecl :: Core.Def -> IRBuilder [Definition]
 assembleDecl (Core.Decl _namespace ty name args) = pure [Declare ty name args NoEllipsis]
 assembleDecl (Core.StaticString name ty text) = pure [GlobalString name ty text]
 assembleDecl (Core.Main namespace block) = do
-    clearInstructions
+    clearBlocks
     mapM_ assembleExpr block
-    pure . Function Origin.Function (EName namespace "main" "main") [] Void <$> extractInstructions
+    emitBlock
+    pure . Function Origin.Function (EName namespace "main" "main") [] (I 1) <$> getBlocks
 assembleDecl (Core.Fn origin name arguments returnType block) = do
-    clearInstructions
+    clearBlocks
     args <- mapM assembleArg arguments
     mapM_ assembleExpr block
-    pure . Function origin name args returnType <$> extractInstructions
+    emitBlock
+    pure . Function origin name args returnType <$> getBlocks
 assembleDecl (Core.TypeSyn name ty) = pure [TypeDefinition name ty]
 assembleDecl (Core.Con index name ty tyArgs) = do
-    clearInstructions
+    clearBlocks
     assembleCon index name ty tyArgs
 
 assembleCon :: Int -> ExplicitName -> Type -> Maybe [Type] -> IRBuilder [Definition]
 assembleCon index name ty = \case
     Nothing -> do
-        ((), instrs) <- inContext do
-            name <- fresh
-            alloced <- alloca name ty
-            store (struct [LInt Int64 (fromIntegral index)]) alloced
-            loaded <- load ty alloced
-            ret loaded
-        pure [Function Origin.ConstructorFn name [] ty instrs]
+        name' <- fresh
+        alloced <- alloca name' ty
+        store (struct [LInt Int64 (fromIntegral index)]) alloced
+        loaded <- load ty alloced
+        ret loaded
+        emitBlock
+        blocks <- getBlocks
+        pure [Function Origin.ConstructorFn name [] ty blocks]
     Just tys -> do
         -- NOTE: Can we just inline `mkName`??
         let constructorFun = name {name = Ident "mk" <> name.name}
         operands <- mapM (\name -> fmap (LocalReference name) fresh) tys
         let retty = getReturnType ty
-        instrs <- fmap snd $ inContext $ do
-            name <- fresh
-            alloced <- alloca name retty
-            tag <- gep alloced [i32 @Integer 0, i32 @Integer 0]
-            store (i64 index) tag
-            void $ flip mapWithIndexM operands $ \index argument -> do
-                value <- gep alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
-                -- TODO: Do one malloc for all arguments?
-                malloced <- malloc (ptr (typeOf argument)) (i64 (sizeOf (typeOf argument)))
-                -- TODO(sebsel): Is this GEP needed?
-                mallocedPtr <- gep malloced [i32 @Integer 0]
-                store argument mallocedPtr
-                store malloced value
-            struct <- load retty alloced
-            ret struct
+        name' <- fresh
+        alloced <- alloca name' retty
+        tag <- gep alloced [i32 @Integer 0, i32 @Integer 0]
+        store (i64 index) tag
+        void $ flip mapWithIndexM operands $ \index argument -> do
+            value <- gep alloced [i32 @Integer 0, i32 @Integer 1, i32 @Integer index]
+            -- TODO: Do one malloc for all arguments?
+            malloced <- malloc (ptr (typeOf argument)) (i64 (sizeOf (typeOf argument)))
+            -- TODO(sebsel): Is this GEP needed?
+            mallocedPtr <- gep malloced [i32 @Integer 0]
+            store argument mallocedPtr
+            store malloced value
+        struct <- load retty alloced
+        ret struct
+        emitBlock
+        blocks <- getBlocks
         pure
             [ Function
                 Origin.ConstructorFn
                 constructorFun
                 operands
                 retty
-                instrs
-            , Function Origin.Function name [] ty [Nameless $ Ret $ global ty constructorFun]
+                blocks
+            , Function
+                Origin.Function
+                name
+                []
+                ty
+                [BasicBlock entryLabel [] (Nameless $ Ret $ Just (global ty constructorFun))]
             ]
 
 assembleArg :: Core.Arg -> IRBuilder Operand
@@ -176,15 +185,27 @@ assembleExpr (Core.Typed taggedType expr) =
             let operand = LocalReference (ptr varType) name
             store expr operand
             unit
+        -- FIXME: Rethink terminators
         Core.Return expr -> do
             comment "Return expression"
+            lbl <- mkLabel "return"
+            jump lbl
+            block lbl
             expr <- assembleLoadExpr expr
+            ret expr
+            lbl <- mkLabel "return_after"
+            block lbl
             ret expr
             unit
         Core.Break -> do
             comment "Break expression"
+            lbl <- mkLabel "break"
+            jump lbl
+            block lbl
             lbl <- view breakLabel
             jump lbl
+            lbl <- mkLabel "break_after"
+            block lbl
             unit
         Core.If condition trueBlk falseBlk -> do
             comment "If expression"
@@ -192,39 +213,29 @@ assembleExpr (Core.Typed taggedType expr) =
             false <- mkLabel "if_false"
             end <- mkLabel "if_after"
             condition <- assembleLoadExpr condition
-            -- jump to end if no else branch exist
+            -- -- jump to end if no else branch exist
             br condition true (maybe end (const false) falseBlk)
-            -- true case
-            label true
+            block true
             mapM_ assembleExpr trueBlk
             jump end
-
-            -- false case, if there is one
-            maybe
-                (pure ())
-                ( \falseBlk -> do
-                    label false
-                    mapM_ assembleExpr falseBlk
-                    jump end
-                )
-                falseBlk
-
-            label end
-
-            unit
+            block false
+            maybe (pure ()) (mapM_ assembleExpr) falseBlk
+            jump end
+            block end
+            unit -- hacky
         Core.While condition blk -> do
             comment "While expression"
             start <- mkLabel "while_start"
             continue <- mkLabel "while_continue"
             exit <- mkLabel "while_exit"
             jump continue
-            label continue
+            block continue
             expr <- assembleLoadExpr condition
             br expr start exit
-            label start
+            block start
             locally breakLabel (const exit) $ mapM_ assembleExpr blk
             jump continue
-            label exit
+            block exit
             unit
         Core.Closure fun env -> do
             comment "Closure expression"
@@ -275,7 +286,7 @@ assembleExpr (Core.Typed taggedType expr) =
             switch tag catchLbl switchCases
             forM_ (zip switchCases matchArms)
                 $ \((constructorTag, lbl), Core.MatchArm (Core.PCon _ vars) body) -> do
-                    label lbl
+                    block lbl
                     comment ("Constructor tag: " <> show constructorTag)
                     forM_ (zip [0 ..] vars) $ \(index, (name, ty)) -> do
                         comment "var"
@@ -289,12 +300,12 @@ assembleExpr (Core.Typed taggedType expr) =
                     store operand result
                     jump doneLbl
             () <- do
-                label catchLbl
+                block catchLbl
                 comment "catchExpr"
                 comment (show catchExpr)
                 mapM_ assembleExpr catchExpr
                 unreachable
-            label doneLbl
+            block doneLbl
             pure result
         Core.ToStderrExit var -> do
             void
