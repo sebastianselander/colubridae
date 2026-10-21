@@ -33,21 +33,15 @@ indentLevel = 4
 indentedBlock :: [Named Instruction] -> Doc ann
 indentedBlock instr = indent indentLevel (hcat $ punctuate hardline (fmap pretty instr))
 
-instance Pretty Ir where
-    pretty (IrMain decls) =
-        target
-            <> hardline
-            <> libc
-            <> hardline
-            <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
-    pretty (IrLib decls) =
+instance Pretty Module where
+    pretty (Module decls) =
         target
             <> hardline
             <> libc
             <> hardline
             <> hcat (punctuate (hardline <> hardline) $ fmap pretty decls)
 
-instance Pretty Decl where
+instance Pretty Definition where
     pretty (TypeDefinition name ty) =
         ";the type inside the array is just used to allocate the correct amount of bytes"
             <> hardline
@@ -56,18 +50,7 @@ instance Pretty Decl where
             <+> "= type"
             <+> pretty ty
     pretty (GlobalString name ty string) = "@" <> prettyName name <+> "= constant" <+> pretty ty <+> "c" <+> dquotes (pretty string)
-    pretty (LlvmMain instr) =
-        "define dso_local i1 @main()"
-            <+> lbrace
-            <> hardline
-            <> "entry:" -- TODO: does not belong here
-            <> hardline
-            <> indentedBlock instr
-            <> hardline
-            <> indent 4 "ret i1 0"
-            <> hardline
-            <> rbrace
-    pretty (Define _ name args ty instr) =
+    pretty (Function _ name args ty instr) =
         "define"
             <+> "dso_local"
             <+> pretty ty

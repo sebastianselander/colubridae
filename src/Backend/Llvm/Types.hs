@@ -9,12 +9,11 @@ import Backend.Types (Type (..))
 import Names (ExplicitName)
 import Origin
 
-data Ir = IrMain {_decls :: [Decl]} | IrLib {_decls :: [Decl]}
+newtype Module = Module {_decls :: [Definition]}
     deriving (Show)
 
-updateDecls :: ([Decl] -> [Decl]) -> Ir -> Ir
-updateDecls f (IrMain decls) = IrMain (f decls)
-updateDecls f (IrLib decls) = IrLib (f decls)
+updateDecls :: ([Definition] -> [Definition]) -> Module -> Module
+updateDecls f (Module decls) = Module (f decls)
 
 data Ellipsis = Ellipsis | NoEllipsis
     deriving (Data, Eq, Ord, Show)
@@ -22,9 +21,8 @@ data Ellipsis = Ellipsis | NoEllipsis
 type IsBuiltin = Bool
 
 -- These are declared in the order we want them defined in the ir file
-data Decl
-    = LlvmMain [Named Instruction]
-    | Define !Origin !ExplicitName [Operand] !Type [Named Instruction]
+data Definition
+    = Function !Origin !ExplicitName [Operand] !Type [Named Instruction]
     | TypeDefinition !ExplicitName !Type
     | GlobalString !ExplicitName !Type !Text
     | Declare

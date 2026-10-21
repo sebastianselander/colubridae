@@ -10,11 +10,11 @@ import Relude hiding (exitFailure, exitSuccess)
 import Prettyprinter qualified as Pretty
 
 import Backend.Llvm.Lower (llvmOut)
-import Backend.Llvm.Types (Decl (..), Ellipsis (NoEllipsis))
+import Backend.Llvm.Types (Definition (..), Ellipsis (NoEllipsis))
 import Backend.Types (Type (I, OpaquePointer, PointerType))
 import Names (ExplicitName (..), Ident (Ident), Namespace (Namespace))
 
-prelude :: ([Decl], Text)
+prelude :: ([Definition], Text)
 prelude =
     second (prologue <>)
         $ foldl'
@@ -49,7 +49,7 @@ declare ptr @malloc(i64)
 globalUnit :: Text
 globalUnit = "$internal_global_unit"
 
-printString :: (ExplicitName, Decl, Maybe Text)
+printString :: (ExplicitName, Definition, Maybe Text)
 printString =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
      in ( ename
@@ -67,7 +67,7 @@ define i1 @#{Pretty.pretty ename}(i8* %x) {
   where
     name = "printString"
 
-printChar :: (ExplicitName, Decl, Maybe Text)
+printChar :: (ExplicitName, Definition, Maybe Text)
 printChar =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
      in ( ename
@@ -85,7 +85,7 @@ define i1 @#{Pretty.pretty ename}(i8 %x) {
   where
     name = "printChar"
 
-exitSuccess :: (ExplicitName, Decl, Maybe Text)
+exitSuccess :: (ExplicitName, Definition, Maybe Text)
 exitSuccess =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
      in ( ename
@@ -101,7 +101,7 @@ define i1 @#{Pretty.pretty ename}() {
   where
     name = "exit_success"
 
-exitFailure :: (ExplicitName, Decl, Maybe Text)
+exitFailure :: (ExplicitName, Definition, Maybe Text)
 exitFailure =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
      in ( ename
@@ -117,7 +117,7 @@ define i1 @#{Pretty.pretty ename}() {
   where
     name = "exit_failure"
 
-printInt :: (ExplicitName, Decl, Maybe Text)
+printInt :: (ExplicitName, Definition, Maybe Text)
 printInt =
     let ename = EName (Namespace $ "std" :| []) (Ident name) (Ident name)
      in ( ename

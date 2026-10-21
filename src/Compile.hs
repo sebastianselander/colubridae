@@ -37,7 +37,6 @@ import Backend.Core.Pretty (prettyCore)
 import Backend.Llvm.Llvm (assemble)
 import Backend.Llvm.Lower (llvmOut)
 import Backend.Llvm.Prelude (prelude)
-import Backend.Llvm.Types (Ir, updateDecls)
 import Frontend.Error (Report (..))
 import Frontend.Monomorphizer (apply_rename, monomorphize)
 import Frontend.MonomorphizerCollector (Collection (..), Item (..), collect)
@@ -59,6 +58,8 @@ import Frontend.Types
 import Names (ExplicitName (EName, namespace), Ident (..), Namespace (Namespace))
 import Options (Pass (..))
 import Utils (File (name), zipNE)
+
+import Backend.Llvm.Types qualified as Llvm
 
 data DebugOutput = Debug {phase :: Pass, prettyTxt :: Maybe Text, normalTxt :: Text}
     deriving (Show)
@@ -98,7 +99,8 @@ gatherSymbols =
         DefAdt (Adt _ name _ _) -> Just name
         DefImport _ -> Nothing
 
-compile :: Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Ir)
+compile ::
+    Set Pass -> NonEmpty File -> ExceptT Text (WriterT DebugOutputs IO) (NonEmpty Llvm.Module)
 compile passes files = do
     program <- liftEither $ parse files
     log passes (Debug Parse Nothing "") []
@@ -137,12 +139,12 @@ compile passes files = do
     log passes (Debug Llvm (Just $ llvmOut programs) (toStrict $ pShow programs)) []
     pure programs
 
-runCompile :: Set Pass -> NonEmpty File -> IO (Either Text (NonEmpty Ir), DebugOutputs)
+runCompile :: Set Pass -> NonEmpty File -> IO (Either Text (NonEmpty Llvm.Module), DebugOutputs)
 runCompile passes = runWriterT . runExceptT . compile passes
 
-produceAsmFile :: FilePath -> Either Text Ir -> IO FilePath
+produceAsmFile :: FilePath -> Either Text Llvm.Module -> IO FilePath
 produceAsmFile asmFilename ir = do
-    ir <- pure $ fmap (updateDecls (fst prelude <>)) ir
+    ir <- pure $ fmap (Llvm.updateDecls (fst prelude <>)) ir
     let llFile = "./build/" <> replaceExtension asmFilename "ll"
     createDirectoryIfMissing True (takeDirectory llFile)
     case ir of

@@ -3,7 +3,7 @@
 
 module Backend.Llvm.Llvm where
 
-import Control.Lens.Getter (use, view)
+import Control.Lens.Getter (view)
 import Control.Lens.Setter (locally)
 import Control.Monad.Extra (concatMapM)
 import Data.Tuple.Extra (fst3)
@@ -17,39 +17,39 @@ import Backend.Llvm.Types
 import Backend.Types
 import Impossible (__IMPOSSIBLE__)
 import Names (ExplicitName (EName, name), Ident (..))
-import Origin (Origin (..))
-import Utils (catMaybesSnd, mapWithIndexM)
+import Utils (mapWithIndexM)
 
 import Backend.Core.Types qualified as Core
+import Origin qualified
 
-assemble :: Core.Program -> NonEmpty Ir
+assemble :: Core.Program -> NonEmpty Module
 assemble (Core.Program mods) = fmap assembleModule mods
 
-assembleModule :: Core.Module -> Ir
+assembleModule :: Core.Module -> Module
 assembleModule (Core.Module namespace defs) =
-    IrMain
+    Module
         . sortBy (comparing Down)
         <$> runAssembler namespace
         $ concatMapM assembleDecl defs
 
-assembleDecl :: Core.Def -> IRBuilder [Decl]
+assembleDecl :: Core.Def -> IRBuilder [Definition]
 assembleDecl (Core.Decl _namespace ty name args) = pure [Declare ty name args NoEllipsis]
 assembleDecl (Core.StaticString name ty text) = pure [GlobalString name ty text]
-assembleDecl (Core.Main _namespace block) = do
+assembleDecl (Core.Main namespace block) = do
     clearInstructions
     mapM_ assembleExpr block
-    pure . LlvmMain <$> extractInstructions
+    pure . Function Origin.Function (EName namespace "main" "main") [] Void <$> extractInstructions
 assembleDecl (Core.Fn origin name arguments returnType block) = do
     clearInstructions
     args <- mapM assembleArg arguments
     mapM_ assembleExpr block
-    pure . Define origin name args returnType <$> extractInstructions
+    pure . Function origin name args returnType <$> extractInstructions
 assembleDecl (Core.TypeSyn name ty) = pure [TypeDefinition name ty]
 assembleDecl (Core.Con index name ty tyArgs) = do
     clearInstructions
     assembleCon index name ty tyArgs
 
-assembleCon :: Int -> ExplicitName -> Type -> Maybe [Type] -> IRBuilder [Decl]
+assembleCon :: Int -> ExplicitName -> Type -> Maybe [Type] -> IRBuilder [Definition]
 assembleCon index name ty = \case
     Nothing -> do
         ((), instrs) <- inContext do
@@ -58,7 +58,7 @@ assembleCon index name ty = \case
             store (struct [LInt Int64 (fromIntegral index)]) alloced
             loaded <- load ty alloced
             ret loaded
-        pure [Define ConstructorFn name [] ty instrs]
+        pure [Function Origin.ConstructorFn name [] ty instrs]
     Just tys -> do
         -- NOTE: Can we just inline `mkName`??
         let constructorFun = name {name = Ident "mk" <> name.name}
@@ -80,13 +80,13 @@ assembleCon index name ty = \case
             struct <- load retty alloced
             ret struct
         pure
-            [ Define
-                ConstructorFn
+            [ Function
+                Origin.ConstructorFn
                 constructorFun
                 operands
                 retty
                 instrs
-            , Define Function name [] ty [Nameless $ Ret $ global ty constructorFun]
+            , Function Origin.Function name [] ty [Nameless $ Ret $ global ty constructorFun]
             ]
 
 assembleArg :: Core.Arg -> IRBuilder Operand
