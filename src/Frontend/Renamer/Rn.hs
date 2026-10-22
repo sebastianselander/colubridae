@@ -446,6 +446,7 @@ renameType typeParams ty = do
     namespace <- view namespace
     userDefinedTypes <- views symbolTable (fmap datatypes . Map.lookup namespace . symbols)
     case ty of
+        PointerType loc ty -> PointerType NoExtField <$> renameType typeParams ty
         TyCon _ name params -> do
             params <- mapM (renameType typeParams) params
             pure (TyCon NoExtField (EName namespace name name) params)

@@ -94,7 +94,9 @@ instance Pretty Type where
         OpaquePointer -> "ptr"
         PointerType OpaquePointer -> "ptr"
         PointerType Void -> "ptr"
-        PointerType ty -> pretty ty <> "*"
+        PointerType ty
+            | isPointerType ty -> "ptr"
+            | otherwise -> pretty ty <> "*"
         TyFun tys ty -> pretty ty <> tupled (fmap pretty tys) <> "*"
         StructType tys -> braces $ space <> concatWith (surround (comma <> space)) (fmap pretty tys) <> space
         Mut ty -> pretty ty
@@ -166,6 +168,11 @@ instance Pretty Terminator where
                         (surround space)
                         (fmap ((\(l, r) -> l <> comma <+> "label %" <> r) . bimap typed pretty) pairs)
                     )
+
+isPointerType :: Type -> Bool
+isPointerType OpaquePointer = True
+isPointerType PointerType {} = True
+isPointerType _ = False
 
 prettyName :: ExplicitName -> Doc ann
 prettyName name

@@ -491,8 +491,13 @@ infer_ass loc boundedness name op expr =
                 DerefAssign -> do
                     case ty of
                         PointerType NoExtField ty -> do
-                            (sub, expr) <- check_expr ty expr
-                            pure (sub, Ass (StmtType unit_type (PointerType NoExtField ty) loc, boundedness) name op expr)
+                            (sub, expr) <- infer_expr expr
+                            sub1 <- unify loc ty (typeOf expr)
+                            let sub3 = Sub.compose sub1 sub
+                            pure
+                                ( sub3
+                                , apply sub3 $ Ass (StmtType unit_type (PointerType NoExtField ty) loc, boundedness) name op expr
+                                )
                         ty -> do
                             ty' <- fresh_type
                             tyExpectedGot' loc [PointerType NoExtField ty] ty'
@@ -706,14 +711,14 @@ infer_arm pattern_type (MatchArm loc pat expr) = do
 check_pattern ::
     (MonadReader Ctx m, MonadState Env m, MonadValidate [TcError] m) =>
     TypeTc -> PatternRn -> m (Substitution, PatternTc)
-check_pattern pattype currentPattern = case currentPattern of
+check_pattern scrutType currentPattern = case currentPattern of
     PVar loc varName -> do
-        insertVar varName pattype loc
-        pure (Sub.empty, PVar (loc, pattype) varName)
+        insertVar varName scrutType loc
+        pure (Sub.empty, PVar (loc, scrutType) varName)
     PEnumCon _loc conName -> do
         (ty, loc) <- lookupCon conName
         ty <- instantiateTc ty
-        sub <- unify loc pattype ty
+        sub <- unify loc scrutType ty
         modifying variables (Map.map (first (apply sub)))
         pure (sub, apply sub $ PEnumCon (loc, ty) conName)
     PFunCon _ conName pats -> do
@@ -722,16 +727,16 @@ check_pattern pattype currentPattern = case currentPattern of
         case ty of
             TyFun _ argtys rettype
                 | length argtys == length pats -> do
-                    sub1 <- unify loc pattype rettype
+                    sub1 <- unify loc scrutType rettype
                     let f (expected_type, pat) (sub1, pats) = do
                             (sub2, pat) <- check_pattern expected_type pat
                             pure (Sub.compose sub2 sub1, pat : pats)
                     (sub2, pats) <- foldrM f (sub1, []) $ zip argtys pats
                     let sub3 = Sub.compose sub2 sub1
                     modifying variables (Map.map (first (apply sub3)))
-                    pure (sub3, apply sub3 $ PFunCon (loc, pattype) conName pats)
+                    pure (sub3, apply sub3 $ PFunCon (loc, scrutType) conName pats)
                 | otherwise -> expectedPatNArgs' loc currentPattern (length argtys) (length pats)
-            other -> tyExpectedGot' loc [pattype] other
+            other -> tyExpectedGot' loc [scrutType] other
 
 hasInfo :: ExprTc -> SourceInfo
 hasInfo = \case

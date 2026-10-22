@@ -86,7 +86,7 @@ instance Substitute TypeTc where
         TypeVar NoExtField _ -> fromMaybe ty (lookup ty sub)
         TyLit NoExtField _ -> fromMaybe ty (lookup ty sub)
         TyCon NoExtField name params -> fromMaybe (TyCon NoExtField name (fmap (apply sub) params)) (lookup ty sub)
-        PointerType NoExtField ty -> fromMaybe (PointerType NoExtField (apply sub ty)) (lookup ty sub)
+        PointerType NoExtField ty' -> fromMaybe (PointerType NoExtField (apply sub ty')) (lookup ty sub)
 
 instance Substitute ExprTc where
     apply sub expr = case expr of

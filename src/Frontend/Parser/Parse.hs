@@ -116,8 +116,15 @@ argument = do
     pure (Arg info name ty)
 
 type_ :: Parser TypePar
-type_ = P.choice [typeAtom, pFunTy, pTyCon, parens type_] <?> "type"
+type_ = P.choice [typeAtom, pFunTy, pTyCon, pPointerType, parens type_] <?> "type"
   where
+    pPointerType :: Parser TypePar
+    pPointerType = do
+        gs <- spanStart
+        ty <- "&" *> type_
+        loc <- spanEnd gs
+        pure (PointerType loc ty)
+
     pTyCon :: Parser TypePar
     pTyCon = do
         gs <- spanStart
