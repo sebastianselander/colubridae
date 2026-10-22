@@ -69,12 +69,13 @@ typecheck ::
     ProgramRn ->
     (Either [TcError] ProgramTc, [TcWarning])
 typecheck (Program NoExtField mods) =
-    let defTable =
+    let typeCons = getTypesAndCons mods
+        defTable =
             Table
                 builtins
                 (Map.fromList (getFuns mods))
-                (Map.fromList (types (getTypesAndCons mods)))
-                (Map.fromList (cons (getTypesAndCons mods)))
+                (Map.fromList typeCons.types)
+                (Map.fromList typeCons.cons)
      in case first partitionEithers $ unzip $ fmap (tcModule defTable) (Relude.toList mods) of
             (([], mod : mods), warnings) -> (Right $ Program NoExtField (mod :| mods), mconcat warnings)
             ((errs, _), warnings) -> (Left $ mconcat errs, mconcat warnings)
