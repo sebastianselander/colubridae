@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -6,7 +7,7 @@ module Backend.Llvm.Monad where
 
 import Control.Lens (makeLenses, view)
 import Control.Lens.Getter (use, uses)
-import Control.Lens.Setter (assign, modifying, (+=))
+import Control.Lens.Setter (assign, modifying, set, (+=))
 import Data.DList (DList, snoc)
 import Relude hiding (Type)
 
@@ -19,7 +20,8 @@ import Impossible (__IMPOSSIBLE__)
 import Names (ExplicitName (EName), Ident (..), Namespace)
 
 data IRBuilderState = IRBuilderState
-    { _instructions :: DList (Named Instruction)
+    { _builderBlock :: PartialBlock
+    , _blocks :: DList BasicBlock
     , _varCounter :: !Word16
     , _labelCounter :: !Word16
     , _labelReserved :: Set Label
@@ -39,57 +41,73 @@ $(makeLenses ''IRBuilderCtx)
 emptyInstructions :: DList (Named Instruction)
 emptyInstructions = mempty
 
-entryBlock :: Label
-entryBlock = L "entry"
+entryLabel :: Label
+entryLabel = L "entry"
 
 initialIRBuilderState :: IRBuilderState
 initialIRBuilderState =
     IRBuilderState
-        { _instructions = mempty
+        { _builderBlock = emptyPartialBlock entryLabel
+        , _blocks = mempty
         , _varCounter = 0
         , _labelCounter = 1
         , _labelReserved = mempty
         , _constructors = mempty
-        , _predBlock = entryBlock
+        , _predBlock = entryLabel
         }
 
 initialIRBuilderCtx :: Namespace -> IRBuilderCtx
-initialIRBuilderCtx namespace = IRBuilderCtx {_breakLabel = entryBlock, _namespace = namespace}
+initialIRBuilderCtx namespace = IRBuilderCtx {_breakLabel = entryLabel, _namespace = namespace}
 
 newtype IRBuilder a = IRBuilder {runBuilder :: StateT IRBuilderState (Reader IRBuilderCtx) a}
     deriving (Applicative, Functor, Monad, MonadReader IRBuilderCtx, MonadState IRBuilderState)
 
-inContext :: IRBuilder a -> IRBuilder (a, [Named Instruction])
+inContext :: IRBuilder a -> IRBuilder (a, [BasicBlock])
 inContext ma = do
-    before <- getInstructions
-    clearInstructions
+    before <- getBlocks
+    clearBlocks
     a <- ma
-    during <- getInstructions
-    setInstructions (fromList before)
+    during <- getBlocks
+    setBlocks (fromList before)
     pure (a, during)
 
-clearInstructions :: IRBuilder ()
-clearInstructions = assign instructions emptyInstructions
+clearBlocks :: IRBuilder ()
+clearBlocks = do
+    assign blocks mempty
+    assign builderBlock (emptyPartialBlock entryLabel)
 
-setInstructions :: DList (Named Instruction) -> IRBuilder ()
-setInstructions = assign instructions
+emitBlock :: IRBuilder ()
+emitBlock = do
+    partialBlock <- use builderBlock
+    let instrs = toList partialBlock.partialInstructions
+    let blk =
+            BasicBlock
+                { terminator = fromMaybe (Nameless $ Ret Nothing) partialBlock.partialTerminator
+                , label = partialBlock.partialLabel
+                , instructions = instrs
+                }
+    modifying blocks (`snoc` blk)
 
-getInstructions :: IRBuilder [Named Instruction]
-getInstructions = uses instructions toList
+setBlocks :: DList BasicBlock -> IRBuilder ()
+setBlocks = assign blocks
 
--- | Get current instruction list, clear it, and then return the gotten list.
-extractInstructions :: IRBuilder [Named Instruction]
-extractInstructions = do
-    instrs <- getInstructions
-    clearInstructions
-    pure instrs
+getBlocks :: IRBuilder [BasicBlock]
+getBlocks = uses blocks toList
 
 runAssembler :: Namespace -> IRBuilder a -> a
 runAssembler namespace =
     flip runReader (initialIRBuilderCtx namespace) . flip evalStateT initialIRBuilderState . runBuilder
 
-emit :: Named Instruction -> IRBuilder ()
-emit instr = modifying instructions (`snoc` instr)
+emitInstruction :: Named Instruction -> IRBuilder ()
+emitInstruction instr = modifying builderBlock $ \block -> block {partialInstructions = block.partialInstructions `snoc` instr}
+
+emitTerminator :: Named Terminator -> IRBuilder ()
+emitTerminator term = modifying builderBlock $ \block -> block {partialTerminator = Just term}
+
+block :: Label -> IRBuilder ()
+block lbl = do
+    emitBlock
+    modifying builderBlock (const (emptyPartialBlock lbl))
 
 fresh :: (MonadReader IRBuilderCtx m, MonadState IRBuilderState m) => m ExplicitName
 fresh = do
@@ -107,7 +125,7 @@ call ty function args = do
     pure operand
 
 voidCall :: Operand -> [Operand] -> IRBuilder ()
-voidCall function args = emit $ Nameless $ Call Unit function args
+voidCall function args = emitInstruction $ Nameless $ Call Unit function args
 
 add :: Type -> Operand -> Operand -> IRBuilder Operand
 add = arith LlvmAdd
@@ -135,11 +153,11 @@ arith op ty l r = do
 named :: Instruction -> IRBuilder ExplicitName
 named instr = do
     name <- fresh
-    emit $ Named name instr
+    emitInstruction $ Named name instr
     pure name
 
 unnamed :: Instruction -> IRBuilder ()
-unnamed instr = emit (Nameless instr)
+unnamed instr = emitInstruction (Nameless instr)
 
 cmp :: CmpOp -> Type -> Operand -> Operand -> IRBuilder Operand
 cmp op ty l r = do
@@ -185,31 +203,26 @@ or ty l r = do
 
 alloca :: ExplicitName -> Type -> IRBuilder Operand
 alloca name ty = do
-    emit $ Named name (Alloca ty)
+    emitInstruction $ Named name (Alloca ty)
     pure $ LocalReference (ptr ty) name
 
 malloc :: Type -> Operand -> IRBuilder Operand
 malloc ty operand = do
     name <- fresh
-    emit $ Named name (Malloc operand)
+    emitInstruction $ Named name (Malloc operand)
     pure $ LocalReference ty name
 
 store :: Operand -> Operand -> IRBuilder ()
 store lop rop = unnamed (Store lop rop)
 
 unreachable :: IRBuilder ()
-unreachable = unnamed Unreachable
+unreachable = emitTerminator (Nameless Unreachable)
 
 load :: Type -> Operand -> IRBuilder Operand
 load ty operand = LocalReference ty <$> named (Load operand)
 
 ret :: Operand -> IRBuilder ()
-ret operand = unnamed (Ret operand)
-
-label :: Label -> IRBuilder ()
-label lbl = do
-    assign predBlock lbl
-    emit (Nameless $ Label lbl)
+ret operand = emitTerminator (Nameless $ Ret $ Just operand)
 
 -- TODO: Fix numbering
 mkLabel :: Text -> IRBuilder Label
@@ -231,13 +244,15 @@ mkLabel desc =
             else modifying labelReserved (Set.insert lbl) >> pure lbl
 
 comment :: Text -> IRBuilder ()
-comment cmnt = emit (Nameless (Comment cmnt))
+comment cmnt = emitInstruction (Nameless (Comment cmnt))
 
 br :: Operand -> Label -> Label -> IRBuilder ()
-br operand leftLbl rightLbl = unnamed (Br operand leftLbl rightLbl)
+br operand leftLbl rightLbl = emitTerminator (Nameless $ Br operand leftLbl rightLbl)
 
 jump :: Label -> IRBuilder ()
-jump lbl = unnamed (Jump lbl)
+jump lbl = do
+    comment "Jump"
+    emitTerminator (Nameless $ Jump lbl)
 
 -- | Does not work correctly for structure if gep is used nested
 gep :: Operand -> [Operand] -> IRBuilder Operand
@@ -253,7 +268,7 @@ phi [] = LocalReference Void <$> named (Phi [])
 phi xs@(i : _) = LocalReference (typeOf (fst i)) <$> named (Phi xs)
 
 switch :: Operand -> Label -> [(Constant, Label)] -> IRBuilder ()
-switch op l xs = unnamed (Switch op l xs)
+switch op l xs = emitTerminator (Nameless $ Switch op l xs)
 
 gepType :: Type -> [Operand] -> Type
 gepType ty [] = ptr ty

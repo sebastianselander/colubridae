@@ -2,6 +2,7 @@
 
 module Backend.Llvm.Types where
 
+import Data.DList (DList)
 import Data.Data (Data)
 import Relude hiding (Type)
 
@@ -11,6 +12,32 @@ import Origin
 
 newtype Module = Module {_decls :: [Definition]}
     deriving (Show)
+
+data PartialBlock = PartialBlock
+    { partialLabel :: Label
+    , partialInstructions :: DList (Named Instruction)
+    , partialTerminator :: Maybe (Named Terminator)
+    }
+    deriving (Eq, Ord, Show)
+
+emptyPartialBlock :: Label -> PartialBlock
+emptyPartialBlock lbl =
+    PartialBlock
+        { partialLabel = lbl
+        , partialInstructions = mempty
+        , partialTerminator = Nothing
+        }
+
+data BasicBlock = BasicBlock {label :: Label, instructions :: [Named Instruction], terminator :: Named Terminator}
+    deriving (Eq, Ord, Show)
+
+data Terminator
+    = Ret !(Maybe Operand)
+    | Br !Operand !Label !Label
+    | Jump !Label
+    | Switch !Operand Label [(Constant, Label)]
+    | Unreachable
+    deriving (Eq, Ord, Show)
 
 updateDecls :: ([Definition] -> [Definition]) -> Module -> Module
 updateDecls f (Module decls) = Module (f decls)
@@ -22,7 +49,7 @@ type IsBuiltin = Bool
 
 -- These are declared in the order we want them defined in the ir file
 data Definition
-    = Function !Origin !ExplicitName [Operand] !Type [Named Instruction]
+    = Function !Origin !ExplicitName [Operand] !Type [BasicBlock]
     | TypeDefinition !ExplicitName !Type
     | GlobalString !ExplicitName !Type !Text
     | Declare
@@ -56,17 +83,11 @@ data Instruction
     | Malloc !Operand
     | Store !Operand !Operand
     | Load !Operand
-    | Ret !Operand
-    | Label !Label
     | Comment !Text
-    | Br !Operand !Label !Label
-    | Jump !Label
     | GetElementPtr !Operand [Operand]
     | ExtractValue !Operand [Word32]
     | Phi [(Operand, Label)]
-    | Switch !Operand Label [(Constant, Label)]
     | Blankline
-    | Unreachable
     deriving (Eq, Ord, Show)
 
 data Constant
