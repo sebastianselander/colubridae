@@ -102,7 +102,7 @@ emitInstruction :: Named Instruction -> IRBuilder ()
 emitInstruction instr = modifying builderBlock $ \block -> block {partialInstructions = block.partialInstructions `snoc` instr}
 
 emitTerminator :: Named Terminator -> IRBuilder ()
-emitTerminator term = modifying builderBlock $ \block -> block {partialTerminator = Just term}
+emitTerminator term = modifying builderBlock $ \block -> block {partialTerminator = Just $ fromMaybe term block.partialTerminator}
 
 block :: Label -> IRBuilder ()
 block lbl = do

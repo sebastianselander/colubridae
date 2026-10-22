@@ -4,7 +4,7 @@
 module Backend.Llvm.Llvm where
 
 import Control.Lens.Getter (view)
-import Control.Lens.Setter (assign, locally)
+import Control.Lens.Setter (locally)
 import Control.Monad.Extra (concatMapM)
 import Data.Tuple.Extra (fst3)
 import Relude hiding (Type, and, div, exitFailure, null, or, rem)
@@ -188,32 +188,20 @@ assembleExpr (Core.Typed taggedType expr) =
         -- FIXME: Rethink terminators
         Core.Return expr -> do
             comment "Return expression"
-            lbl <- mkLabel "return"
-            jump lbl
-            block lbl
             expr <- assembleLoadExpr expr
-            ret expr
-            lbl <- mkLabel "return_after"
-            block lbl
             ret expr
             unit
         Core.Break -> do
             comment "Break expression"
-            lbl <- mkLabel "break"
-            jump lbl
-            block lbl
             lbl <- view breakLabel
             jump lbl
-            lbl <- mkLabel "break_after"
-            block lbl
             unit
         Core.If condition trueBlk falseBlk -> do
             comment "If expression"
             true <- mkLabel "if_true"
             false <- mkLabel "if_false"
-            end <- mkLabel "if_after"
+            end <- mkLabel "if_cont"
             condition <- assembleLoadExpr condition
-            -- -- jump to end if no else branch exist
             br condition true (maybe end (const false) falseBlk)
             block true
             mapM_ assembleExpr trueBlk
@@ -271,7 +259,7 @@ assembleExpr (Core.Typed taggedType expr) =
             variable <- alloca bindName taggedType
             store operand variable
             pure variable
-        Core.Match scrutinee@(Core.Typed _ _) matchArms (Core.Catch name catchExpr) -> do
+        Core.Match scrutinee@(Core.Typed _ _) matchArms (Core.Catch _name catchExpr) -> do
             comment "Match expression"
             resultOperand <- fresh
             result <- alloca resultOperand taggedType
