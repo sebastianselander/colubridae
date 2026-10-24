@@ -117,7 +117,7 @@ pIdent :: Ident -> Doc ann
 pIdent (Ident name) = pretty name
 
 pArg :: Arg -> Doc ann
-pArg (EnvArg ty) = "env:" <+> pType ty
+pArg (EnvArg namespace ty) = "env:" <+> pType ty
 pArg (Arg name ty) = pIdent name.name <> ":" <+> pType ty
 
 pExpr :: TyExpr -> Doc ann

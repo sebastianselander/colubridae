@@ -99,8 +99,7 @@ assembleCon index name ty = \case
             ]
 
 assembleArg :: Core.Arg -> IRBuilder Operand
-assembleArg (Core.EnvArg ty) = do
-    namespace <- view namespace
+assembleArg (Core.EnvArg namespace ty) = do
     pure $ LocalReference ty (EName namespace (Ident "env") (Ident "env"))
 assembleArg (Core.Arg name ty) = do
     let arg = LocalReference ty (name {name = mkArgName name.name})

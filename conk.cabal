@@ -39,6 +39,7 @@ library
     Backend.Core.Pretty
     Backend.Core.Types
     Backend.Llvm.Llvm
+    Backend.Llvm.Llvm2
     Backend.Llvm.Lower
     Backend.Llvm.Monad
     Backend.Llvm.Prelude

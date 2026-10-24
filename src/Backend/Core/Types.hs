@@ -22,7 +22,7 @@ data Def
     | Con Int ExplicitName Type (Maybe [Type])
     deriving (Data, Eq, Ord, Show)
 
-data Arg = Arg ExplicitName Type | EnvArg Type
+data Arg = Arg ExplicitName Type | EnvArg Namespace Type
     deriving (Data, Eq, Ord, Show)
 
 data Operand = ConstantOperand !Literal | LocalReference !Type !ExplicitName

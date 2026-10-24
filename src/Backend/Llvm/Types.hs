@@ -20,6 +20,14 @@ data PartialBlock = PartialBlock
     }
     deriving (Eq, Ord, Show)
 
+finalizePartialBlock :: Named Terminator -> PartialBlock -> BasicBlock
+finalizePartialBlock term PartialBlock {partialLabel, partialInstructions, partialTerminator} =
+    BasicBlock
+        { label = partialLabel
+        , instructions = toList partialInstructions
+        , terminator = fromMaybe term partialTerminator
+        }
+
 emptyPartialBlock :: Label -> PartialBlock
 emptyPartialBlock lbl =
     PartialBlock

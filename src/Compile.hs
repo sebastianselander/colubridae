@@ -34,7 +34,7 @@ import Data.Text.IO qualified as Text
 
 import Backend.Core.Core (lowerToCore)
 import Backend.Core.Pretty (prettyCore)
-import Backend.Llvm.Llvm (assemble)
+import Backend.Llvm.Llvm2 (assemble)
 import Backend.Llvm.Lower (llvmOut)
 import Backend.Llvm.Prelude (prelude)
 import Frontend.Error (Report (..))
@@ -135,7 +135,7 @@ compile passes files = do
     program <- pure $ lowerToCore program''
     log passes (Debug Core (Just $ prettyCore program) "") []
 
-    let programs = assemble program
+    programs <- liftIO $ assemble program
     log passes (Debug Llvm (Just $ llvmOut programs) (toStrict $ pShow programs)) []
     pure programs
 
